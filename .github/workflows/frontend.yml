@@ -1,0 +1,41 @@
+name: Frontend CI
+
+on:
+  push:
+    paths:
+      - "brandsoul-frontend/**"
+      - ".github/workflows/frontend.yml"
+  pull_request:
+    paths:
+      - "brandsoul-frontend/**"
+      - ".github/workflows/frontend.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: brandsoul-frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: brandsoul-frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run typecheck
+        run: npx tsc --noEmit
+
+      - name: Run build
+        run: npm run build
+
+      - name: Run tests
+        run: npm test -- --run

@@ -1,0 +1,518 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { FormEvent } from 'react'
+import axios from 'axios'
+
+import ChatList from '../components/ChatList'
+import ProductCard from '../components/ProductCard'
+import Spark from '../components/Spark'
+import type { Message } from '../components/ChatMessage'
+import { mockCatalog } from '../data/mockCatalog'
+import { buildApiUrl } from '../lib/api'
+import { loadCatalogItems } from '../lib/catalog'
+import { loadBrandPersona, type BrandPersona } from '../lib/persona'
+import {
+  buildSparkMemorySummary,
+  getSparkMemoryStorageKey,
+  incrementConversationCount,
+  loadSparkMemory,
+  recordDetectedIntent,
+  recordInteractionWindow,
+  saveSparkMemory,
+  type SparkMemory,
+} from '../lib/sparkMemory'
+import type { CatalogItem } from '../types/catalog'
+import '../App.css'
+
+type SparkState = 'idle' | 'thinking' | 'speaking'
+
+interface ChannelResponseMetadata {
+  detected_intent?: string
+}
+
+interface ChannelMessageResponse {
+  response: string
+  spark_state: SparkState
+  memory_used: boolean
+  metadata?: ChannelResponseMetadata
+}
+
+const USER_ID_STORAGE_KEY = 'brandsoul_user_id'
+const CUSTOMER_MESSAGES_STORAGE_KEY = 'brandsoul_messages:customer:web'
+const BOOTSTRAP_LOCK_KEY = 'brandsoul_bootstrap_lock'
+const BOOTSTRAP_LOCK_MAX_AGE = 8000
+const BOOTSTRAP_ERROR_MESSAGE = 'Tive um ruido aqui agora. Me chama de novo que eu volto.'
+
+function loadMessages(): Message[] {
+  const savedMessages = window.localStorage.getItem(CUSTOMER_MESSAGES_STORAGE_KEY)
+  if (!savedMessages) {
+    return []
+  }
+
+  try {
+    const parsedMessages = JSON.parse(savedMessages) as Message[]
+    return Array.isArray(parsedMessages)
+      ? parsedMessages.filter((savedMessage) => savedMessage?.role && savedMessage?.content)
+      : []
+  } catch {
+    return []
+  }
+}
+
+function getOrCreateUserId() {
+  const savedUserId = window.localStorage.getItem(USER_ID_STORAGE_KEY)
+  if (savedUserId) {
+    return savedUserId
+  }
+
+  const generatedUserId =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `brandsoul-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+
+  window.localStorage.setItem(USER_ID_STORAGE_KEY, generatedUserId)
+  return generatedUserId
+}
+
+function acquireBootstrapLock() {
+  const now = Date.now()
+  const rawLockValue = window.sessionStorage.getItem(BOOTSTRAP_LOCK_KEY)
+
+  if (rawLockValue) {
+    const existingLockTime = Number(rawLockValue)
+    if (!Number.isNaN(existingLockTime) && now - existingLockTime < BOOTSTRAP_LOCK_MAX_AGE) {
+      return false
+    }
+  }
+
+  window.sessionStorage.setItem(BOOTSTRAP_LOCK_KEY, String(now))
+  return true
+}
+
+function releaseBootstrapLock() {
+  window.sessionStorage.removeItem(BOOTSTRAP_LOCK_KEY)
+}
+
+function buildCustomerHeadline(persona: BrandPersona) {
+  if (persona.tone === 'ousado') {
+    return 'Agora voce esta falando comigo.'
+  }
+
+  if (persona.tone === 'divertido') {
+    return 'Cheguei. Pode falar comigo.'
+  }
+
+  if (persona.tone === 'sério') {
+    return 'Bem-vindo. Estou por aqui.'
+  }
+
+  return 'Agora voce esta falando comigo.'
+}
+
+function buildCustomerSubtext(persona: BrandPersona) {
+  if (persona.deliveryAvailable) {
+    return 'Posso te ajudar com pedidos, duvidas ou o que voce precisar.'
+  }
+
+  if (persona.tone === 'sério') {
+    return 'Estou aqui pra te atender.'
+  }
+
+  return 'Me diz o que voce precisa.'
+}
+
+function buildBrandCategory(persona: BrandPersona) {
+  const rawDescription = persona.businessDescription?.trim()
+  if (!rawDescription) {
+    return null
+  }
+
+  const normalizedDescription = rawDescription.toLowerCase()
+
+  if (normalizedDescription.includes('restaurante') || normalizedDescription.includes('sushi') || normalizedDescription.includes('gastronomia')) {
+    return 'Restaurante'
+  }
+
+  if (normalizedDescription.includes('cafeteria') || normalizedDescription.includes('cafe')) {
+    return 'Cafeteria'
+  }
+
+  if (normalizedDescription.includes('clinica') || normalizedDescription.includes('saude') || normalizedDescription.includes('odont')) {
+    return 'Saude'
+  }
+
+  if (normalizedDescription.includes('loja') || normalizedDescription.includes('varejo') || normalizedDescription.includes('moda')) {
+    return 'Varejo'
+  }
+
+  if (normalizedDescription.includes('agencia') || normalizedDescription.includes('branding') || normalizedDescription.includes('design') || normalizedDescription.includes('studio') || normalizedDescription.includes('estudio')) {
+    return 'Estudio criativo'
+  }
+
+  if (normalizedDescription.includes('software') || normalizedDescription.includes('plataforma') || normalizedDescription.includes('tecnologia') || normalizedDescription.includes('saas')) {
+    return 'Tecnologia'
+  }
+
+  const compactDescription = rawDescription.replace(/\.$/, '')
+  return compactDescription.length > 32 ? `${compactDescription.slice(0, 32).trim()}...` : compactDescription
+}
+
+function buildBrandStatusLabel(sparkState: SparkState) {
+  if (sparkState === 'speaking') {
+    return 'Respondendo por aqui'
+  }
+
+  if (sparkState === 'thinking') {
+    return 'Ativa agora'
+  }
+
+  return 'Online agora'
+}
+
+function buildCatalogIntro(persona: BrandPersona) {
+  if (persona.tone === 'ousado') {
+    return 'Posso te mostrar o que faz mais sentido sem enrolar.'
+  }
+
+  if (persona.tone === 'sério') {
+    return 'Posso te ajudar a escolher a melhor opcao.'
+  }
+
+  return 'Voce pode olhar as opcoes ou falar comigo direto.'
+}
+
+function buildItemMessage(item: CatalogItem) {
+  return `Quero saber mais sobre ${item.title}`
+}
+
+function resolveWhatsAppHref(contactInfo?: string) {
+  const rawValue = contactInfo?.trim()
+  if (!rawValue) {
+    return null
+  }
+
+  if (rawValue.startsWith('http://') || rawValue.startsWith('https://') || rawValue.includes('wa.me')) {
+    return rawValue
+  }
+
+  const normalizedDigits = rawValue.replace(/\D/g, '')
+  if (normalizedDigits.length < 10) {
+    return null
+  }
+
+  return `https://wa.me/${normalizedDigits}`
+}
+
+function buildPersonaPayload(persona: BrandPersona) {
+  return {
+    tone: persona.tone,
+    power: persona.power,
+    voice_style: persona.voiceStyle,
+    business_description: persona.businessDescription || undefined,
+    delivery_available: persona.deliveryAvailable,
+    business_hours: persona.businessHours || undefined,
+    service_region: persona.serviceRegion || undefined,
+    brand_highlight: persona.brandHighlight || undefined,
+    whatsapp: persona.whatsapp || undefined,
+    email: persona.email || undefined,
+    instagram: persona.instagram || undefined,
+    facebook: persona.facebook || undefined,
+    tiktok: persona.tiktok || undefined,
+    site: persona.site || undefined,
+    contact_info: persona.whatsapp || persona.email || persona.instagram || persona.site || persona.contactInfo || undefined,
+  }
+}
+
+export default function CustomerChatPage() {
+  const persona = useMemo(() => loadBrandPersona(), [])
+  const initialMessages = useMemo(() => loadMessages(), [])
+  const userId = useMemo(() => getOrCreateUserId(), [])
+  const [messages, setMessages] = useState<Message[]>(initialMessages)
+  const [message, setMessage] = useState('')
+  const [sparkState, setSparkState] = useState<SparkState>('idle')
+  const [isLoading, setIsLoading] = useState(false)
+  const timeoutRef = useRef<number | null>(null)
+  const bootstrapRequestIdRef = useRef(0)
+  const [isIntroPulseActive, setIsIntroPulseActive] = useState(false)
+  const introPulseTimeoutRef = useRef<number | null>(null)
+  const hasBootstrappedRef = useRef(initialMessages.length > 0)
+  const sparkMemoryStorageKey = useMemo(
+    () =>
+      getSparkMemoryStorageKey({
+        brandName: persona?.brandName ?? 'BrandSoul Demo',
+        tone: persona?.tone ?? 'divertido',
+        power: persona?.power ?? 'atração',
+        contextMode: 'customer',
+        channelMode: 'web',
+      }),
+    [persona],
+  )
+  const [sparkMemory, setSparkMemory] = useState<SparkMemory>(() => loadSparkMemory(sparkMemoryStorageKey))
+  const memorySummary = useMemo(() => buildSparkMemorySummary(sparkMemory), [sparkMemory])
+  const whatsappHref = useMemo(() => resolveWhatsAppHref(persona?.whatsapp ?? persona?.contactInfo), [persona])
+  const brandCategory = useMemo(() => (persona ? buildBrandCategory(persona) : null), [persona])
+  const brandStatusLabel = useMemo(() => buildBrandStatusLabel(sparkState), [sparkState])
+  const catalogItems = useMemo(() => {
+    const configuredCatalog = loadCatalogItems()
+    return configuredCatalog.length > 0 ? configuredCatalog : mockCatalog
+  }, [])
+
+  const persistSparkMemory = (updater: (currentMemory: SparkMemory) => SparkMemory) => {
+    setSparkMemory((currentMemory) => {
+      const nextMemory = updater(currentMemory)
+      saveSparkMemory(sparkMemoryStorageKey, nextMemory)
+      return nextMemory
+    })
+  }
+
+  const scheduleSparkReset = (nextState: SparkState) => {
+    if (timeoutRef.current) {
+      window.clearTimeout(timeoutRef.current)
+    }
+
+    if (nextState !== 'idle') {
+      timeoutRef.current = window.setTimeout(() => {
+        setSparkState('idle')
+      }, 1600)
+    }
+  }
+
+  const triggerIntroPulse = () => {
+    if (introPulseTimeoutRef.current) {
+      window.clearTimeout(introPulseTimeoutRef.current)
+    }
+
+    setIsIntroPulseActive(true)
+    introPulseTimeoutRef.current = window.setTimeout(() => {
+      setIsIntroPulseActive(false)
+    }, 1800)
+  }
+
+  const startConversation = async (force = false) => {
+    if (!persona) {
+      return
+    }
+
+    if (!force && !acquireBootstrapLock()) {
+      return
+    }
+
+    if (force) {
+      window.sessionStorage.setItem(BOOTSTRAP_LOCK_KEY, String(Date.now()))
+    }
+
+    const requestId = bootstrapRequestIdRef.current + 1
+    bootstrapRequestIdRef.current = requestId
+
+    setIsLoading(true)
+    setSparkState('idle')
+
+    const nextSparkMemory = recordInteractionWindow(incrementConversationCount(loadSparkMemory(sparkMemoryStorageKey)))
+    saveSparkMemory(sparkMemoryStorageKey, nextSparkMemory)
+    setSparkMemory(nextSparkMemory)
+
+    try {
+      const result = await axios.post<ChannelMessageResponse>(buildApiUrl('/channel/message'), {
+        channel: 'web',
+        user_id: userId,
+        brand_name: persona.brandName,
+        message: '',
+        persona: buildPersonaPayload(persona),
+        messages: [],
+        context_mode: 'customer',
+        metadata: {
+          source: 'chat-ui',
+          intent: 'conversation_start',
+        },
+        ...(buildSparkMemorySummary(nextSparkMemory) ? { memory_summary: buildSparkMemorySummary(nextSparkMemory) } : {}),
+      })
+
+      if (bootstrapRequestIdRef.current !== requestId) {
+        return
+      }
+
+      setMessages([{ role: 'ai', content: result.data.response }])
+      setSparkState('speaking')
+      scheduleSparkReset('speaking')
+      triggerIntroPulse()
+      persistSparkMemory((currentMemory) => recordDetectedIntent(currentMemory, result.data.metadata?.detected_intent ?? 'unknown', ''))
+    } catch (error) {
+      if (bootstrapRequestIdRef.current !== requestId) {
+        return
+      }
+
+      console.error(error)
+      setMessages([{ role: 'ai', content: BOOTSTRAP_ERROR_MESSAGE }])
+      setSparkState('idle')
+    } finally {
+      if (bootstrapRequestIdRef.current === requestId) {
+        releaseBootstrapLock()
+        setIsLoading(false)
+      }
+    }
+  }
+
+  useEffect(() => {
+    setSparkMemory(loadSparkMemory(sparkMemoryStorageKey))
+  }, [sparkMemoryStorageKey])
+
+  useEffect(() => {
+    if (!hasBootstrappedRef.current && initialMessages.length === 0) {
+      hasBootstrappedRef.current = true
+      void startConversation()
+    }
+
+    return () => {
+      if (timeoutRef.current) {
+        window.clearTimeout(timeoutRef.current)
+      }
+
+      if (introPulseTimeoutRef.current) {
+        window.clearTimeout(introPulseTimeoutRef.current)
+      }
+    }
+  }, [initialMessages.length])
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      window.localStorage.setItem(CUSTOMER_MESSAGES_STORAGE_KEY, JSON.stringify(messages))
+      return
+    }
+
+    window.localStorage.removeItem(CUSTOMER_MESSAGES_STORAGE_KEY)
+  }, [messages])
+
+  const sendUserMessage = async (rawMessage: string) => {
+    if (!persona) {
+      return
+    }
+
+    const trimmedMessage = rawMessage.trim()
+    if (!trimmedMessage || isLoading) {
+      return
+    }
+
+    if (timeoutRef.current) {
+      window.clearTimeout(timeoutRef.current)
+    }
+
+    setIsLoading(true)
+    setSparkState('thinking')
+    const userMessage: Message = { role: 'user', content: trimmedMessage }
+    const nextMessages = [...messages, userMessage]
+    setMessages(nextMessages)
+    setMessage('')
+
+    try {
+      const result = await axios.post<ChannelMessageResponse>(buildApiUrl('/channel/message'), {
+        channel: 'web',
+        user_id: userId,
+        brand_name: persona.brandName,
+        message: trimmedMessage,
+        persona: buildPersonaPayload(persona),
+        messages,
+        context_mode: 'customer',
+        metadata: {
+          source: 'chat-ui',
+        },
+        ...(memorySummary ? { memory_summary: memorySummary } : {}),
+      })
+
+      setMessages((previousMessages) => [...previousMessages, { role: 'ai', content: result.data.response }])
+      setSparkState(result.data.spark_state)
+      scheduleSparkReset(result.data.spark_state)
+      persistSparkMemory((currentMemory) =>
+        recordDetectedIntent(recordInteractionWindow(currentMemory), result.data.metadata?.detected_intent ?? 'unknown', trimmedMessage),
+      )
+    } catch (error) {
+      console.error(error)
+      setMessages((previousMessages) => [
+        ...previousMessages,
+        { role: 'ai', content: 'Tive um ruido aqui agora. Me chama de novo que eu volto.' },
+      ])
+      setSparkState('idle')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const sendMessage = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    await sendUserMessage(message)
+  }
+
+  const handleCatalogAction = async (item: CatalogItem) => {
+    await sendUserMessage(buildItemMessage(item))
+  }
+
+  if (!persona) {
+    return null
+  }
+
+  return (
+    <main className="customer-shell">
+      <section className="customer-hero">
+        <div className="brand-header">
+          <div className="customer-brand-badge">{persona.brandName}</div>
+          <div className="brand-header-copy">
+            <strong className="brand-title brand-title--alive">{persona.brandName || 'Sua marca'}</strong>
+            <div className="brand-divider" aria-hidden="true" />
+            <div className="brand-meta" aria-label="Contexto da marca">
+              {brandCategory ? <span className="brand-meta-chip">{brandCategory}</span> : null}
+              {persona.serviceRegion ? <span className="brand-meta-chip">{persona.serviceRegion}</span> : null}
+              <span className="brand-status-chip">
+                <span className="brand-status-dot" aria-hidden="true" />
+                {brandStatusLabel}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="customer-hero-copy">
+          <h1 className="customer-title brand-headline">{buildCustomerHeadline(persona)}</h1>
+          <p className="customer-subtitle brand-subtext">{buildCustomerSubtext(persona)}</p>
+        </div>
+
+        <div className="customer-spark-wrap">
+          <div className={`spark-stage customer-spark-stage ${isIntroPulseActive ? 'spark-intro-active' : ''}`}>
+            <Spark state={sparkState} tone={persona.tone} power={persona.power} />
+          </div>
+        </div>
+      </section>
+
+      <section className="catalog-section" aria-label="Catalogo da marca">
+        <div className="catalog-copy">
+          <span className="catalog-kicker">O que eu posso te mostrar hoje</span>
+          <h2>Escolha uma opcao ou fale comigo para eu te ajudar a decidir.</h2>
+          <p>{buildCatalogIntro(persona)}</p>
+        </div>
+
+        <div className="catalog-grid">
+          {catalogItems.map((item) => (
+            <ProductCard key={item.id} item={item} onPrimaryAction={handleCatalogAction} whatsappHref={whatsappHref} />
+          ))}
+        </div>
+      </section>
+
+      <section className="customer-chat-card">
+        <section className="chat-panel customer-chat-panel">
+          <ChatList messages={messages} assistantLabel={null} />
+        </section>
+
+        <form className="composer composer-docked customer-composer" onSubmit={sendMessage}>
+          <div className="composer-row">
+            <input
+              id="message"
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              placeholder="Me chama aqui..."
+              autoComplete="off"
+            />
+            <button type="submit" disabled={isLoading || !message.trim()}>
+              {isLoading ? 'Ja te respondo...' : 'Enviar'}
+            </button>
+          </div>
+        </form>
+      </section>
+    </main>
+  )
+}
