@@ -1,8 +1,10 @@
 import { motion } from 'framer-motion'
 import { useMemo, useState } from 'react'
+import type { ChangeEvent } from 'react'
 
 import Spark from '../components/Spark'
 import { loadCatalogItems, normalizeCatalogItem, saveCatalogItems } from '../lib/catalog'
+import { readFileAsDataUrl, readFilesAsDataUrls } from '../lib/media'
 import {
   BUSINESS_DESCRIPTION_MAX_LENGTH,
   BRAND_KNOWLEDGE_MAX_LENGTH,
@@ -16,12 +18,16 @@ import {
   type VoiceStyleOption,
   voiceStyleOptions,
 } from '../lib/persona'
-import type { CatalogItem } from '../types/catalog'
+import type { CatalogAvailability, CatalogItem } from '../types/catalog'
 import '../App.css'
 
 interface CatalogDraft {
-  title: string
+  name: string
   description: string
+  image: string
+  images: string[]
+  stock: string
+  availability: CatalogAvailability
   price: string
   highlight: string
   category: string
@@ -29,8 +35,12 @@ interface CatalogDraft {
 
 function createEmptyCatalogDraft(): CatalogDraft {
   return {
-    title: '',
+    name: '',
     description: '',
+    image: '',
+    images: [],
+    stock: '',
+    availability: 'available',
     price: '',
     highlight: '',
     category: '',
@@ -41,7 +51,14 @@ export default function CreatePersonaPage() {
   const savedPersona = useMemo(() => loadBrandPersona(), [])
   const savedCatalog = useMemo(() => loadCatalogItems(), [])
   const [brandName, setBrandName] = useState(savedPersona?.brandName ?? '')
+  const [logo, setLogo] = useState(savedPersona?.logo ?? '')
   const [businessDescription, setBusinessDescription] = useState(savedPersona?.businessDescription ?? '')
+  const [institutionalImage, setInstitutionalImage] = useState(savedPersona?.institutionalImage ?? '')
+  const [openingStart, setOpeningStart] = useState(savedPersona?.openingHours?.start ?? '')
+  const [openingEnd, setOpeningEnd] = useState(savedPersona?.openingHours?.end ?? '')
+  const [address, setAddress] = useState(savedPersona?.address ?? '')
+  const [city, setCity] = useState(savedPersona?.city ?? '')
+  const [state, setState] = useState(savedPersona?.state ?? '')
   const [deliveryAvailable, setDeliveryAvailable] = useState<boolean | undefined>(savedPersona?.deliveryAvailable)
   const [businessHours, setBusinessHours] = useState(savedPersona?.businessHours ?? '')
   const [serviceRegion, setServiceRegion] = useState(savedPersona?.serviceRegion ?? '')
@@ -66,22 +83,26 @@ export default function CreatePersonaPage() {
   const sparkPower = useMemo(() => power ?? 'atração', [power])
   const businessDescriptionLength = businessDescription.trim().length
 
-  const handleCatalogDraftChange = (field: keyof CatalogDraft, value: string) => {
+  const handleCatalogDraftChange = <K extends keyof CatalogDraft>(field: K, value: CatalogDraft[K]) => {
     setCatalogDraft((currentDraft) => ({ ...currentDraft, [field]: value }))
   }
 
   const handleCatalogSave = () => {
     const normalizedItem = normalizeCatalogItem({
       id: editingCatalogId ?? undefined,
-      title: catalogDraft.title,
+      name: catalogDraft.name,
       description: catalogDraft.description,
+      image: catalogDraft.image,
+      images: catalogDraft.images,
+      stock: catalogDraft.stock ? Number(catalogDraft.stock) : undefined,
+      availability: catalogDraft.availability,
       price: catalogDraft.price,
       highlight: catalogDraft.highlight,
       category: catalogDraft.category,
     })
 
     if (!normalizedItem) {
-      setErrorMessage('Preencha titulo e descricao do item para salvar o catalogo.')
+      setErrorMessage('Preencha nome e descricao do item para salvar o catalogo.')
       return
     }
 
@@ -103,8 +124,12 @@ export default function CreatePersonaPage() {
   const handleCatalogEdit = (item: CatalogItem) => {
     setEditingCatalogId(item.id)
     setCatalogDraft({
-      title: item.title,
+      name: item.name,
       description: item.description,
+      image: item.image ?? '',
+      images: item.images ?? [],
+      stock: typeof item.stock === 'number' ? String(item.stock) : '',
+      availability: item.availability ?? 'available',
       price: item.price ?? '',
       highlight: item.highlight ?? '',
       category: item.category ?? '',
@@ -119,6 +144,48 @@ export default function CreatePersonaPage() {
     }
   }
 
+  const handleLogoChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.target.files?.[0]
+    if (!selectedFile) {
+      return
+    }
+
+    setLogo(await readFileAsDataUrl(selectedFile))
+    event.target.value = ''
+  }
+
+  const handleInstitutionalImageChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.target.files?.[0]
+    if (!selectedFile) {
+      return
+    }
+
+    setInstitutionalImage(await readFileAsDataUrl(selectedFile))
+    event.target.value = ''
+  }
+
+  const handleCatalogImageChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.target.files?.[0]
+    if (!selectedFile) {
+      return
+    }
+
+    const nextImage = await readFileAsDataUrl(selectedFile)
+    setCatalogDraft((currentDraft) => ({ ...currentDraft, image: nextImage }))
+    event.target.value = ''
+  }
+
+  const handleCatalogAdditionalImagesChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = event.target.files
+    if (!selectedFiles || selectedFiles.length === 0) {
+      return
+    }
+
+    const nextImages = await readFilesAsDataUrls(selectedFiles, 3)
+    setCatalogDraft((currentDraft) => ({ ...currentDraft, images: nextImages }))
+    event.target.value = ''
+  }
+
   const handleCreatePersona = () => {
     const trimmedBrandName = brandName.trim()
     if (!trimmedBrandName || !tone || !power) {
@@ -128,10 +195,16 @@ export default function CreatePersonaPage() {
 
     saveBrandPersona({
       brandName: trimmedBrandName,
+      logo: logo || undefined,
       tone,
       power,
       voiceStyle,
       businessDescription: businessDescription.trim() || undefined,
+      institutionalImage: institutionalImage || undefined,
+      openingHours: openingStart && openingEnd ? { start: openingStart, end: openingEnd } : undefined,
+      address: address.trim() || undefined,
+      city: city.trim() || undefined,
+      state: state.trim() || undefined,
       deliveryAvailable,
       businessHours: businessHours.trim() || undefined,
       serviceRegion: serviceRegion.trim() || undefined,
@@ -192,6 +265,21 @@ export default function CreatePersonaPage() {
           </div>
 
           <div className="persona-field">
+            <label className="persona-label" htmlFor="logoUpload">
+              Logo da marca
+            </label>
+            <div className="admin-image-panel compact">
+              <div className="brand-logo-upload-preview">
+                {logo ? <img src={logo} alt={`Logo de ${brandName || 'marca'}`} className="brand-logo-image" /> : <div className="brand-logo-fallback">{(brandName || 'BS').slice(0, 2).toUpperCase()}</div>}
+              </div>
+              <label className="persona-field admin-upload-field" htmlFor="logoUpload">
+                <span className="persona-label">Arquivo da logo</span>
+                <input id="logoUpload" className="persona-input" type="file" accept="image/*" onChange={handleLogoChange} />
+              </label>
+            </div>
+          </div>
+
+          <div className="persona-field">
             <label className="persona-label" htmlFor="businessDescription">
               O que a sua marca faz?
             </label>
@@ -246,6 +334,22 @@ export default function CreatePersonaPage() {
             </div>
 
             <div className="persona-knowledge-grid">
+              <div className="persona-field">
+                <label className="persona-label persona-inline-label" htmlFor="openingStart">
+                  <span>🕘</span>
+                  <span>Abertura</span>
+                </label>
+                <input id="openingStart" className="persona-input" type="time" value={openingStart} onChange={(event) => setOpeningStart(event.target.value)} />
+              </div>
+
+              <div className="persona-field">
+                <label className="persona-label persona-inline-label" htmlFor="openingEnd">
+                  <span>🕕</span>
+                  <span>Fechamento</span>
+                </label>
+                <input id="openingEnd" className="persona-input" type="time" value={openingEnd} onChange={(event) => setOpeningEnd(event.target.value)} />
+              </div>
+
               <div className="persona-field">
                 <label className="persona-label persona-inline-label" htmlFor="businessHours">
                   <span>⏰</span>
@@ -312,6 +416,54 @@ export default function CreatePersonaPage() {
             </div>
 
             <div className="persona-knowledge-grid">
+              <div className="persona-field">
+                <label className="persona-label persona-inline-label" htmlFor="address">
+                  <span>📍</span>
+                  <span>Endereco</span>
+                </label>
+                <input
+                  id="address"
+                  className="persona-input"
+                  value={address}
+                  onChange={(event) => setAddress(event.target.value.slice(0, BRAND_KNOWLEDGE_MAX_LENGTH))}
+                  placeholder="Ex: Rua X, 123"
+                  autoComplete="off"
+                  maxLength={BRAND_KNOWLEDGE_MAX_LENGTH}
+                />
+              </div>
+
+              <div className="persona-field">
+                <label className="persona-label persona-inline-label" htmlFor="city">
+                  <span>🏙️</span>
+                  <span>Cidade</span>
+                </label>
+                <input
+                  id="city"
+                  className="persona-input"
+                  value={city}
+                  onChange={(event) => setCity(event.target.value.slice(0, BRAND_KNOWLEDGE_MAX_LENGTH))}
+                  placeholder="Ex: Belo Horizonte"
+                  autoComplete="off"
+                  maxLength={BRAND_KNOWLEDGE_MAX_LENGTH}
+                />
+              </div>
+
+              <div className="persona-field">
+                <label className="persona-label persona-inline-label" htmlFor="state">
+                  <span>🧭</span>
+                  <span>Estado</span>
+                </label>
+                <input
+                  id="state"
+                  className="persona-input"
+                  value={state}
+                  onChange={(event) => setState(event.target.value.slice(0, BRAND_KNOWLEDGE_MAX_LENGTH))}
+                  placeholder="Ex: MG"
+                  autoComplete="off"
+                  maxLength={BRAND_KNOWLEDGE_MAX_LENGTH}
+                />
+              </div>
+
               <div className="persona-field">
                 <label className="persona-label persona-inline-label" htmlFor="email">
                   <span>✉️</span>
@@ -392,6 +544,16 @@ export default function CreatePersonaPage() {
                 />
               </div>
             </div>
+
+            <div className="admin-image-panel compact">
+              <div className="admin-image-preview-shell product">
+                {institutionalImage ? <img src={institutionalImage} alt={`Imagem institucional de ${brandName || 'marca'}`} className="admin-image-preview" /> : <div className="admin-image-placeholder">Imagem institucional</div>}
+              </div>
+              <label className="persona-field admin-upload-field">
+                <span className="persona-label">Foto institucional</span>
+                <input className="persona-input" type="file" accept="image/*" onChange={handleInstitutionalImageChange} />
+              </label>
+            </div>
           </section>
 
           <section className="persona-knowledge-section" aria-label="Catalogo inicial">
@@ -403,14 +565,14 @@ export default function CreatePersonaPage() {
             <div className="persona-knowledge-grid">
               <div className="persona-field">
                 <label className="persona-label" htmlFor="catalogTitle">
-                  Titulo
+                  Nome do item
                 </label>
                 <input
                   id="catalogTitle"
                   className="persona-input"
-                  value={catalogDraft.title}
-                  onChange={(event) => handleCatalogDraftChange('title', event.target.value)}
-                  placeholder="Ex: Combo Sushi Especial"
+                  value={catalogDraft.name}
+                  onChange={(event) => handleCatalogDraftChange('name', event.target.value)}
+                  placeholder="Ex: Selecao Essencial"
                   autoComplete="off"
                 />
               </div>
@@ -424,7 +586,7 @@ export default function CreatePersonaPage() {
                   className="persona-input"
                   value={catalogDraft.category}
                   onChange={(event) => handleCatalogDraftChange('category', event.target.value)}
-                  placeholder="Ex: Combinado"
+                  placeholder="Ex: Selecao"
                   autoComplete="off"
                 />
               </div>
@@ -439,7 +601,7 @@ export default function CreatePersonaPage() {
                 className="persona-input persona-textarea"
                 value={catalogDraft.description}
                 onChange={(event) => handleCatalogDraftChange('description', event.target.value)}
-                placeholder="Ex: Seleção premium com 24 pecas e acompanhamentos."
+                placeholder="Ex: Uma opcao completa para quem quer encontrar a melhor escolha com facilidade."
                 rows={3}
               />
             </div>
@@ -472,6 +634,60 @@ export default function CreatePersonaPage() {
                   autoComplete="off"
                 />
               </div>
+
+              <div className="persona-field">
+                <label className="persona-label" htmlFor="catalogStock">
+                  Estoque
+                </label>
+                <input
+                  id="catalogStock"
+                  className="persona-input"
+                  type="number"
+                  min="0"
+                  value={catalogDraft.stock}
+                  onChange={(event) => handleCatalogDraftChange('stock', event.target.value)}
+                  placeholder="Ex: 8"
+                />
+              </div>
+
+              <div className="persona-field">
+                <label className="persona-label" htmlFor="catalogAvailability">
+                  Disponibilidade
+                </label>
+                <select
+                  id="catalogAvailability"
+                  className="persona-input"
+                  value={catalogDraft.availability}
+                  onChange={(event) => handleCatalogDraftChange('availability', event.target.value as CatalogAvailability)}
+                >
+                  <option value="available">Disponivel</option>
+                  <option value="low">Poucas unidades</option>
+                  <option value="out">Esgotado</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="admin-image-panel compact">
+              <div className="admin-image-preview-shell product">
+                {catalogDraft.image ? <img src={catalogDraft.image} alt={catalogDraft.name || 'Imagem do item'} className="admin-image-preview" /> : <div className="admin-image-placeholder">Imagem principal</div>}
+              </div>
+              <div className="persona-field admin-upload-stack">
+                <label className="persona-field admin-upload-field">
+                  <span className="persona-label">Imagem principal</span>
+                  <input className="persona-input" type="file" accept="image/*" onChange={handleCatalogImageChange} />
+                </label>
+                <label className="persona-field admin-upload-field">
+                  <span className="persona-label">Imagens adicionais</span>
+                  <input className="persona-input" type="file" accept="image/*" multiple onChange={handleCatalogAdditionalImagesChange} />
+                </label>
+                {catalogDraft.images.length > 0 ? (
+                  <div className="product-thumb-grid">
+                    {catalogDraft.images.map((image, index) => (
+                      <img key={`${image}-${index}`} src={image} alt={`Imagem adicional ${index + 1}`} className="product-thumb" />
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             </div>
 
             <div className="persona-action-row">
@@ -497,7 +713,7 @@ export default function CreatePersonaPage() {
                 {catalogItems.map((item) => (
                   <article key={item.id} className="admin-catalog-item">
                     <div className="admin-catalog-item-copy">
-                      <strong>{item.title}</strong>
+                      <strong>{item.name}</strong>
                       <span>{item.description}</span>
                     </div>
                     <div className="admin-catalog-actions">

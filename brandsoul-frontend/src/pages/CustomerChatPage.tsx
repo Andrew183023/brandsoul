@@ -4,11 +4,13 @@ import axios from 'axios'
 
 import ChatList from '../components/ChatList'
 import ProductCard from '../components/ProductCard'
+import ProductModal from '../components/ProductModal'
 import Spark from '../components/Spark'
 import type { Message } from '../components/ChatMessage'
 import { mockCatalog } from '../data/mockCatalog'
 import { buildApiUrl } from '../lib/api'
-import { loadCatalogItems } from '../lib/catalog'
+import { getBusinessStatus } from '../lib/businessStatus'
+import { buildCatalogSummary, loadCatalogItems } from '../lib/catalog'
 import { loadBrandPersona, type BrandPersona } from '../lib/persona'
 import {
   buildSparkMemorySummary,
@@ -34,6 +36,12 @@ interface ChannelMessageResponse {
   spark_state: SparkState
   memory_used: boolean
   metadata?: ChannelResponseMetadata
+}
+
+interface LocationSummary {
+  address?: string
+  city?: string
+  state?: string
 }
 
 const USER_ID_STORAGE_KEY = 'brandsoul_user_id'
@@ -156,18 +164,6 @@ function buildBrandCategory(persona: BrandPersona) {
   return compactDescription.length > 32 ? `${compactDescription.slice(0, 32).trim()}...` : compactDescription
 }
 
-function buildBrandStatusLabel(sparkState: SparkState) {
-  if (sparkState === 'speaking') {
-    return 'Respondendo por aqui'
-  }
-
-  if (sparkState === 'thinking') {
-    return 'Ativa agora'
-  }
-
-  return 'Online agora'
-}
-
 function buildCatalogIntro(persona: BrandPersona) {
   if (persona.tone === 'ousado') {
     return 'Posso te mostrar o que faz mais sentido sem enrolar.'
@@ -181,7 +177,7 @@ function buildCatalogIntro(persona: BrandPersona) {
 }
 
 function buildItemMessage(item: CatalogItem) {
-  return `Quero saber mais sobre ${item.title}`
+  return `Quero saber mais sobre ${item.name}`
 }
 
 function resolveWhatsAppHref(contactInfo?: string) {
@@ -208,6 +204,10 @@ function buildPersonaPayload(persona: BrandPersona) {
     power: persona.power,
     voice_style: persona.voiceStyle,
     business_description: persona.businessDescription || undefined,
+    opening_hours: persona.openingHours,
+    address: persona.address || undefined,
+    city: persona.city || undefined,
+    state: persona.state || undefined,
     delivery_available: persona.deliveryAvailable,
     business_hours: persona.businessHours || undefined,
     service_region: persona.serviceRegion || undefined,
@@ -222,6 +222,35 @@ function buildPersonaPayload(persona: BrandPersona) {
   }
 }
 
+function buildLocationSummary(persona: BrandPersona): LocationSummary | undefined {
+  const address = persona.address?.trim()
+  const city = persona.city?.trim()
+  const state = persona.state?.trim()
+
+  if (!address && !city && !state) {
+    return undefined
+  }
+
+  return {
+    address: address || undefined,
+    city: city || undefined,
+    state: state || undefined,
+  }
+}
+
+function buildLocationLabel(persona: BrandPersona) {
+  const address = persona.address?.trim()
+  const city = persona.city?.trim()
+  const state = persona.state?.trim()
+  const cityState = [city, state].filter(Boolean).join(' - ')
+
+  if (address && cityState) {
+    return `${address} - ${cityState}`
+  }
+
+  return address || cityState || null
+}
+
 export default function CustomerChatPage() {
   const persona = useMemo(() => loadBrandPersona(), [])
   const initialMessages = useMemo(() => loadMessages(), [])
@@ -233,6 +262,7 @@ export default function CustomerChatPage() {
   const timeoutRef = useRef<number | null>(null)
   const bootstrapRequestIdRef = useRef(0)
   const [isIntroPulseActive, setIsIntroPulseActive] = useState(false)
+  const [selectedItem, setSelectedItem] = useState<CatalogItem | null>(null)
   const introPulseTimeoutRef = useRef<number | null>(null)
   const hasBootstrappedRef = useRef(initialMessages.length > 0)
   const sparkMemoryStorageKey = useMemo(
@@ -250,11 +280,15 @@ export default function CustomerChatPage() {
   const memorySummary = useMemo(() => buildSparkMemorySummary(sparkMemory), [sparkMemory])
   const whatsappHref = useMemo(() => resolveWhatsAppHref(persona?.whatsapp ?? persona?.contactInfo), [persona])
   const brandCategory = useMemo(() => (persona ? buildBrandCategory(persona) : null), [persona])
-  const brandStatusLabel = useMemo(() => buildBrandStatusLabel(sparkState), [sparkState])
   const catalogItems = useMemo(() => {
     const configuredCatalog = loadCatalogItems()
     return configuredCatalog.length > 0 ? configuredCatalog : mockCatalog
   }, [])
+  const catalogSummary = useMemo(() => buildCatalogSummary(catalogItems), [catalogItems])
+  const locationSummary = useMemo(() => (persona ? buildLocationSummary(persona) : undefined), [persona])
+  const locationLabel = useMemo(() => (persona ? buildLocationLabel(persona) : null), [persona])
+  const businessStatus = useMemo(() => getBusinessStatus(persona?.openingHours), [persona])
+  const businessStatusLabel = businessStatus === 'open' ? 'Aberto agora' : businessStatus === 'closed' ? 'Fechado no momento' : null
 
   const persistSparkMemory = (updater: (currentMemory: SparkMemory) => SparkMemory) => {
     setSparkMemory((currentMemory) => {
@@ -323,7 +357,10 @@ export default function CustomerChatPage() {
           source: 'chat-ui',
           intent: 'conversation_start',
         },
+        ...(businessStatus ? { business_status: businessStatus } : {}),
         ...(buildSparkMemorySummary(nextSparkMemory) ? { memory_summary: buildSparkMemorySummary(nextSparkMemory) } : {}),
+        ...(catalogSummary.length > 0 ? { catalog_summary: catalogSummary } : {}),
+        ...(locationSummary ? { location_summary: locationSummary } : {}),
       })
 
       if (bootstrapRequestIdRef.current !== requestId) {
@@ -414,7 +451,10 @@ export default function CustomerChatPage() {
         metadata: {
           source: 'chat-ui',
         },
+        ...(businessStatus ? { business_status: businessStatus } : {}),
         ...(memorySummary ? { memory_summary: memorySummary } : {}),
+        ...(catalogSummary.length > 0 ? { catalog_summary: catalogSummary } : {}),
+        ...(locationSummary ? { location_summary: locationSummary } : {}),
       })
 
       setMessages((previousMessages) => [...previousMessages, { role: 'ai', content: result.data.response }])
@@ -451,19 +491,26 @@ export default function CustomerChatPage() {
   return (
     <main className="customer-shell">
       <section className="customer-hero">
+        {persona.institutionalImage ? (
+          <div className="customer-hero-media">
+            <img src={persona.institutionalImage} alt={`Imagem institucional de ${persona.brandName}`} className="customer-hero-image" />
+          </div>
+        ) : null}
+
         <div className="brand-header">
           <div className="customer-brand-badge">{persona.brandName}</div>
           <div className="brand-header-copy">
-            <strong className="brand-title brand-title--alive">{persona.brandName || 'Sua marca'}</strong>
+            <div className="brand-title-row">
+              {persona.logo ? <img src={persona.logo} alt={`Logo de ${persona.brandName}`} className="brand-logo" /> : null}
+              <strong className="brand-title brand-title--alive">{persona.brandName || 'Sua marca'}</strong>
+            </div>
             <div className="brand-divider" aria-hidden="true" />
             <div className="brand-meta" aria-label="Contexto da marca">
               {brandCategory ? <span className="brand-meta-chip">{brandCategory}</span> : null}
               {persona.serviceRegion ? <span className="brand-meta-chip">{persona.serviceRegion}</span> : null}
-              <span className="brand-status-chip">
-                <span className="brand-status-dot" aria-hidden="true" />
-                {brandStatusLabel}
-              </span>
+              {businessStatusLabel ? <span className={`business-status ${businessStatus === 'open' ? 'online' : 'offline'}`}>{businessStatusLabel}</span> : null}
             </div>
+            {locationLabel ? <div className="brand-location">📍 {locationLabel}</div> : null}
           </div>
         </div>
 
@@ -482,13 +529,13 @@ export default function CustomerChatPage() {
       <section className="catalog-section" aria-label="Catalogo da marca">
         <div className="catalog-copy">
           <span className="catalog-kicker">O que eu posso te mostrar hoje</span>
-          <h2>Escolha uma opcao ou fale comigo para eu te ajudar a decidir.</h2>
+          <h2>Escolha uma opcao ou fale comigo para eu te ajudar a encontrar o melhor para voce.</h2>
           <p>{buildCatalogIntro(persona)}</p>
         </div>
 
         <div className="catalog-grid">
           {catalogItems.map((item) => (
-            <ProductCard key={item.id} item={item} onPrimaryAction={handleCatalogAction} whatsappHref={whatsappHref} />
+            <ProductCard key={item.id} item={item} onPrimaryAction={handleCatalogAction} onOpen={setSelectedItem} whatsappHref={whatsappHref} />
           ))}
         </div>
       </section>
@@ -513,6 +560,8 @@ export default function CustomerChatPage() {
           </div>
         </form>
       </section>
+
+      <ProductModal item={selectedItem} onClose={() => setSelectedItem(null)} onPrimaryAction={handleCatalogAction} />
     </main>
   )
 }

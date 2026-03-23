@@ -38,7 +38,7 @@ function resolveContentFocus(
   sparkMemory: SparkMemory,
   catalogItems: CatalogItem[],
 ) {
-  const primaryCatalogItem = catalogItems[0]?.title
+  const primaryCatalogItem = catalogItems[0]?.name
 
   if (sparkMemory.top_intents.includes('delivery') || persona.deliveryAvailable) {
     return primaryCatalogItem

@@ -3,12 +3,23 @@ export type ToneOption = 'divertido' | 'inteligente' | 'sério' | 'ousado'
 export type PowerOption = 'atração' | 'clareza' | 'velocidade' | 'conexão'
 export type VoiceStyleOption = 'soft' | 'strong' | 'balanced' | 'adaptive' | 'irreverent'
 
+export interface OpeningHours {
+  start: string
+  end: string
+}
+
 export interface BrandPersona {
   brandName: string
+  logo?: string
   tone: ToneOption
   power: PowerOption
   voiceStyle: VoiceStyleOption
   businessDescription?: string
+  institutionalImage?: string
+  openingHours?: OpeningHours
+  address?: string
+  city?: string
+  state?: string
   deliveryAvailable?: boolean
   businessHours?: string
   serviceRegion?: string
@@ -69,10 +80,16 @@ export function loadBrandPersona(): BrandPersona | null {
 
     return {
       brandName: parsedPersona.brandName,
+      logo: normalizeImageField(parsedPersona.logo),
       tone: normalizedTone,
       power: normalizedPower,
       voiceStyle: normalizeVoiceStyle(parsedPersona.voiceStyle) ?? 'balanced',
       businessDescription: normalizeBusinessDescription(parsedPersona.businessDescription),
+      institutionalImage: normalizeImageField(parsedPersona.institutionalImage),
+      openingHours: normalizeOpeningHours(parsedPersona.openingHours),
+      address: normalizeBrandKnowledgeField(parsedPersona.address),
+      city: normalizeBrandKnowledgeField(parsedPersona.city),
+      state: normalizeBrandKnowledgeField(parsedPersona.state),
       deliveryAvailable: normalizeDeliveryAvailable(parsedPersona.deliveryAvailable),
       businessHours: normalizeBrandKnowledgeField(parsedPersona.businessHours),
       serviceRegion: normalizeBrandKnowledgeField(parsedPersona.serviceRegion),
@@ -96,8 +113,14 @@ export function saveBrandPersona(persona: BrandPersona) {
     PERSONA_STORAGE_KEY,
     JSON.stringify({
       ...persona,
+      logo: normalizeImageField(persona.logo),
       voiceStyle: normalizeVoiceStyle(persona.voiceStyle) ?? 'balanced',
       businessDescription: normalizeBusinessDescription(persona.businessDescription),
+      institutionalImage: normalizeImageField(persona.institutionalImage),
+      openingHours: normalizeOpeningHours(persona.openingHours),
+      address: normalizeBrandKnowledgeField(persona.address),
+      city: normalizeBrandKnowledgeField(persona.city),
+      state: normalizeBrandKnowledgeField(persona.state),
       deliveryAvailable: normalizeDeliveryAvailable(persona.deliveryAvailable),
       businessHours: normalizeBrandKnowledgeField(persona.businessHours),
       serviceRegion: normalizeBrandKnowledgeField(persona.serviceRegion),
@@ -194,6 +217,35 @@ function normalizeLegacyWhatsApp(value?: string): string | undefined {
 
   const digits = normalizedValue.replace(/\D/g, '')
   if (digits.length < 10 && !normalizedValue.includes('wa.me') && !normalizedValue.startsWith('http')) {
+    return undefined
+  }
+
+  return normalizedValue
+}
+
+function normalizeImageField(value?: string): string | undefined {
+  const normalizedValue = value?.trim()
+  if (!normalizedValue) {
+    return undefined
+  }
+
+  return normalizedValue.slice(0, 2_000_000)
+}
+
+function normalizeOpeningHours(value?: Partial<OpeningHours>): OpeningHours | undefined {
+  const start = normalizeTimeField(value?.start)
+  const end = normalizeTimeField(value?.end)
+
+  if (!start || !end) {
+    return undefined
+  }
+
+  return { start, end }
+}
+
+function normalizeTimeField(value?: string) {
+  const normalizedValue = value?.trim()
+  if (!normalizedValue || !/^\d{2}:\d{2}$/.test(normalizedValue)) {
     return undefined
   }
 

@@ -4,6 +4,11 @@ from pydantic import BaseModel, Field, field_validator
 OPTIONAL_TEXT_MAX_LENGTH = 160
 
 
+class OpeningHours(BaseModel):
+    start: str = Field(..., min_length=5, max_length=5, examples=["09:00"])
+    end: str = Field(..., min_length=5, max_length=5, examples=["18:00"])
+
+
 class Persona(BaseModel):
     tone: str = Field(..., min_length=1, examples=["divertido"])
     power: str = Field(..., min_length=1, examples=["atração"])
@@ -13,6 +18,10 @@ class Persona(BaseModel):
         max_length=OPTIONAL_TEXT_MAX_LENGTH,
         examples=["temos um restaurante japonês"],
     )
+    opening_hours: OpeningHours | None = None
+    address: str | None = Field(default=None, max_length=OPTIONAL_TEXT_MAX_LENGTH, examples=["Rua X, 123"])
+    city: str | None = Field(default=None, max_length=OPTIONAL_TEXT_MAX_LENGTH, examples=["Belo Horizonte"])
+    state: str | None = Field(default=None, max_length=OPTIONAL_TEXT_MAX_LENGTH, examples=["MG"])
     delivery_available: bool | None = None
     business_hours: str | None = Field(default=None, max_length=OPTIONAL_TEXT_MAX_LENGTH, examples=["18h às 23h"])
     service_region: str | None = Field(default=None, max_length=OPTIONAL_TEXT_MAX_LENGTH, examples=["Belo Horizonte"])
@@ -47,6 +56,9 @@ class Persona(BaseModel):
 
     @field_validator(
         "business_description",
+        "address",
+        "city",
+        "state",
         "business_hours",
         "service_region",
         "brand_highlight",

@@ -323,9 +323,15 @@ def build_operational_context(persona: Persona) -> str:
 
     if persona.business_hours:
         operational_details.append(f"Se esse tema surgir, eu funciono em {persona.business_hours}.")
+    elif persona.opening_hours:
+        operational_details.append(f"Se esse tema surgir, eu funciono de {persona.opening_hours.start} a {persona.opening_hours.end}.")
 
     if persona.service_region:
         operational_details.append(f"Se esse tema surgir, eu atendo em {persona.service_region}.")
+
+    location_reference = build_persona_location_reference(persona)
+    if location_reference:
+        operational_details.append(f"Se eu falar de localizacao, fico em {location_reference}.")
 
     if persona.brand_highlight:
         operational_details.append(f"Se eu destacar meu diferencial, ele passa por {persona.brand_highlight}.")
@@ -353,6 +359,7 @@ def build_operational_context(persona: Persona) -> str:
 def build_intent_context(message: str, persona: Persona) -> str:
     intent = detect_intent(message)
     primary_contact = build_primary_contact(persona)
+    location_reference = build_persona_location_reference(persona)
 
     if intent == "greeting":
         return "A mensagem atual parece ser uma saudação. Responda com acolhimento breve e personalidade.\n"
@@ -367,10 +374,11 @@ def build_intent_context(message: str, persona: Persona) -> str:
             f"Priorize isso em primeira pessoa, como 'eu funciono em {persona.business_hours}'.\n"
         )
 
-    if intent == "service_region" and persona.service_region:
+    if intent == "service_region" and (persona.service_region or location_reference):
+        location_phrase = persona.service_region or location_reference
         return (
-            "A pergunta atual parece ser sobre região de atendimento. "
-            f"Priorize isso em primeira pessoa, como 'eu atendo em {persona.service_region}'.\n"
+            "A pergunta atual parece ser sobre regiao, endereco ou localizacao. "
+            f"Priorize isso em primeira pessoa, como 'eu fico em {location_phrase}'.\n"
         )
 
     if intent == "contact_info" and primary_contact:
@@ -396,6 +404,7 @@ def build_intent_context(message: str, persona: Persona) -> str:
 
 def build_commercial_context(intent: str, persona: Persona) -> str:
     primary_contact = build_primary_contact(persona)
+    location_reference = build_persona_location_reference(persona)
     contact_context = f" Se ajudar, convide em primeira pessoa para este contato: {primary_contact}." if primary_contact else ""
     delivery_context = (
         " Se isso ajudar, trate em primeira pessoa que eu tenho delivery disponivel."
@@ -404,6 +413,7 @@ def build_commercial_context(intent: str, persona: Persona) -> str:
     )
     hours_context = f" Se isso ajudar, trate em primeira pessoa que eu funciono em {persona.business_hours}." if persona.business_hours else ""
     region_context = f" Se isso ajudar, trate em primeira pessoa que eu atendo em {persona.service_region}." if persona.service_region else ""
+    location_context = f" Se isso ajudar, trate em primeira pessoa que eu fico em {location_reference}." if location_reference else ""
 
     if intent == "order":
         return (
@@ -422,7 +432,7 @@ def build_commercial_context(intent: str, persona: Persona) -> str:
     if intent == "reservation":
         return (
             "O usuário quer reservar ou agendar. Conduza a conversa para confirmação ou orientação de agendamento de forma natural e em primeira pessoa."
-            f"{contact_context}{hours_context}{region_context}\n"
+            f"{contact_context}{hours_context}{region_context}{location_context}\n"
         )
 
     if intent == "contact_action":
@@ -645,6 +655,106 @@ def build_memory_summary_context(memory_summary: dict[str, list[str]] | None = N
     return "\n".join(memory_lines) + "\n"
 
 
+def build_catalog_summary_context(catalog_summary: list[dict[str, str]] | None = None) -> str:
+    if not catalog_summary:
+        return ""
+
+    catalog_lines = [
+        "Use informacoes de produtos quando relevante: disponibilidade, destaque, comparacao e sugestao de escolha.",
+        "Se fizer sentido, diga coisas como 'tenho poucas unidades hoje', 'esse e um dos meus mais pedidos' ou 'posso te sugerir esse aqui'.",
+        "Resumo atual do catalogo:",
+    ]
+
+    availability_labels = {
+        "available": "disponivel",
+        "low": "poucas unidades",
+        "out": "esgotado",
+    }
+
+    for item in catalog_summary[:6]:
+        item_name = item.get("name")
+        if not item_name:
+            continue
+
+        availability = availability_labels.get(item.get("availability", "available"), "disponivel")
+        highlight = (item.get("highlight") or "").strip()
+        description = (item.get("description") or "").strip()
+        line = f"- {item_name}: {availability}"
+        if highlight:
+            line += f" | destaque: {highlight}"
+        if description:
+            line += f" | {description}"
+        catalog_lines.append(line)
+
+    if len(catalog_lines) <= 3:
+        return ""
+
+    return "\n".join(catalog_lines) + "\n"
+
+
+def build_location_summary_context(location_summary: dict[str, str] | None = None) -> str:
+    if not location_summary:
+        return ""
+
+    address = (location_summary.get("address") or "").strip()
+    city = (location_summary.get("city") or "").strip()
+    state = (location_summary.get("state") or "").strip()
+
+    if not address and not city and not state:
+        return ""
+
+    location_bits: list[str] = []
+    if address:
+        location_bits.append(address)
+
+    city_state = " - ".join(part for part in (city, state) if part)
+    if city_state:
+        location_bits.append(city_state)
+
+    readable_location = " | ".join(location_bits)
+
+    return (
+        "Se o cliente perguntar sobre localizacao, endereco, bairro, cidade ou onde fico, "
+        "use as informacoes disponiveis de forma natural e em primeira pessoa.\n"
+        f"Localizacao atual: {readable_location}.\n"
+        "Exemplos de caminho de voz: 'estou aqui em...', 'fico em...', 'posso te orientar como chegar'.\n"
+    )
+
+
+def build_business_status_context(business_status: str | None, persona: Persona) -> str:
+    if business_status not in {"open", "closed"}:
+        return ""
+
+    if business_status == "open":
+        return "Status atual do negocio: aberto agora. Se fizer sentido, posso responder com essa disponibilidade atual.\n"
+
+    next_hours = ""
+    if persona.opening_hours:
+        next_hours = f" Se isso ajudar, diga em primeira pessoa que agora estou fechado, mas volto a atender a partir de {persona.opening_hours.start}."
+
+    return (
+        "Status atual do negocio: fechado no momento. "
+        "Responda normalmente, sem travar a conversa, mas quando fizer sentido indique horario ou proximo passo com naturalidade."
+        f"{next_hours}\n"
+    )
+
+
+def build_persona_location_reference(persona: Persona) -> str:
+    address = (persona.address or "").strip()
+    city = (persona.city or "").strip()
+    state = (persona.state or "").strip()
+
+    location_parts: list[str] = []
+    if address:
+        location_parts.append(address)
+
+    city_state = " - ".join(part for part in (city, state) if part)
+    if city_state:
+        location_parts.append(city_state)
+
+    return " | ".join(location_parts)
+
+
 def normalize_context_mode(context_mode: str | None) -> str:
     return "admin" if context_mode == "admin" else "customer"
 
@@ -678,6 +788,9 @@ def build_system_prompt(
     channel_context: str | None = None,
     current_message: str = "",
     memory_summary: dict[str, list[str]] | None = None,
+    catalog_summary: list[dict[str, str]] | None = None,
+    location_summary: dict[str, str] | None = None,
+    business_status: str | None = None,
     context_mode: str = "customer",
 ) -> str:
     resolved_context_mode = normalize_context_mode(context_mode)
@@ -702,6 +815,9 @@ def build_system_prompt(
     first_person_rules = build_first_person_voice_rules()
     voice_style_prompt = build_voice_style_prompt(persona)
     memory_context = build_memory_summary_context(memory_summary)
+    catalog_context = build_catalog_summary_context(catalog_summary)
+    location_context = build_location_summary_context(location_summary)
+    business_status_context = build_business_status_context(business_status, persona)
     context_mode_prompt = build_context_mode_prompt(resolved_context_mode)
 
     return (
@@ -733,6 +849,9 @@ def build_system_prompt(
         f"{business_context}"
         f"{business_profile_context}"
         f"{memory_context}"
+        f"{catalog_context}"
+        f"{location_context}"
+        f"{business_status_context}"
         f"{operational_context}"
         f"{resolved_channel_context}\n"
         f"{intent_context}"
@@ -773,6 +892,9 @@ def generate_response(
     metadata: dict[str, str] | None = None,
     channel_context: str | None = None,
     memory_summary: dict[str, list[str]] | None = None,
+    catalog_summary: list[dict[str, str]] | None = None,
+    location_summary: dict[str, str] | None = None,
+    business_status: str | None = None,
     context_mode: str = "customer",
 ) -> str:
     api_key = os.getenv("OPENAI_API_KEY")
@@ -788,6 +910,9 @@ def generate_response(
         channel_context=channel_context,
         current_message=message,
         memory_summary=memory_summary,
+        catalog_summary=catalog_summary,
+        location_summary=location_summary,
+        business_status=business_status,
         context_mode=context_mode,
     )
     conversation_input = build_conversation_input(

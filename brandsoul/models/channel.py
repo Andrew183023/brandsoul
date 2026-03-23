@@ -16,6 +16,19 @@ class MemorySummary(BaseModel):
     interaction_windows: list[str] = Field(default_factory=list)
 
 
+class CatalogSummaryItem(BaseModel):
+    name: str = Field(..., min_length=1)
+    availability: Literal["available", "low", "out"] = "available"
+    highlight: str | None = None
+    description: str | None = None
+
+
+class LocationSummary(BaseModel):
+    address: str | None = None
+    city: str | None = None
+    state: str | None = None
+
+
 class ChannelMessage(BaseModel):
     channel: str = Field(..., min_length=1, examples=["web"])
     user_id: str = Field(..., min_length=1, examples=["local-user"])
@@ -29,6 +42,9 @@ class ChannelMessage(BaseModel):
     messages: list[Message] | None = None
     metadata: dict[str, str] | None = None
     memory_summary: MemorySummary | None = None
+    catalog_summary: list[CatalogSummaryItem] | None = None
+    location_summary: LocationSummary | None = None
+    business_status: Literal["open", "closed"] | None = None
     context_mode: Literal["customer", "admin"] | str | None = "customer"
 
 
