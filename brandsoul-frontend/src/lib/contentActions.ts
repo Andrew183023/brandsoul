@@ -1,6 +1,6 @@
 import type { CatalogItem } from '../types/catalog'
 import type { SparkMemory } from './sparkMemory'
-import type { PowerOption, ToneOption, VoiceStyleOption } from './persona'
+import type { ActModeOption, PowerOption, ToneOption, VoiceStyleOption } from './persona'
 
 export type ContentActionType = 'instagram_post' | 'story' | 'whatsapp_message' | 'promotion' | 'cta'
 
@@ -19,6 +19,7 @@ interface ContentActionPersonaContext {
   tone: ToneOption
   power: PowerOption
   voiceStyle: VoiceStyleOption
+  actMode?: ActModeOption
 }
 
 function resolveTimeWindowLabel(currentHour: number, sparkMemory: SparkMemory) {

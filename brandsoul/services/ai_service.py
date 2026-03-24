@@ -504,6 +504,49 @@ def build_voice_style_prompt(persona: Persona) -> str:
     )
 
 
+def build_act_mode(persona: Persona) -> str:
+    act_mode = (persona.act_mode or "seller").strip().lower()
+    return act_mode if act_mode in {"seller", "consultant", "stylist", "coach", "chef"} else "seller"
+
+
+def build_act_mode_prompt(persona: Persona) -> str:
+    act_mode = build_act_mode(persona)
+
+    if act_mode == "consultant":
+        return (
+            "Modo de atuacao: consultant.\n"
+            "Incline o comportamento para clareza, explicacao de opcoes e apoio na escolha.\n"
+            "Ajude a pessoa a entender o que faz mais sentido sem soar tecnico.\n"
+        )
+
+    if act_mode == "stylist":
+        return (
+            "Modo de atuacao: stylist.\n"
+            "Incline o comportamento para combinacao, ocasiao, estilo e harmonizacao.\n"
+            "Sugira looks, composicoes ou escolhas que conversem entre si quando fizer sentido.\n"
+        )
+
+    if act_mode == "coach":
+        return (
+            "Modo de atuacao: coach.\n"
+            "Incline o comportamento para incentivo, motivacao e encorajamento para a acao.\n"
+            "Use energia positiva sem soar artificial ou exagerado.\n"
+        )
+
+    if act_mode == "chef":
+        return (
+            "Modo de atuacao: chef.\n"
+            "Incline o comportamento para experiencia, sabor, ingredientes e sensacoes.\n"
+            "Quando fizer sentido, recomende pratos, combinacoes ou experiencias gustativas.\n"
+        )
+
+    return (
+        "Modo de atuacao: seller.\n"
+        "Incline o comportamento para conversao, destaque de beneficios e ajuda na decisao.\n"
+        "Conduza com leveza para o proximo passo quando isso fizer sentido.\n"
+    )
+
+
 def build_content_output_structure(content_type: str) -> str:
     if content_type == "instagram_post":
         return (
@@ -814,6 +857,7 @@ def build_system_prompt(
     )
     first_person_rules = build_first_person_voice_rules()
     voice_style_prompt = build_voice_style_prompt(persona)
+    act_mode_prompt = build_act_mode_prompt(persona)
     memory_context = build_memory_summary_context(memory_summary)
     catalog_context = build_catalog_summary_context(catalog_summary)
     location_context = build_location_summary_context(location_summary)
@@ -846,6 +890,7 @@ def build_system_prompt(
         "- seja direto, mas com estilo\n\n"
         f"{first_person_rules}\n"
         f"{voice_style_prompt}\n"
+        f"{act_mode_prompt}\n"
         f"{business_context}"
         f"{business_profile_context}"
         f"{memory_context}"

@@ -22,9 +22,11 @@ import {
 } from './lib/contentHistory'
 import { inferInteractionProfilePreview, type BusinessProfile } from './lib/interactionProfilePreview'
 import {
+  actModeOptions,
   loadBrandPersona,
   navigateTo,
   saveBrandPersona,
+  type ActModeOption,
   type PowerOption,
   type ToneOption,
   type VoiceStyleOption,
@@ -61,6 +63,7 @@ interface SuggestionPersonaContext {
   tone: ToneOption
   power: PowerOption
   voiceStyle: VoiceStyleOption
+  actMode: ActModeOption
 }
 
 interface CatalogDraft {
@@ -513,6 +516,7 @@ export default function App() {
   const [tone, setTone] = useState<ToneOption>(savedPersona?.tone ?? 'divertido')
   const [power, setPower] = useState<PowerOption>(savedPersona?.power ?? 'atração')
   const [voiceStyle, setVoiceStyle] = useState<VoiceStyleOption>(savedPersona?.voiceStyle ?? 'balanced')
+  const [actMode, setActMode] = useState<ActModeOption>(savedPersona?.actMode ?? 'seller')
   const [contextMode, setContextMode] = useState<ContextMode>(initialContextMode)
   const [channelMode, setChannelMode] = useState<ChannelMode>(initialChannelMode)
   const [instagramUsername, setInstagramUsername] = useState(loadInstagramUsername())
@@ -585,6 +589,7 @@ export default function App() {
           tone,
           power,
           voiceStyle,
+          actMode,
         },
         effectiveBusinessProfile,
         sparkMemory,
@@ -595,7 +600,7 @@ export default function App() {
       )
         .filter((suggestion) => !dismissedSuggestionTexts.includes(suggestion.text))
         .slice(0, 3),
-    [brandName, businessHours, businessStatus, catalogItems, contentHistory, currentHour, deliveryAvailable, dismissedSuggestionTexts, effectiveBusinessProfile, email, power, sparkMemory, tone, voiceStyle, whatsapp],
+    [actMode, brandName, businessHours, businessStatus, catalogItems, contentHistory, currentHour, deliveryAvailable, dismissedSuggestionTexts, effectiveBusinessProfile, email, power, sparkMemory, tone, voiceStyle, whatsapp],
   )
   const isIntroMoment = messages.length === 1 && messages[0]?.role === 'ai'
   const introTagline = useMemo(() => buildIntroTagline(tone, power, contextMode), [contextMode, power, tone])
@@ -613,13 +618,14 @@ export default function App() {
               tone,
               power,
               voiceStyle,
+              actMode,
             },
             sparkMemory,
             currentHour,
             catalogItems,
           )
         : [],
-    [brandHighlight, brandName, businessHours, catalogItems, contextMode, currentHour, deliveryAvailable, power, serviceRegion, sparkMemory, tone, voiceStyle],
+    [actMode, brandHighlight, brandName, businessHours, catalogItems, contextMode, currentHour, deliveryAvailable, power, serviceRegion, sparkMemory, tone, voiceStyle],
   )
   const shouldShowContentActions = contextMode === 'admin' && !isLoading && message.trim().length === 0 && contentActions.length > 0
   const memorySummary = useMemo(() => buildSparkMemorySummary(sparkMemory), [sparkMemory])
@@ -645,6 +651,7 @@ export default function App() {
     tone,
     power,
     voice_style: voiceStyle,
+    act_mode: actMode,
     business_description: businessDescription || undefined,
     opening_hours: openingHours,
     address: address || undefined,
@@ -824,6 +831,7 @@ export default function App() {
     setTone(savedPersona.tone)
     setPower(savedPersona.power)
     setVoiceStyle(savedPersona.voiceStyle ?? 'balanced')
+    setActMode(savedPersona.actMode ?? 'seller')
     setCatalogItems(loadCatalogItems())
 
     if (!hasBootstrappedRef.current && initialSavedMessages.length === 0) {
@@ -1115,6 +1123,7 @@ export default function App() {
       tone,
       power,
       voiceStyle,
+      actMode,
       businessDescription: businessDescription.trim() || undefined,
       institutionalImage: institutionalImage || undefined,
       openingHours,
@@ -1236,7 +1245,7 @@ export default function App() {
   }
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${contextMode === 'admin' ? 'app-shell-admin' : ''}`}>
       <section className="identity-panel">
         <div className="identity-copy">
           <div className="eyebrow">BrandSoul Interface</div>
@@ -1291,8 +1300,9 @@ export default function App() {
             <p>Atualize os dados reais da empresa e reflita isso na pagina publica e nas respostas da Centelha.</p>
           </div>
 
-          <div className="admin-config-section">
-            <div className="admin-config-section-title">Identidade</div>
+          <details className="admin-config-section" open>
+            <summary className="admin-config-section-title">Marca</summary>
+            <div className="admin-config-section-body">
             <div className="admin-config-grid">
               <label className="persona-field">
                 <span className="persona-label">Nome da marca</span>
@@ -1346,10 +1356,30 @@ export default function App() {
                 </div>
               ) : null}
             </div>
-          </div>
 
-          <div className="admin-config-section">
-            <div className="admin-config-section-title">Minha pagina publica</div>
+            <div className="persona-field admin-config-grid-span">
+              <span className="persona-label">Como eu atuo com seus clientes</span>
+              <div className="persona-style-grid">
+                {actModeOptions.map((option) => {
+                  const isSelected = actMode === option.value
+
+                  return (
+                    <button key={option.value} type="button" className={`persona-style-card ${isSelected ? 'selected' : ''}`} onClick={() => setActMode(option.value)}>
+                      <strong>
+                        {option.emoji} {option.label}
+                      </strong>
+                      <span>{option.description}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            </div>
+          </details>
+
+          <details className="admin-config-section" open>
+            <summary className="admin-config-section-title">Marca publica</summary>
+            <div className="admin-config-section-body">
             <div className="admin-public-link-card">
               <div className="admin-public-link-copy">
                 <span className="persona-label">Link atual</span>
@@ -1361,14 +1391,16 @@ export default function App() {
                   {linkCopyStatus || 'Copiar link'}
                 </button>
                 <button type="button" className="chat-header-button" onClick={handleOpenPublicPage}>
-                  Abrir pagina
+                  Abrir pagina em nova aba
                 </button>
               </div>
             </div>
-          </div>
+            </div>
+          </details>
 
-          <div className="admin-config-section">
-            <div className="admin-config-section-title">Contato e redes</div>
+          <details className="admin-config-section" open>
+            <summary className="admin-config-section-title">Marca e contato</summary>
+            <div className="admin-config-section-body">
             <div className="admin-config-grid">
               <label className="persona-field">
                 <span className="persona-label">WhatsApp</span>
@@ -1405,10 +1437,12 @@ export default function App() {
                 <input className="persona-input" type="file" accept="image/*" onChange={handleInstitutionalImageChange} />
               </label>
             </div>
-          </div>
+            </div>
+          </details>
 
-          <div className="admin-config-section">
-            <div className="admin-config-section-title">Horario de funcionamento</div>
+          <details className="admin-config-section" open>
+            <summary className="admin-config-section-title">Acoes do dia</summary>
+            <div className="admin-config-section-body">
             <div className="admin-config-grid">
               <label className="persona-field">
                 <span className="persona-label">Abertura</span>
@@ -1445,10 +1479,12 @@ export default function App() {
                 </div>
               </div>
             </div>
-          </div>
+            </div>
+          </details>
 
-          <div className="admin-config-section">
-            <div className="admin-config-section-title">Localizacao (opcional)</div>
+          <details className="admin-config-section" open>
+            <summary className="admin-config-section-title">Localizacao</summary>
+            <div className="admin-config-section-body">
             <div className="admin-config-grid">
               <label className="persona-field">
                 <span className="persona-label">Endereco</span>
@@ -1463,10 +1499,12 @@ export default function App() {
                 <input className="persona-input" value={state} onChange={(event) => setState(event.target.value)} placeholder="MG" />
               </label>
             </div>
-          </div>
+            </div>
+          </details>
 
-          <div className="admin-config-section">
-            <div className="admin-config-section-title">Catalogo</div>
+          <details className="admin-config-section" open>
+            <summary className="admin-config-section-title">Catalogo</summary>
+            <div className="admin-config-section-body">
             <div className="admin-config-grid">
               <label className="persona-field">
                 <span className="persona-label">Nome do item</span>
@@ -1573,7 +1611,8 @@ export default function App() {
                 ))}
               </div>
             ) : null}
-          </div>
+            </div>
+          </details>
 
           <div className="admin-config-actions admin-config-actions--save">
             <button type="button" className="persona-submit" onClick={handleSaveBrandConfiguration}>

@@ -2,6 +2,7 @@ export type ToneOption = 'divertido' | 'inteligente' | 'sério' | 'ousado'
 
 export type PowerOption = 'atração' | 'clareza' | 'velocidade' | 'conexão'
 export type VoiceStyleOption = 'soft' | 'strong' | 'balanced' | 'adaptive' | 'irreverent'
+export type ActModeOption = 'seller' | 'consultant' | 'stylist' | 'coach' | 'chef'
 
 export interface OpeningHours {
   start: string
@@ -14,6 +15,7 @@ export interface BrandPersona {
   tone: ToneOption
   power: PowerOption
   voiceStyle: VoiceStyleOption
+  actMode?: ActModeOption
   businessDescription?: string
   institutionalImage?: string
   openingHours?: OpeningHours
@@ -59,6 +61,14 @@ export const voiceStyleOptions: Array<{ value: VoiceStyleOption; label: string; 
   { value: 'irreverent', label: 'Irreverente', description: 'Sou leve, faço humor e nao sou tao formal' },
 ]
 
+export const actModeOptions: Array<{ value: ActModeOption; label: string; emoji: string; description: string }> = [
+  { value: 'seller', label: 'Vendedor especialista', emoji: '💰', description: 'Destaco beneficios e ajudo na decisao' },
+  { value: 'consultant', label: 'Consultor', emoji: '💬', description: 'Explico opcoes com clareza e seguranca' },
+  { value: 'stylist', label: 'Estilista', emoji: '👕', description: 'Sugiro combinacoes, ocasioes e estilo' },
+  { value: 'coach', label: 'Coach', emoji: '🧠', description: 'Incentivo acao com energia positiva' },
+  { value: 'chef', label: 'Chef', emoji: '🍳', description: 'Recomendo sabores, experiencia e sensacao' },
+]
+
 export function loadBrandPersona(): BrandPersona | null {
   const rawPersona = window.localStorage.getItem(PERSONA_STORAGE_KEY)
   if (!rawPersona) {
@@ -84,6 +94,7 @@ export function loadBrandPersona(): BrandPersona | null {
       tone: normalizedTone,
       power: normalizedPower,
       voiceStyle: normalizeVoiceStyle(parsedPersona.voiceStyle) ?? 'balanced',
+      actMode: normalizeActMode(parsedPersona.actMode) ?? 'seller',
       businessDescription: normalizeBusinessDescription(parsedPersona.businessDescription),
       institutionalImage: normalizeImageField(parsedPersona.institutionalImage),
       openingHours: normalizeOpeningHours(parsedPersona.openingHours),
@@ -115,6 +126,7 @@ export function saveBrandPersona(persona: BrandPersona) {
       ...persona,
       logo: normalizeImageField(persona.logo),
       voiceStyle: normalizeVoiceStyle(persona.voiceStyle) ?? 'balanced',
+      actMode: normalizeActMode(persona.actMode) ?? 'seller',
       businessDescription: normalizeBusinessDescription(persona.businessDescription),
       institutionalImage: normalizeImageField(persona.institutionalImage),
       openingHours: normalizeOpeningHours(persona.openingHours),
@@ -204,6 +216,23 @@ function normalizeVoiceStyle(value?: string): VoiceStyleOption | null {
       return 'adaptive'
     case 'irreverent':
       return 'irreverent'
+    default:
+      return null
+  }
+}
+
+function normalizeActMode(value?: string): ActModeOption | null {
+  switch (value) {
+    case 'seller':
+      return 'seller'
+    case 'consultant':
+      return 'consultant'
+    case 'stylist':
+      return 'stylist'
+    case 'coach':
+      return 'coach'
+    case 'chef':
+      return 'chef'
     default:
       return null
   }

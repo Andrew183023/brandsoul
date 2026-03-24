@@ -13,6 +13,7 @@ class Persona(BaseModel):
     tone: str = Field(..., min_length=1, examples=["divertido"])
     power: str = Field(..., min_length=1, examples=["atração"])
     voice_style: str = Field(default="balanced", min_length=1, examples=["balanced"])
+    act_mode: str = Field(default="seller", min_length=1, examples=["seller"])
     business_description: str | None = Field(
         default=None,
         max_length=OPTIONAL_TEXT_MAX_LENGTH,

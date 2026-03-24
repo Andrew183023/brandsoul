@@ -55,6 +55,7 @@ export default function ProductModal({ item, onClose, onPrimaryAction }: Product
 
         {activeImage ? (
           <div className="product-modal-media">
+            <span className="product-modal-section-label">Imagem</span>
             <img src={activeImage} alt={item.name} className="product-modal-image" />
           </div>
         ) : null}
@@ -70,6 +71,7 @@ export default function ProductModal({ item, onClose, onPrimaryAction }: Product
         ) : null}
 
         <div className="product-modal-copy">
+          <span className="product-modal-section-label">Informacoes</span>
           <div className="product-card-topline">
             {item.category ? <span className="product-category">{item.category}</span> : null}
             {item.highlight ? <span className="product-badge">{item.highlight}</span> : null}
@@ -80,7 +82,8 @@ export default function ProductModal({ item, onClose, onPrimaryAction }: Product
           {item.price ? <strong className="product-price">{item.price}</strong> : null}
         </div>
 
-        <div className="product-actions">
+        <div className="product-actions product-modal-actions">
+          <span className="product-modal-section-label">Conversa</span>
           <button
             type="button"
             className="product-primary-action"

@@ -4,12 +4,14 @@ import { useMemo, useState } from 'react'
 import Spark from '../components/Spark'
 import { loadCatalogItems, saveCatalogItems } from '../lib/catalog'
 import {
+  actModeOptions,
   BUSINESS_DESCRIPTION_MAX_LENGTH,
   loadBrandPersona,
   navigateTo,
   powerOptions,
   saveBrandPersona,
   toneOptions,
+  type ActModeOption,
   type PowerOption,
   type ToneOption,
   type VoiceStyleOption,
@@ -67,6 +69,7 @@ export default function CreatePersonaPage() {
   const [tone, setTone] = useState<ToneOption | null>(savedPersona?.tone ?? null)
   const [power, setPower] = useState<PowerOption | null>(savedPersona?.power ?? null)
   const [voiceStyle, setVoiceStyle] = useState<VoiceStyleOption>(savedPersona?.voiceStyle ?? 'balanced')
+  const [actMode, setActMode] = useState<ActModeOption>(savedPersona?.actMode ?? 'seller')
   const [errorMessage, setErrorMessage] = useState('')
   const [isActivating, setIsActivating] = useState(false)
 
@@ -96,6 +99,7 @@ export default function CreatePersonaPage() {
       tone,
       power,
       voiceStyle,
+      actMode,
       businessDescription: businessDescription.trim() || undefined,
       institutionalImage: savedPersona?.institutionalImage,
       openingHours: savedPersona?.openingHours,
@@ -253,6 +257,24 @@ export default function CreatePersonaPage() {
             {voiceStyle === 'irreverent' ? (
               <div className="persona-voice-warning">Esse estilo usa humor e uma linguagem mais ousada. Ative apenas se isso fizer sentido para sua marca.</div>
             ) : null}
+          </div>
+
+          <div className="persona-field">
+            <div className="persona-label">Como eu atuo com seus clientes</div>
+            <div className="persona-style-grid">
+              {actModeOptions.map((option) => {
+                const isSelected = actMode === option.value
+
+                return (
+                  <button key={option.value} type="button" className={`persona-style-card ${isSelected ? 'selected' : ''}`} onClick={() => setActMode(option.value)}>
+                    <strong>
+                      {option.emoji} {option.label}
+                    </strong>
+                    <span>{option.description}</span>
+                  </button>
+                )
+              })}
+            </div>
           </div>
 
           <div className="persona-preview-card" aria-live="polite">

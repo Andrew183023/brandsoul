@@ -203,6 +203,7 @@ function buildPersonaPayload(persona: BrandPersona) {
     tone: persona.tone,
     power: persona.power,
     voice_style: persona.voiceStyle,
+    act_mode: persona.actMode || 'seller',
     business_description: persona.businessDescription || undefined,
     opening_hours: persona.openingHours,
     address: persona.address || undefined,
@@ -263,6 +264,7 @@ export default function CustomerChatPage() {
   const bootstrapRequestIdRef = useRef(0)
   const [isIntroPulseActive, setIsIntroPulseActive] = useState(false)
   const [selectedItem, setSelectedItem] = useState<CatalogItem | null>(null)
+  const [mobileSection, setMobileSection] = useState<'catalog' | 'chat'>('catalog')
   const introPulseTimeoutRef = useRef<number | null>(null)
   const hasBootstrappedRef = useRef(initialMessages.length > 0)
   const sparkMemoryStorageKey = useMemo(
@@ -481,6 +483,7 @@ export default function CustomerChatPage() {
   }
 
   const handleCatalogAction = async (item: CatalogItem) => {
+    setMobileSection('chat')
     await sendUserMessage(buildItemMessage(item))
   }
 
@@ -526,9 +529,18 @@ export default function CustomerChatPage() {
         </div>
       </section>
 
-      <section className="catalog-section" aria-label="Catalogo da marca">
+      <section className="customer-mobile-nav" aria-label="Navegacao da experiencia">
+        <button type="button" className={`customer-mobile-toggle ${mobileSection === 'catalog' ? 'active' : ''}`} onClick={() => setMobileSection('catalog')}>
+          Explorar opcoes
+        </button>
+        <button type="button" className={`customer-mobile-toggle ${mobileSection === 'chat' ? 'active' : ''}`} onClick={() => setMobileSection('chat')}>
+          Falar comigo
+        </button>
+      </section>
+
+      <section className={`catalog-section customer-section ${mobileSection === 'chat' ? 'mobile-collapsed' : ''}`} aria-label="Catalogo da marca">
         <div className="catalog-copy">
-          <span className="catalog-kicker">O que eu posso te mostrar hoje</span>
+          <span className="catalog-kicker">Explorar opcoes</span>
           <h2>Escolha uma opcao ou fale comigo para eu te ajudar a encontrar o melhor para voce.</h2>
           <p>{buildCatalogIntro(persona)}</p>
         </div>
@@ -540,7 +552,12 @@ export default function CustomerChatPage() {
         </div>
       </section>
 
-      <section className="customer-chat-card">
+      <section className={`customer-chat-card customer-section ${mobileSection === 'catalog' ? 'mobile-collapsed' : ''}`}>
+        <div className="customer-chat-intro">
+          <span className="catalog-kicker">Falar comigo</span>
+          <h2>Me chama por aqui e eu te acompanho na escolha.</h2>
+        </div>
+
         <section className="chat-panel customer-chat-panel">
           <ChatList messages={messages} assistantLabel={null} />
         </section>
@@ -551,6 +568,7 @@ export default function CustomerChatPage() {
               id="message"
               value={message}
               onChange={(event) => setMessage(event.target.value)}
+              onFocus={() => setMobileSection('chat')}
               placeholder="Me chama aqui..."
               autoComplete="off"
             />
