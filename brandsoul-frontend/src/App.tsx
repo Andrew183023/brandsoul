@@ -11,6 +11,7 @@ import { buildApiHeaders, buildApiUrl } from './lib/api'
 import { getBusinessStatus } from './lib/businessStatus'
 import { buildContentActions, type ContentAction } from './lib/contentActions'
 import { readFileAsDataUrl, readFilesAsDataUrls } from './lib/media'
+import { sanitizeWhatsAppInput } from './lib/whatsapp'
 import {
   buildContentHistoryItem,
   clearContentHistory,
@@ -23,10 +24,12 @@ import {
 import { inferInteractionProfilePreview, type BusinessProfile } from './lib/interactionProfilePreview'
 import {
   actModeOptions,
+  businessGoalOptions,
   loadBrandPersona,
   navigateTo,
   saveBrandPersona,
   type ActModeOption,
+  type BusinessGoalOption,
   type PowerOption,
   type ToneOption,
   type VoiceStyleOption,
@@ -46,7 +49,7 @@ import {
   saveSparkMemory,
   type SparkMemory,
 } from './lib/sparkMemory'
-import type { CatalogAvailability, CatalogItem } from './types/catalog'
+import type { CatalogAvailability, CatalogItem, CatalogPriority } from './types/catalog'
 import './App.css'
 
 type SparkState = 'idle' | 'thinking' | 'speaking'
@@ -64,6 +67,7 @@ interface SuggestionPersonaContext {
   power: PowerOption
   voiceStyle: VoiceStyleOption
   actMode: ActModeOption
+  businessGoal: BusinessGoalOption
 }
 
 interface CatalogDraft {
@@ -76,6 +80,9 @@ interface CatalogDraft {
   price: string
   highlight: string
   category: string
+  priority: CatalogPriority
+  isFeatured: boolean
+  complements: string
 }
 
 function createEmptyCatalogDraft(): CatalogDraft {
@@ -89,6 +96,9 @@ function createEmptyCatalogDraft(): CatalogDraft {
     price: '',
     highlight: '',
     category: '',
+    priority: 'medium',
+    isFeatured: false,
+    complements: '',
   }
 }
 
@@ -378,7 +388,10 @@ function generateSuggestions(
   const suggestions: Suggestion[] = []
   const recentSuggestions = new Set(sparkMemory.last_suggestions)
   const recentContentTypes = new Set(contentHistory.slice(0, 4).map((item) => item.content_type))
+  const featuredItem = catalogItems.find((item) => item.isFeatured)
+  const highPriorityItem = catalogItems.find((item) => item.priority === 'high')
   const lowStockItem = catalogItems.find((item) => item.availability === 'low' || (typeof item.stock === 'number' && item.stock <= 3 && item.stock > 0))
+  const rotationItem = catalogItems.find((item) => item.priority === 'low')
   const prefersDelivery = sparkMemory.top_intents.includes('delivery') || sparkMemory.common_topics.includes('delivery') || persona.deliveryAvailable
   const hasContactChannel = Boolean(persona.whatsapp?.trim() || persona.email?.trim())
 
@@ -418,10 +431,31 @@ function generateSuggestions(
     })
   }
 
+  if (persona.businessGoal === 'launch' && featuredItem) {
+    pushSuggestion({
+      type: 'marketing',
+      text: `Agora vale puxar ${featuredItem.name} como destaque principal para ganhar mais atencao.`,
+    })
+  }
+
+  if (persona.businessGoal === 'ticket' && highPriorityItem) {
+    pushSuggestion({
+      type: 'sales',
+      text: `Posso conduzir a conversa para ${highPriorityItem.name} e abrir espaco para uma combinacao de maior valor.`,
+    })
+  }
+
   if (lowStockItem) {
     pushSuggestion({
       type: 'sales',
       text: `Tenho poucas unidades de ${lowStockItem.name}. Posso usar escassez de forma elegante agora.`,
+    })
+  }
+
+  if (persona.businessGoal === 'rotation' && rotationItem) {
+    pushSuggestion({
+      type: 'sales',
+      text: `Posso dar mais giro para ${rotationItem.name} com uma entrada mais convidativa agora.`,
     })
   }
 
@@ -517,6 +551,7 @@ export default function App() {
   const [power, setPower] = useState<PowerOption>(savedPersona?.power ?? 'atração')
   const [voiceStyle, setVoiceStyle] = useState<VoiceStyleOption>(savedPersona?.voiceStyle ?? 'balanced')
   const [actMode, setActMode] = useState<ActModeOption>(savedPersona?.actMode ?? 'seller')
+  const [businessGoal, setBusinessGoal] = useState<BusinessGoalOption>(savedPersona?.businessGoal ?? 'volume')
   const [contextMode, setContextMode] = useState<ContextMode>(initialContextMode)
   const [channelMode, setChannelMode] = useState<ChannelMode>(initialChannelMode)
   const [instagramUsername, setInstagramUsername] = useState(loadInstagramUsername())
@@ -590,6 +625,7 @@ export default function App() {
           power,
           voiceStyle,
           actMode,
+          businessGoal,
         },
         effectiveBusinessProfile,
         sparkMemory,
@@ -600,7 +636,7 @@ export default function App() {
       )
         .filter((suggestion) => !dismissedSuggestionTexts.includes(suggestion.text))
         .slice(0, 3),
-    [actMode, brandName, businessHours, businessStatus, catalogItems, contentHistory, currentHour, deliveryAvailable, dismissedSuggestionTexts, effectiveBusinessProfile, email, power, sparkMemory, tone, voiceStyle, whatsapp],
+    [actMode, brandName, businessGoal, businessHours, businessStatus, catalogItems, contentHistory, currentHour, deliveryAvailable, dismissedSuggestionTexts, effectiveBusinessProfile, email, power, sparkMemory, tone, voiceStyle, whatsapp],
   )
   const isIntroMoment = messages.length === 1 && messages[0]?.role === 'ai'
   const introTagline = useMemo(() => buildIntroTagline(tone, power, contextMode), [contextMode, power, tone])
@@ -619,13 +655,14 @@ export default function App() {
               power,
               voiceStyle,
               actMode,
+              businessGoal,
             },
             sparkMemory,
             currentHour,
             catalogItems,
           )
         : [],
-    [actMode, brandHighlight, brandName, businessHours, catalogItems, contextMode, currentHour, deliveryAvailable, power, serviceRegion, sparkMemory, tone, voiceStyle],
+    [actMode, brandHighlight, brandName, businessGoal, businessHours, catalogItems, contextMode, currentHour, deliveryAvailable, power, serviceRegion, sparkMemory, tone, voiceStyle],
   )
   const shouldShowContentActions = contextMode === 'admin' && !isLoading && message.trim().length === 0 && contentActions.length > 0
   const memorySummary = useMemo(() => buildSparkMemorySummary(sparkMemory), [sparkMemory])
@@ -652,6 +689,7 @@ export default function App() {
     power,
     voice_style: voiceStyle,
     act_mode: actMode,
+    business_goal: businessGoal,
     business_description: businessDescription || undefined,
     opening_hours: openingHours,
     address: address || undefined,
@@ -752,6 +790,7 @@ export default function App() {
         persona: buildPersonaPayload(),
         messages: [],
         context_mode: nextContextMode,
+        business_goal: businessGoal,
         metadata: requestConfig.metadata,
         ...(businessStatus ? { business_status: businessStatus } : {}),
         ...(buildSparkMemorySummary(nextSparkMemory) ? { memory_summary: buildSparkMemorySummary(nextSparkMemory) } : {}),
@@ -832,6 +871,7 @@ export default function App() {
     setPower(savedPersona.power)
     setVoiceStyle(savedPersona.voiceStyle ?? 'balanced')
     setActMode(savedPersona.actMode ?? 'seller')
+    setBusinessGoal(savedPersona.businessGoal ?? 'volume')
     setCatalogItems(loadCatalogItems())
 
     if (!hasBootstrappedRef.current && initialSavedMessages.length === 0) {
@@ -1070,6 +1110,12 @@ export default function App() {
       price: catalogDraft.price,
       highlight: catalogDraft.highlight,
       category: catalogDraft.category,
+      priority: catalogDraft.priority,
+      isFeatured: catalogDraft.isFeatured,
+      complements: catalogDraft.complements
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean),
     })
 
     if (!normalizedItem) {
@@ -1099,6 +1145,9 @@ export default function App() {
       price: item.price ?? '',
       highlight: item.highlight ?? '',
       category: item.category ?? '',
+      priority: item.priority ?? 'medium',
+      isFeatured: item.isFeatured ?? false,
+      complements: item.complements?.join(', ') ?? '',
     })
     if (configStatus) {
       setConfigStatus('')
@@ -1124,6 +1173,7 @@ export default function App() {
       power,
       voiceStyle,
       actMode,
+      businessGoal,
       businessDescription: businessDescription.trim() || undefined,
       institutionalImage: institutionalImage || undefined,
       openingHours,
@@ -1175,6 +1225,7 @@ export default function App() {
         persona: buildPersonaPayload(),
         messages,
         context_mode: contextMode,
+        business_goal: businessGoal,
         metadata: requestConfig.metadata,
         ...(businessStatus ? { business_status: businessStatus } : {}),
         ...(memorySummary ? { memory_summary: memorySummary } : {}),
@@ -1374,6 +1425,24 @@ export default function App() {
                 })}
               </div>
             </div>
+
+            <div className="persona-field admin-config-grid-span">
+              <span className="persona-label">Objetivo do negocio agora</span>
+              <div className="persona-style-grid">
+                {businessGoalOptions.map((option) => {
+                  const isSelected = businessGoal === option.value
+
+                  return (
+                    <button key={option.value} type="button" className={`persona-style-card ${isSelected ? 'selected' : ''}`} onClick={() => setBusinessGoal(option.value)}>
+                      <strong>
+                        {option.emoji} {option.label}
+                      </strong>
+                      <span>{option.description}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
             </div>
           </details>
 
@@ -1403,8 +1472,9 @@ export default function App() {
             <div className="admin-config-section-body">
             <div className="admin-config-grid">
               <label className="persona-field">
-                <span className="persona-label">WhatsApp</span>
-                <input className="persona-input" value={whatsapp} onChange={(event) => setWhatsapp(event.target.value)} placeholder="(31) 99999-0000" />
+                <span className="persona-label">WhatsApp da marca</span>
+                <input className="persona-input" value={whatsapp} onChange={(event) => setWhatsapp(sanitizeWhatsAppInput(event.target.value))} placeholder="Ex: +5531999999999" />
+                <span className="persona-field-hint">Use o numero com codigo do pais e DDD, sem espacos.</span>
               </label>
               <label className="persona-field">
                 <span className="persona-label">Email</span>
@@ -1523,6 +1593,14 @@ export default function App() {
                 <input className="persona-input" value={catalogDraft.highlight} onChange={(event) => handleCatalogDraftChange('highlight', event.target.value)} placeholder="Mais pedido" />
               </label>
               <label className="persona-field">
+                <span className="persona-label">Prioridade</span>
+                <select className="persona-input" value={catalogDraft.priority} onChange={(event) => handleCatalogDraftChange('priority', event.target.value as CatalogPriority)}>
+                  <option value="high">Alta</option>
+                  <option value="medium">Media</option>
+                  <option value="low">Baixa</option>
+                </select>
+              </label>
+              <label className="persona-field">
                 <span className="persona-label">Estoque</span>
                 <input className="persona-input" type="number" min="0" value={catalogDraft.stock} onChange={(event) => handleCatalogDraftChange('stock', event.target.value)} placeholder="8" />
               </label>
@@ -1534,6 +1612,13 @@ export default function App() {
                   <option value="out">Esgotado</option>
                 </select>
               </label>
+              <div className="persona-field admin-checkbox-field">
+                <span className="persona-label">Destaque</span>
+                <label className="persona-inline-checkbox">
+                  <input type="checkbox" checked={catalogDraft.isFeatured} onChange={(event) => handleCatalogDraftChange('isFeatured', event.target.checked)} />
+                  <span>Quero empurrar esse item nas sugestoes</span>
+                </label>
+              </div>
             </div>
 
             <label className="persona-field">
@@ -1545,6 +1630,17 @@ export default function App() {
                 placeholder="Uma opcao completa para ajudar o cliente a encontrar o melhor para ele."
                 rows={3}
               />
+            </label>
+
+            <label className="persona-field">
+              <span className="persona-label">Complementares</span>
+              <input
+                className="persona-input"
+                value={catalogDraft.complements}
+                onChange={(event) => handleCatalogDraftChange('complements', event.target.value)}
+                placeholder="Ex: bebida, sobremesa, acessorio"
+              />
+              <span className="persona-field-hint">Opcional. Separe por virgulas para eu considerar combinacoes.</span>
             </label>
 
             <div className="admin-image-panel">

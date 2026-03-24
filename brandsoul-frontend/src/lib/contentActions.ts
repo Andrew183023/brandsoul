@@ -1,6 +1,6 @@
 import type { CatalogItem } from '../types/catalog'
 import type { SparkMemory } from './sparkMemory'
-import type { ActModeOption, PowerOption, ToneOption, VoiceStyleOption } from './persona'
+import type { ActModeOption, BusinessGoalOption, PowerOption, ToneOption, VoiceStyleOption } from './persona'
 
 export type ContentActionType = 'instagram_post' | 'story' | 'whatsapp_message' | 'promotion' | 'cta'
 
@@ -20,6 +20,7 @@ interface ContentActionPersonaContext {
   power: PowerOption
   voiceStyle: VoiceStyleOption
   actMode?: ActModeOption
+  businessGoal?: BusinessGoalOption
 }
 
 function resolveTimeWindowLabel(currentHour: number, sparkMemory: SparkMemory) {
@@ -53,6 +54,21 @@ function resolveContentFocus(
 
   if (sparkMemory.top_intents.includes('contact_action')) {
     return 'conversao e contato direto'
+  }
+
+  if (persona.businessGoal === 'ticket') {
+    const premiumItem = catalogItems.find((item) => item.priority === 'high' || item.isFeatured)?.name
+    return premiumItem ? `combinacoes em torno de ${premiumItem}` : 'uma escolha de maior valor'
+  }
+
+  if (persona.businessGoal === 'launch') {
+    const launchItem = catalogItems.find((item) => item.isFeatured)?.name
+    return launchItem ? `novidade e destaque em ${launchItem}` : 'o que eu quero colocar em destaque agora'
+  }
+
+  if (persona.businessGoal === 'rotation') {
+    const rotationItem = catalogItems.find((item) => item.priority === 'low')?.name
+    return rotationItem ? `giro de ${rotationItem}` : 'itens que merecem mais saida agora'
   }
 
   if (primaryCatalogItem) {

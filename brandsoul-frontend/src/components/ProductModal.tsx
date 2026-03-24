@@ -7,9 +7,10 @@ interface ProductModalProps {
   item: CatalogItem | null
   onClose: () => void
   onPrimaryAction: (item: CatalogItem) => void
+  onWhatsAppAction?: (item: CatalogItem) => void
 }
 
-export default function ProductModal({ item, onClose, onPrimaryAction }: ProductModalProps) {
+export default function ProductModal({ item, onClose, onPrimaryAction, onWhatsAppAction }: ProductModalProps) {
   const imageOptions = useMemo(() => {
     if (!item) {
       return []
@@ -95,6 +96,18 @@ export default function ProductModal({ item, onClose, onPrimaryAction }: Product
           >
             {item.ctaLabel ?? 'Quero saber mais'}
           </button>
+          {onWhatsAppAction ? (
+            <button
+              type="button"
+              className="product-secondary-action"
+              onClick={() => {
+                onWhatsAppAction(item)
+                onClose()
+              }}
+            >
+              Pedir no WhatsApp
+            </button>
+          ) : null}
         </div>
       </div>
     </div>

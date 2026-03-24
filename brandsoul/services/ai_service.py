@@ -547,6 +547,120 @@ def build_act_mode_prompt(persona: Persona) -> str:
     )
 
 
+def build_business_goal(value: str | None) -> str:
+    normalized_goal = (value or "volume").strip().lower()
+    return normalized_goal if normalized_goal in {"volume", "ticket", "rotation", "launch"} else "volume"
+
+
+def build_business_goal_context(
+    business_goal: str | None,
+    catalog_summary: list[dict[str, str]] | None = None,
+) -> str:
+    resolved_goal = build_business_goal(business_goal)
+    featured_items = [item.get("name") for item in (catalog_summary or []) if item.get("name") and item.get("is_featured") is True]
+    high_priority_items = [item.get("name") for item in (catalog_summary or []) if item.get("name") and item.get("priority") == "high"]
+    low_priority_items = [item.get("name") for item in (catalog_summary or []) if item.get("name") and item.get("priority") == "low"]
+    combo_candidates: list[str] = []
+
+    for item in catalog_summary or []:
+        item_name = item.get("name")
+        complements = item.get("complements") or []
+        if not item_name or not isinstance(complements, list) or not complements:
+            continue
+
+        readable_complements = [str(complement).strip() for complement in complements[:2] if str(complement).strip()]
+        if readable_complements:
+            combo_candidates.append(f"{item_name} com {', '.join(readable_complements)}")
+
+    business_goal_lines = [
+        "Contexto comercial da marca:",
+        f"- foco atual do negocio: {resolved_goal}",
+        "- use isso como inclinacao comercial, sem citar regras internas nem soar robotico.",
+    ]
+
+    if featured_items:
+        business_goal_lines.append(f"- itens em destaque agora: {', '.join(featured_items[:3])}")
+
+    if high_priority_items:
+        business_goal_lines.append(f"- itens com prioridade alta: {', '.join(high_priority_items[:3])}")
+
+    if low_priority_items:
+        business_goal_lines.append(f"- itens com prioridade baixa: {', '.join(low_priority_items[:3])}")
+
+    if combo_candidates:
+        business_goal_lines.append(f"- combinacoes naturais disponiveis: {', '.join(combo_candidates[:3])}")
+
+    if resolved_goal == "ticket":
+        business_goal_lines.append("- priorize combinacoes, upgrades, combos e escolhas de maior valor quando fizer sentido.")
+    elif resolved_goal == "rotation":
+        business_goal_lines.append("- use com mais frequencia itens que precisam girar, mas sem forcar como primeira opcao ruim.")
+    elif resolved_goal == "launch":
+        business_goal_lines.append("- destaque novidades, diferenciais e itens que merecem holofote.")
+    else:
+        business_goal_lines.append("- priorize itens populares, faceis de vender e simples de decidir.")
+
+    business_goal_lines.append("- itens high entram antes; medium ficam neutros; low devem evitar abrir a sugestao sem motivo.")
+    business_goal_lines.append("- featured tem prioridade maxima; high deve aparecer antes; medium fica neutro; low entra mais para variedade e giro.")
+    business_goal_lines.append("- se houver complementares, voce pode sugerir combos de forma natural, sem empurrar combinacao em toda resposta.")
+    return "\n".join(business_goal_lines) + "\n"
+
+
+def build_action_logic_context(context_mode: str, persona: Persona, catalog_summary: list[dict[str, str]] | None = None) -> str:
+    if not catalog_summary:
+        return ""
+
+    combo_lines: list[str] = []
+    for item in catalog_summary[:6]:
+        item_name = item.get("name")
+        complements = item.get("complements") or []
+        if not item_name or not isinstance(complements, list):
+            continue
+
+        readable_complements = [str(complement).strip() for complement in complements[:2] if str(complement).strip()]
+        if readable_complements:
+            combo_lines.append(f"- {item_name} combina com {', '.join(readable_complements)}")
+
+    act_mode = build_act_mode(persona)
+    act_mode_guides = {
+        "seller": "Ao sugerir algo, destaque decisao, beneficio e proximo passo com leveza.",
+        "consultant": "Ao sugerir algo, explique o que faz mais sentido e por que aquela escolha ajuda.",
+        "stylist": "Ao sugerir algo, puxe combinacao, harmonizacao, ocasiao e encaixe entre opcoes.",
+        "coach": "Ao sugerir algo, encoraje a acao com confianca e energia positiva.",
+        "chef": "Ao sugerir algo, valorize experiencia, sabor, textura, ingredientes e combinacoes naturais.",
+    }
+
+    action_lines = [
+        "Logica de acao comercial:",
+        "- use o contexto comercial para orientar recomendacoes, nao apenas listar produtos por ordem.",
+        "- se houver item em destaque, ele pode abrir a recomendacao.",
+        "- se houver prioridade baixa, use esse item mais para giro, variedade ou contexto, nao como primeira resposta sem motivo.",
+        "- se houver complementares, voce pode sugerir uma combinacao com naturalidade, como algo que faz mais sentido para a pessoa.",
+        f"- {act_mode_guides.get(act_mode, act_mode_guides['seller'])}",
+    ]
+
+    if combo_lines:
+        action_lines.append("Combos possiveis:")
+        action_lines.extend(combo_lines[:3])
+
+    if context_mode == "admin":
+        action_lines.extend(
+            [
+                "No admin, aja como copiloto comercial da marca.",
+                "Quando fizer sentido, entregue insight em formato leve:",
+                "Sugestao:",
+                "Como aplicar:",
+                "Motivo:",
+                "Use isso para propor promocao, combo, destaque ou conteudo sem soar tecnico.",
+            ]
+        )
+    else:
+        action_lines.append(
+            "No customer, mantenha a conversa fluida e natural. Sugira combo ou melhor escolha sem parecer vendedor agressivo."
+        )
+
+    return "\n".join(action_lines) + "\n"
+
+
 def build_content_output_structure(content_type: str) -> str:
     if content_type == "instagram_post":
         return (
@@ -720,13 +834,27 @@ def build_catalog_summary_context(catalog_summary: list[dict[str, str]] | None =
             continue
 
         availability = availability_labels.get(item.get("availability", "available"), "disponivel")
+        price = (item.get("price") or "").strip()
+        priority = (item.get("priority") or "").strip()
+        is_featured = item.get("is_featured") is True
         highlight = (item.get("highlight") or "").strip()
         description = (item.get("description") or "").strip()
+        complements = item.get("complements") or []
         line = f"- {item_name}: {availability}"
+        if price:
+            line += f" | preco: {price}"
+        if is_featured:
+            line += " | destaque principal"
+        if priority:
+            line += f" | prioridade: {priority}"
         if highlight:
             line += f" | destaque: {highlight}"
         if description:
             line += f" | {description}"
+        if isinstance(complements, list) and complements:
+            readable_complements = [str(complement).strip() for complement in complements[:3] if str(complement).strip()]
+            if readable_complements:
+                line += f" | combina com: {', '.join(readable_complements)}"
         catalog_lines.append(line)
 
     if len(catalog_lines) <= 3:
@@ -832,6 +960,7 @@ def build_system_prompt(
     current_message: str = "",
     memory_summary: dict[str, list[str]] | None = None,
     catalog_summary: list[dict[str, str]] | None = None,
+    business_goal: str | None = None,
     location_summary: dict[str, str] | None = None,
     business_status: str | None = None,
     context_mode: str = "customer",
@@ -860,6 +989,8 @@ def build_system_prompt(
     act_mode_prompt = build_act_mode_prompt(persona)
     memory_context = build_memory_summary_context(memory_summary)
     catalog_context = build_catalog_summary_context(catalog_summary)
+    business_goal_context = build_business_goal_context(business_goal or persona.business_goal, catalog_summary)
+    action_logic_context = build_action_logic_context(resolved_context_mode, persona, catalog_summary)
     location_context = build_location_summary_context(location_summary)
     business_status_context = build_business_status_context(business_status, persona)
     context_mode_prompt = build_context_mode_prompt(resolved_context_mode)
@@ -887,14 +1018,17 @@ def build_system_prompt(
         "- nunca responda como suporte robótico\n"
         "- nunca use tom metalinguístico\n"
         "- evite respostas longas\n"
-        "- seja direto, mas com estilo\n\n"
+        "- seja direto, mas com estilo\n"
+        "- ordem de influencia: identidade da marca, voice_style, act_mode e so depois contexto comercial\n\n"
         f"{first_person_rules}\n"
         f"{voice_style_prompt}\n"
         f"{act_mode_prompt}\n"
+        f"{business_goal_context}"
         f"{business_context}"
         f"{business_profile_context}"
         f"{memory_context}"
         f"{catalog_context}"
+        f"{action_logic_context}"
         f"{location_context}"
         f"{business_status_context}"
         f"{operational_context}"
@@ -938,6 +1072,7 @@ def generate_response(
     channel_context: str | None = None,
     memory_summary: dict[str, list[str]] | None = None,
     catalog_summary: list[dict[str, str]] | None = None,
+    business_goal: str | None = None,
     location_summary: dict[str, str] | None = None,
     business_status: str | None = None,
     context_mode: str = "customer",
@@ -956,6 +1091,7 @@ def generate_response(
         current_message=message,
         memory_summary=memory_summary,
         catalog_summary=catalog_summary,
+        business_goal=business_goal,
         location_summary=location_summary,
         business_status=business_status,
         context_mode=context_mode,

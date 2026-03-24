@@ -1,4 +1,4 @@
-import type { CatalogAvailability, CatalogItem } from '../types/catalog'
+import type { CatalogAvailability, CatalogItem, CatalogPriority } from '../types/catalog'
 
 export const CATALOG_STORAGE_KEY = 'brandsoul.catalog'
 const CATALOG_TEXT_MAX_LENGTH = 140
@@ -37,6 +37,9 @@ export function normalizeCatalogItem(item: Partial<CatalogItem>): CatalogItem | 
   const ctaLabel = item.ctaLabel?.trim().slice(0, 40)
   const highlight = item.highlight?.trim().slice(0, 40)
   const category = item.category?.trim().slice(0, 40)
+  const priority = normalizeCatalogPriority(item.priority)
+  const isFeatured = normalizeCatalogFeatured(item.isFeatured)
+  const complements = normalizeCatalogComplements(item.complements)
   const image = normalizeCatalogImage(item.image)
   const images = normalizeCatalogImages(item.images)
   const stock = normalizeCatalogStock(item.stock)
@@ -49,6 +52,9 @@ export function normalizeCatalogItem(item: Partial<CatalogItem>): CatalogItem | 
     category: category || undefined,
     price: price || undefined,
     highlight: highlight || undefined,
+    priority,
+    isFeatured,
+    complements,
     image,
     images,
     stock,
@@ -91,10 +97,43 @@ export function saveCatalogItems(items: CatalogItem[]) {
 export function buildCatalogSummary(items: CatalogItem[]) {
   return items.slice(0, 6).map((item) => ({
     name: item.name,
+    price: item.price,
     availability: resolveCatalogAvailability(item.stock, item.availability),
+    is_featured: item.isFeatured ?? false,
+    priority: item.priority ?? 'medium',
     highlight: item.highlight,
     description: item.description.slice(0, 80),
+    complements: item.complements?.slice(0, 3) ?? [],
   }))
+}
+
+function normalizeCatalogPriority(value?: CatalogPriority) {
+  if (value === 'high' || value === 'medium' || value === 'low') {
+    return value
+  }
+
+  return undefined
+}
+
+function normalizeCatalogFeatured(value?: boolean) {
+  if (typeof value !== 'boolean') {
+    return undefined
+  }
+
+  return value
+}
+
+function normalizeCatalogComplements(values?: string[]) {
+  if (!Array.isArray(values)) {
+    return undefined
+  }
+
+  const normalizedValues = values
+    .map((value) => value.trim().slice(0, 40))
+    .filter(Boolean)
+    .slice(0, 4)
+
+  return normalizedValues.length > 0 ? normalizedValues : undefined
 }
 
 function normalizeCatalogAvailability(value?: CatalogAvailability): CatalogAvailability | undefined {

@@ -19,8 +19,12 @@ class MemorySummary(BaseModel):
 class CatalogSummaryItem(BaseModel):
     name: str = Field(..., min_length=1)
     availability: Literal["available", "low", "out"] = "available"
+    price: str | None = None
+    is_featured: bool = False
+    priority: Literal["high", "medium", "low"] = "medium"
     highlight: str | None = None
     description: str | None = None
+    complements: list[str] = Field(default_factory=list)
 
 
 class LocationSummary(BaseModel):
@@ -43,6 +47,7 @@ class ChannelMessage(BaseModel):
     metadata: dict[str, str] | None = None
     memory_summary: MemorySummary | None = None
     catalog_summary: list[CatalogSummaryItem] | None = None
+    business_goal: Literal["volume", "ticket", "rotation", "launch"] | str | None = "volume"
     location_summary: LocationSummary | None = None
     business_status: Literal["open", "closed"] | None = None
     context_mode: Literal["customer", "admin"] | str | None = "customer"

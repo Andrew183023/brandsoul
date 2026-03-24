@@ -6,10 +6,10 @@ interface ProductCardProps {
   primaryLabel?: string
   onPrimaryAction: (item: CatalogItem) => void
   onOpen?: (item: CatalogItem) => void
-  whatsappHref?: string | null
+  onWhatsAppAction?: (item: CatalogItem) => void
 }
 
-export default function ProductCard({ item, primaryLabel, onPrimaryAction, onOpen, whatsappHref = null }: ProductCardProps) {
+export default function ProductCard({ item, primaryLabel, onPrimaryAction, onOpen, onWhatsAppAction }: ProductCardProps) {
   const availability = resolveCatalogAvailability(item.stock, item.availability)
   const availabilityLabel = availability === 'out' ? 'Esgotado' : availability === 'low' ? 'Poucas unidades' : 'Disponivel'
   const displayImage = item.image ?? item.images?.[0]
@@ -46,16 +46,17 @@ export default function ProductCard({ item, primaryLabel, onPrimaryAction, onOpe
           >
             {primaryLabel ?? item.ctaLabel ?? 'Quero saber mais'}
           </button>
-          {whatsappHref ? (
-            <a
+          {onWhatsAppAction ? (
+            <button
+              type="button"
               className="product-secondary-action"
-              href={whatsappHref}
-              target="_blank"
-              rel="noreferrer"
-              onClick={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation()
+                onWhatsAppAction(item)
+              }}
             >
               Pedir no WhatsApp
-            </a>
+            </button>
           ) : null}
         </div>
       </div>

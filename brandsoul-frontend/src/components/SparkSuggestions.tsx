@@ -32,6 +32,9 @@ export default function SparkSuggestions({
     return null
   }
 
+  const primarySuggestion = suggestions[0]
+  const secondarySuggestions = suggestions.slice(1)
+
   return (
     <section className="suggestions-container" aria-label="Sugestoes proativas da Centelha">
       <div className="suggestions-header">
@@ -41,15 +44,28 @@ export default function SparkSuggestions({
         </span>
       </div>
 
-      {suggestions.length > 0 ? (
-        <div className="suggestions-list">
-          {suggestions.map((suggestion) => (
+      {primarySuggestion ? (
+        <div className="suggestions-feature">
+          <div className="suggestions-feature-copy">
+            <span className="suggestion-chip-tag">{suggestionTypeLabel[primarySuggestion.type]}</span>
+            <p className="suggestions-feature-text">{primarySuggestion.text}</p>
+          </div>
+          <div className="suggestions-actions-row">
             <button
-              key={`${suggestion.type}:${suggestion.text}`}
               type="button"
               className="suggestion-chip"
-              onClick={() => onSelect(suggestion)}
+              onClick={() => onSelect(primarySuggestion)}
             >
+              <span>Seguir essa sugestao</span>
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {secondarySuggestions.length > 0 ? (
+        <div className="suggestions-actions-row">
+          {secondarySuggestions.map((suggestion) => (
+            <button key={`${suggestion.type}:${suggestion.text}`} type="button" className="suggestion-chip" onClick={() => onSelect(suggestion)}>
               <span className="suggestion-chip-tag">{suggestionTypeLabel[suggestion.type]}</span>
               <span>{suggestion.text}</span>
             </button>
@@ -58,7 +74,7 @@ export default function SparkSuggestions({
       ) : null}
 
       {contentActions.length > 0 ? (
-        <div className="suggestions-list" aria-label="Acoes de conteudo">
+        <div className="suggestions-actions-row" aria-label="Acoes de conteudo">
           {contentActions.map((action) => (
             <button
               key={action.type}

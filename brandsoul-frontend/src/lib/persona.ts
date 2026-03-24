@@ -1,8 +1,11 @@
+import { normalizeWhatsAppNumber } from './whatsapp'
+
 export type ToneOption = 'divertido' | 'inteligente' | 'sério' | 'ousado'
 
 export type PowerOption = 'atração' | 'clareza' | 'velocidade' | 'conexão'
 export type VoiceStyleOption = 'soft' | 'strong' | 'balanced' | 'adaptive' | 'irreverent'
 export type ActModeOption = 'seller' | 'consultant' | 'stylist' | 'coach' | 'chef'
+export type BusinessGoalOption = 'volume' | 'ticket' | 'rotation' | 'launch'
 
 export interface OpeningHours {
   start: string
@@ -16,6 +19,7 @@ export interface BrandPersona {
   power: PowerOption
   voiceStyle: VoiceStyleOption
   actMode?: ActModeOption
+  businessGoal?: BusinessGoalOption
   businessDescription?: string
   institutionalImage?: string
   openingHours?: OpeningHours
@@ -69,6 +73,13 @@ export const actModeOptions: Array<{ value: ActModeOption; label: string; emoji:
   { value: 'chef', label: 'Chef', emoji: '🍳', description: 'Recomendo sabores, experiencia e sensacao' },
 ]
 
+export const businessGoalOptions: Array<{ value: BusinessGoalOption; label: string; emoji: string; description: string }> = [
+  { value: 'volume', label: 'Vender mais volume', emoji: '📦', description: 'Prioriza itens faceis de girar e vender mais vezes' },
+  { value: 'ticket', label: 'Aumentar ticket medio', emoji: '💰', description: 'Puxa combinacoes e escolhas de maior valor' },
+  { value: 'rotation', label: 'Girar estoque', emoji: '🔄', description: 'Ajuda a dar saida ao que precisa circular' },
+  { value: 'launch', label: 'Destacar novidades', emoji: '🚀', description: 'Coloca foco no que acabou de chegar ou merece holofote' },
+]
+
 export function loadBrandPersona(): BrandPersona | null {
   const rawPersona = window.localStorage.getItem(PERSONA_STORAGE_KEY)
   if (!rawPersona) {
@@ -95,6 +106,7 @@ export function loadBrandPersona(): BrandPersona | null {
       power: normalizedPower,
       voiceStyle: normalizeVoiceStyle(parsedPersona.voiceStyle) ?? 'balanced',
       actMode: normalizeActMode(parsedPersona.actMode) ?? 'seller',
+      businessGoal: normalizeBusinessGoal(parsedPersona.businessGoal) ?? 'volume',
       businessDescription: normalizeBusinessDescription(parsedPersona.businessDescription),
       institutionalImage: normalizeImageField(parsedPersona.institutionalImage),
       openingHours: normalizeOpeningHours(parsedPersona.openingHours),
@@ -105,7 +117,7 @@ export function loadBrandPersona(): BrandPersona | null {
       businessHours: normalizeBrandKnowledgeField(parsedPersona.businessHours),
       serviceRegion: normalizeBrandKnowledgeField(parsedPersona.serviceRegion),
       brandHighlight: normalizeBrandKnowledgeField(parsedPersona.brandHighlight),
-      whatsapp: normalizeBrandKnowledgeField(parsedPersona.whatsapp) ?? normalizeLegacyWhatsApp(parsedPersona.contactInfo),
+      whatsapp: normalizeWhatsAppNumber(parsedPersona.whatsapp) ?? normalizeLegacyWhatsApp(parsedPersona.contactInfo),
       email: normalizeBrandKnowledgeField(parsedPersona.email),
       instagram: normalizeBrandKnowledgeField(parsedPersona.instagram),
       facebook: normalizeBrandKnowledgeField(parsedPersona.facebook),
@@ -119,7 +131,7 @@ export function loadBrandPersona(): BrandPersona | null {
 }
 
 export function saveBrandPersona(persona: BrandPersona) {
-  const normalizedWhatsapp = normalizeBrandKnowledgeField(persona.whatsapp)
+  const normalizedWhatsapp = normalizeWhatsAppNumber(persona.whatsapp)
   window.localStorage.setItem(
     PERSONA_STORAGE_KEY,
     JSON.stringify({
@@ -127,6 +139,7 @@ export function saveBrandPersona(persona: BrandPersona) {
       logo: normalizeImageField(persona.logo),
       voiceStyle: normalizeVoiceStyle(persona.voiceStyle) ?? 'balanced',
       actMode: normalizeActMode(persona.actMode) ?? 'seller',
+      businessGoal: normalizeBusinessGoal(persona.businessGoal) ?? 'volume',
       businessDescription: normalizeBusinessDescription(persona.businessDescription),
       institutionalImage: normalizeImageField(persona.institutionalImage),
       openingHours: normalizeOpeningHours(persona.openingHours),
@@ -221,6 +234,21 @@ function normalizeVoiceStyle(value?: string): VoiceStyleOption | null {
   }
 }
 
+function normalizeBusinessGoal(value?: string): BusinessGoalOption | null {
+  switch (value) {
+    case 'volume':
+      return 'volume'
+    case 'ticket':
+      return 'ticket'
+    case 'rotation':
+      return 'rotation'
+    case 'launch':
+      return 'launch'
+    default:
+      return null
+  }
+}
+
 function normalizeActMode(value?: string): ActModeOption | null {
   switch (value) {
     case 'seller':
@@ -239,17 +267,7 @@ function normalizeActMode(value?: string): ActModeOption | null {
 }
 
 function normalizeLegacyWhatsApp(value?: string): string | undefined {
-  const normalizedValue = normalizeBrandKnowledgeField(value)
-  if (!normalizedValue) {
-    return undefined
-  }
-
-  const digits = normalizedValue.replace(/\D/g, '')
-  if (digits.length < 10 && !normalizedValue.includes('wa.me') && !normalizedValue.startsWith('http')) {
-    return undefined
-  }
-
-  return normalizedValue
+  return normalizeWhatsAppNumber(value)
 }
 
 function normalizeImageField(value?: string): string | undefined {

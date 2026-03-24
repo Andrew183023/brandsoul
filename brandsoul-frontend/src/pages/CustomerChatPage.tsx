@@ -12,6 +12,7 @@ import { buildApiUrl } from '../lib/api'
 import { getBusinessStatus } from '../lib/businessStatus'
 import { buildCatalogSummary, loadCatalogItems } from '../lib/catalog'
 import { loadBrandPersona, type BrandPersona } from '../lib/persona'
+import { buildWhatsAppMessage, buildWhatsAppUrl, normalizeWhatsAppNumber } from '../lib/whatsapp'
 import {
   buildSparkMemorySummary,
   getSparkMemoryStorageKey,
@@ -180,30 +181,13 @@ function buildItemMessage(item: CatalogItem) {
   return `Quero saber mais sobre ${item.name}`
 }
 
-function resolveWhatsAppHref(contactInfo?: string) {
-  const rawValue = contactInfo?.trim()
-  if (!rawValue) {
-    return null
-  }
-
-  if (rawValue.startsWith('http://') || rawValue.startsWith('https://') || rawValue.includes('wa.me')) {
-    return rawValue
-  }
-
-  const normalizedDigits = rawValue.replace(/\D/g, '')
-  if (normalizedDigits.length < 10) {
-    return null
-  }
-
-  return `https://wa.me/${normalizedDigits}`
-}
-
 function buildPersonaPayload(persona: BrandPersona) {
   return {
     tone: persona.tone,
     power: persona.power,
     voice_style: persona.voiceStyle,
     act_mode: persona.actMode || 'seller',
+    business_goal: persona.businessGoal || 'volume',
     business_description: persona.businessDescription || undefined,
     opening_hours: persona.openingHours,
     address: persona.address || undefined,
@@ -280,7 +264,7 @@ export default function CustomerChatPage() {
   )
   const [sparkMemory, setSparkMemory] = useState<SparkMemory>(() => loadSparkMemory(sparkMemoryStorageKey))
   const memorySummary = useMemo(() => buildSparkMemorySummary(sparkMemory), [sparkMemory])
-  const whatsappHref = useMemo(() => resolveWhatsAppHref(persona?.whatsapp ?? persona?.contactInfo), [persona])
+  const whatsappNumber = useMemo(() => normalizeWhatsAppNumber(persona?.whatsapp ?? persona?.contactInfo), [persona])
   const brandCategory = useMemo(() => (persona ? buildBrandCategory(persona) : null), [persona])
   const catalogItems = useMemo(() => {
     const configuredCatalog = loadCatalogItems()
@@ -355,6 +339,7 @@ export default function CustomerChatPage() {
         persona: buildPersonaPayload(persona),
         messages: [],
         context_mode: 'customer',
+        business_goal: persona.businessGoal || 'volume',
         metadata: {
           source: 'chat-ui',
           intent: 'conversation_start',
@@ -450,6 +435,7 @@ export default function CustomerChatPage() {
         persona: buildPersonaPayload(persona),
         messages,
         context_mode: 'customer',
+        business_goal: persona.businessGoal || 'volume',
         metadata: {
           source: 'chat-ui',
         },
@@ -485,6 +471,15 @@ export default function CustomerChatPage() {
   const handleCatalogAction = async (item: CatalogItem) => {
     setMobileSection('chat')
     await sendUserMessage(buildItemMessage(item))
+  }
+
+  const handleWhatsAppOpen = (item?: CatalogItem | null) => {
+    const url = buildWhatsAppUrl(whatsappNumber, buildWhatsAppMessage(item))
+    if (!url) {
+      return
+    }
+
+    window.open(url, '_blank', 'noopener,noreferrer')
   }
 
   if (!persona) {
@@ -547,7 +542,7 @@ export default function CustomerChatPage() {
 
         <div className="catalog-grid">
           {catalogItems.map((item) => (
-            <ProductCard key={item.id} item={item} onPrimaryAction={handleCatalogAction} onOpen={setSelectedItem} whatsappHref={whatsappHref} />
+            <ProductCard key={item.id} item={item} onPrimaryAction={handleCatalogAction} onOpen={setSelectedItem} onWhatsAppAction={whatsappNumber ? handleWhatsAppOpen : undefined} />
           ))}
         </div>
       </section>
@@ -579,7 +574,7 @@ export default function CustomerChatPage() {
         </form>
       </section>
 
-      <ProductModal item={selectedItem} onClose={() => setSelectedItem(null)} onPrimaryAction={handleCatalogAction} />
+      <ProductModal item={selectedItem} onClose={() => setSelectedItem(null)} onPrimaryAction={handleCatalogAction} onWhatsAppAction={whatsappNumber ? handleWhatsAppOpen : undefined} />
     </main>
   )
 }

@@ -6,17 +6,20 @@ import { loadCatalogItems, saveCatalogItems } from '../lib/catalog'
 import {
   actModeOptions,
   BUSINESS_DESCRIPTION_MAX_LENGTH,
+  businessGoalOptions,
   loadBrandPersona,
   navigateTo,
   powerOptions,
   saveBrandPersona,
   toneOptions,
   type ActModeOption,
+  type BusinessGoalOption,
   type PowerOption,
   type ToneOption,
   type VoiceStyleOption,
   voiceStyleOptions,
 } from '../lib/persona'
+import { sanitizeWhatsAppInput } from '../lib/whatsapp'
 import '../App.css'
 
 function buildVoiceStylePreview(voiceStyle: VoiceStyleOption) {
@@ -70,6 +73,8 @@ export default function CreatePersonaPage() {
   const [power, setPower] = useState<PowerOption | null>(savedPersona?.power ?? null)
   const [voiceStyle, setVoiceStyle] = useState<VoiceStyleOption>(savedPersona?.voiceStyle ?? 'balanced')
   const [actMode, setActMode] = useState<ActModeOption>(savedPersona?.actMode ?? 'seller')
+  const [businessGoal, setBusinessGoal] = useState<BusinessGoalOption>(savedPersona?.businessGoal ?? 'volume')
+  const [whatsapp, setWhatsapp] = useState(savedPersona?.whatsapp ?? savedPersona?.contactInfo ?? '')
   const [errorMessage, setErrorMessage] = useState('')
   const [isActivating, setIsActivating] = useState(false)
 
@@ -100,6 +105,7 @@ export default function CreatePersonaPage() {
       power,
       voiceStyle,
       actMode,
+      businessGoal,
       businessDescription: businessDescription.trim() || undefined,
       institutionalImage: savedPersona?.institutionalImage,
       openingHours: savedPersona?.openingHours,
@@ -110,13 +116,13 @@ export default function CreatePersonaPage() {
       businessHours: savedPersona?.businessHours,
       serviceRegion: savedPersona?.serviceRegion,
       brandHighlight: savedPersona?.brandHighlight,
-      whatsapp: savedPersona?.whatsapp,
+      whatsapp: whatsapp.trim() || savedPersona?.whatsapp,
       email: savedPersona?.email,
       instagram: savedPersona?.instagram,
       facebook: savedPersona?.facebook,
       tiktok: savedPersona?.tiktok,
       site: savedPersona?.site,
-      contactInfo: savedPersona?.contactInfo,
+      contactInfo: whatsapp.trim() || savedPersona?.contactInfo,
     })
     saveCatalogItems(savedCatalog)
 
@@ -186,6 +192,21 @@ export default function CreatePersonaPage() {
                 {businessDescriptionLength}/{BUSINESS_DESCRIPTION_MAX_LENGTH}
               </span>
             </div>
+          </div>
+
+          <div className="persona-field">
+            <label className="persona-label" htmlFor="whatsapp">
+              WhatsApp da marca
+            </label>
+            <input
+              id="whatsapp"
+              className="persona-input"
+              value={whatsapp}
+              onChange={(event) => setWhatsapp(sanitizeWhatsAppInput(event.target.value))}
+              placeholder="Ex: +5531999999999"
+              autoComplete="off"
+            />
+            <span className="persona-field-hint">Use o numero com codigo do pais e DDD, sem espacos.</span>
           </div>
 
           <div className="persona-field">
@@ -267,6 +288,24 @@ export default function CreatePersonaPage() {
 
                 return (
                   <button key={option.value} type="button" className={`persona-style-card ${isSelected ? 'selected' : ''}`} onClick={() => setActMode(option.value)}>
+                    <strong>
+                      {option.emoji} {option.label}
+                    </strong>
+                    <span>{option.description}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="persona-field">
+            <div className="persona-label">Objetivo do negocio agora</div>
+            <div className="persona-style-grid">
+              {businessGoalOptions.map((option) => {
+                const isSelected = businessGoal === option.value
+
+                return (
+                  <button key={option.value} type="button" className={`persona-style-card ${isSelected ? 'selected' : ''}`} onClick={() => setBusinessGoal(option.value)}>
                     <strong>
                       {option.emoji} {option.label}
                     </strong>
