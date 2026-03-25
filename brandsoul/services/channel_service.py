@@ -119,6 +119,7 @@ def handle_channel_message(payload: ChannelMessage) -> ChannelResponse:
         catalog_summary=[item.model_dump() for item in payload.catalog_summary] if payload.catalog_summary else None,
         business_goal=payload.business_goal or payload.persona.business_goal,
         location_summary=payload.location_summary.model_dump() if payload.location_summary else None,
+        page_highlights=payload.page_highlights.model_dump() if payload.page_highlights else None,
         business_status=payload.business_status,
         context_mode=payload.context_mode or "customer",
     )

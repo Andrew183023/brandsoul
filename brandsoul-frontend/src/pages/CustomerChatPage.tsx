@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { CSSProperties, FormEvent } from 'react'
 import axios from 'axios'
 
-import ChatList from '../components/ChatList'
-import ProductCard from '../components/ProductCard'
-import ProductModal from '../components/ProductModal'
-import Spark from '../components/Spark'
-import type { Message } from '../components/ChatMessage'
+import ChatList from '../lib/components/ChatList'
+import ProductCard from '../lib/components/ProductCard'
+import ProductModal from '../lib/components/ProductModal'
+import Spark from '../lib/components/Spark'
+import type { Message } from '../lib/components/ChatMessage'
 import { mockCatalog } from '../data/mockCatalog'
 import { buildApiUrl } from '../lib/api'
 import { getBusinessStatus } from '../lib/businessStatus'
-import { buildCatalogSummary, loadCatalogItems } from '../lib/catalog'
-import { loadBrandPersona, type BrandPersona } from '../lib/persona'
+import { buildCatalogSummary, CATALOG_STORAGE_KEY, loadCatalogItems } from '../lib/catalog'
+import { loadBrandPersona, PERSONA_STORAGE_KEY, type BrandPersona } from '../lib/persona'
 import { buildWhatsAppMessage, buildWhatsAppUrl, normalizeWhatsAppNumber } from '../lib/whatsapp'
 import {
   buildSparkMemorySummary,
@@ -43,6 +43,11 @@ interface LocationSummary {
   address?: string
   city?: string
   state?: string
+}
+
+interface PageHighlightsSummary {
+  has_promotions: boolean
+  has_new_arrivals: boolean
 }
 
 const USER_ID_STORAGE_KEY = 'brandsoul_user_id'
@@ -236,8 +241,15 @@ function buildLocationLabel(persona: BrandPersona) {
   return address || cityState || null
 }
 
+function buildCustomerThemeStyle(persona: BrandPersona): CSSProperties {
+  return {
+    '--brand-accent': persona.theme?.primaryColor || '#ff9460',
+    '--brand-accent-soft': persona.theme?.secondaryColor || '#ff5e43',
+  } as CSSProperties
+}
+
 export default function CustomerChatPage() {
-  const persona = useMemo(() => loadBrandPersona(), [])
+  const [persona, setPersona] = useState<BrandPersona | null>(() => loadBrandPersona())
   const initialMessages = useMemo(() => loadMessages(), [])
   const userId = useMemo(() => getOrCreateUserId(), [])
   const [messages, setMessages] = useState<Message[]>(initialMessages)
@@ -249,6 +261,7 @@ export default function CustomerChatPage() {
   const [isIntroPulseActive, setIsIntroPulseActive] = useState(false)
   const [selectedItem, setSelectedItem] = useState<CatalogItem | null>(null)
   const [mobileSection, setMobileSection] = useState<'catalog' | 'chat'>('catalog')
+  const [activeCarouselIndex, setActiveCarouselIndex] = useState(0)
   const introPulseTimeoutRef = useRef<number | null>(null)
   const hasBootstrappedRef = useRef(initialMessages.length > 0)
   const sparkMemoryStorageKey = useMemo(
@@ -266,15 +279,81 @@ export default function CustomerChatPage() {
   const memorySummary = useMemo(() => buildSparkMemorySummary(sparkMemory), [sparkMemory])
   const whatsappNumber = useMemo(() => normalizeWhatsAppNumber(persona?.whatsapp ?? persona?.contactInfo), [persona])
   const brandCategory = useMemo(() => (persona ? buildBrandCategory(persona) : null), [persona])
-  const catalogItems = useMemo(() => {
+  const [catalogItems, setCatalogItems] = useState<CatalogItem[]>(() => {
     const configuredCatalog = loadCatalogItems()
     return configuredCatalog.length > 0 ? configuredCatalog : mockCatalog
-  }, [])
+  })
   const catalogSummary = useMemo(() => buildCatalogSummary(catalogItems), [catalogItems])
+  const customerThemeStyle = useMemo(() => (persona ? buildCustomerThemeStyle(persona) : undefined), [persona])
   const locationSummary = useMemo(() => (persona ? buildLocationSummary(persona) : undefined), [persona])
   const locationLabel = useMemo(() => (persona ? buildLocationLabel(persona) : null), [persona])
   const businessStatus = useMemo(() => getBusinessStatus(persona?.openingHours), [persona])
   const businessStatusLabel = businessStatus === 'open' ? 'Aberto agora' : businessStatus === 'closed' ? 'Fechado no momento' : null
+  const showCarousel = persona?.pageSections?.showCarousel === true && (persona.carouselImages?.length ?? 0) > 0
+  const showPromotions = persona?.pageSections?.showPromotions === true
+  const showNewArrivals = persona?.pageSections?.showNewArrivals === true
+  const promotionItems = useMemo(() => catalogItems.filter((item) => item.isPromotion).slice(0, 3), [catalogItems])
+  const newArrivalItems = useMemo(() => catalogItems.filter((item) => item.isNewArrival).slice(0, 3), [catalogItems])
+  const pageHighlights = useMemo<PageHighlightsSummary | undefined>(() => {
+    const hasPromotions = showPromotions && promotionItems.length > 0
+    const hasNewArrivals = showNewArrivals && newArrivalItems.length > 0
+
+    if (!hasPromotions && !hasNewArrivals) {
+      return undefined
+    }
+
+    return {
+      has_promotions: hasPromotions,
+      has_new_arrivals: hasNewArrivals,
+    }
+  }, [newArrivalItems.length, promotionItems.length, showNewArrivals, showPromotions])
+
+  useEffect(() => {
+    const syncPublicData = () => {
+      const nextPersona = loadBrandPersona()
+      setPersona(nextPersona)
+
+      const configuredCatalog = loadCatalogItems()
+      setCatalogItems(configuredCatalog.length > 0 ? configuredCatalog : mockCatalog)
+    }
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key && ![PERSONA_STORAGE_KEY, CATALOG_STORAGE_KEY].includes(event.key)) {
+        return
+      }
+
+      syncPublicData()
+    }
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        syncPublicData()
+      }
+    }
+
+    window.addEventListener('storage', handleStorage)
+    window.addEventListener('focus', syncPublicData)
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    return () => {
+      window.removeEventListener('storage', handleStorage)
+      window.removeEventListener('focus', syncPublicData)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!persona || !showCarousel || !persona.carouselImages || persona.carouselImages.length <= 1) {
+      setActiveCarouselIndex(0)
+      return
+    }
+
+    const intervalId = window.setInterval(() => {
+      setActiveCarouselIndex((currentIndex) => (currentIndex + 1) % persona.carouselImages!.length)
+    }, 3600)
+
+    return () => window.clearInterval(intervalId)
+  }, [persona?.carouselImages, showCarousel])
 
   const persistSparkMemory = (updater: (currentMemory: SparkMemory) => SparkMemory) => {
     setSparkMemory((currentMemory) => {
@@ -348,6 +427,7 @@ export default function CustomerChatPage() {
         ...(buildSparkMemorySummary(nextSparkMemory) ? { memory_summary: buildSparkMemorySummary(nextSparkMemory) } : {}),
         ...(catalogSummary.length > 0 ? { catalog_summary: catalogSummary } : {}),
         ...(locationSummary ? { location_summary: locationSummary } : {}),
+        ...(pageHighlights ? { page_highlights: pageHighlights } : {}),
       })
 
       if (bootstrapRequestIdRef.current !== requestId) {
@@ -443,6 +523,7 @@ export default function CustomerChatPage() {
         ...(memorySummary ? { memory_summary: memorySummary } : {}),
         ...(catalogSummary.length > 0 ? { catalog_summary: catalogSummary } : {}),
         ...(locationSummary ? { location_summary: locationSummary } : {}),
+        ...(pageHighlights ? { page_highlights: pageHighlights } : {}),
       })
 
       setMessages((previousMessages) => [...previousMessages, { role: 'ai', content: result.data.response }])
@@ -487,7 +568,7 @@ export default function CustomerChatPage() {
   }
 
   return (
-    <main className="customer-shell">
+    <main className={`customer-shell spark-${sparkState}`} style={customerThemeStyle}>
       <section className="customer-hero">
         {persona.institutionalImage ? (
           <div className="customer-hero-media">
@@ -532,6 +613,63 @@ export default function CustomerChatPage() {
           Falar comigo
         </button>
       </section>
+
+      {showCarousel && persona.carouselImages ? (
+        <section className="customer-highlight-section customer-carousel-section" aria-label="Destaques visuais da marca">
+          <div className="customer-section-heading">
+            <span className="catalog-kicker">Destaques</span>
+            <h2>Posso te mostrar o que esta em evidência agora.</h2>
+          </div>
+          <div className="customer-carousel-card">
+            <img
+              src={persona.carouselImages[activeCarouselIndex]}
+              alt={`Destaque ${activeCarouselIndex + 1} de ${persona.brandName}`}
+              className="customer-carousel-image"
+            />
+            {persona.carouselImages.length > 1 ? (
+              <div className="customer-carousel-dots">
+                {persona.carouselImages.map((image, index) => (
+                  <button
+                    key={`${image}-${index}`}
+                    type="button"
+                    className={`customer-carousel-dot ${index === activeCarouselIndex ? 'active' : ''}`}
+                    onClick={() => setActiveCarouselIndex(index)}
+                    aria-label={`Ver destaque ${index + 1}`}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      {showPromotions && promotionItems.length > 0 ? (
+        <section className="customer-highlight-section" aria-label="Promocoes em destaque">
+          <div className="customer-section-heading">
+            <span className="catalog-kicker">Promocoes em destaque</span>
+            <h2>Posso te mostrar o que esta com condicao especial agora.</h2>
+          </div>
+          <div className="catalog-grid">
+            {promotionItems.map((item) => (
+              <ProductCard key={`promotion-${item.id}`} item={item} onPrimaryAction={handleCatalogAction} onOpen={setSelectedItem} onWhatsAppAction={whatsappNumber ? handleWhatsAppOpen : undefined} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {showNewArrivals && newArrivalItems.length > 0 ? (
+        <section className="customer-highlight-section" aria-label="Novidades">
+          <div className="customer-section-heading">
+            <span className="catalog-kicker">Novidades</span>
+            <h2>Tambem tenho novidades que podem te interessar.</h2>
+          </div>
+          <div className="catalog-grid">
+            {newArrivalItems.map((item) => (
+              <ProductCard key={`new-${item.id}`} item={item} onPrimaryAction={handleCatalogAction} onOpen={setSelectedItem} onWhatsAppAction={whatsappNumber ? handleWhatsAppOpen : undefined} />
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className={`catalog-section customer-section ${mobileSection === 'chat' ? 'mobile-collapsed' : ''}`} aria-label="Catalogo da marca">
         <div className="catalog-copy">

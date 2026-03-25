@@ -910,6 +910,28 @@ def build_business_status_context(business_status: str | None, persona: Persona)
     )
 
 
+def build_page_highlights_context(page_highlights: dict[str, bool] | None = None) -> str:
+    if not page_highlights:
+        return ""
+
+    has_promotions = page_highlights.get("has_promotions") is True
+    has_new_arrivals = page_highlights.get("has_new_arrivals") is True
+
+    if not has_promotions and not has_new_arrivals:
+        return ""
+
+    highlight_lines = ["Destaques atuais da pagina publica:"]
+
+    if has_promotions:
+        highlight_lines.append("- existem promocoes em destaque que voce pode mencionar com naturalidade quando fizer sentido.")
+
+    if has_new_arrivals:
+        highlight_lines.append("- existem novidades ativas que voce pode sugerir como algo novo para explorar.")
+
+    highlight_lines.append("- nao force isso em toda resposta; use apenas quando ajudar a orientar a escolha.")
+    return "\n".join(highlight_lines) + "\n"
+
+
 def build_persona_location_reference(persona: Persona) -> str:
     address = (persona.address or "").strip()
     city = (persona.city or "").strip()
@@ -962,6 +984,7 @@ def build_system_prompt(
     catalog_summary: list[dict[str, str]] | None = None,
     business_goal: str | None = None,
     location_summary: dict[str, str] | None = None,
+    page_highlights: dict[str, bool] | None = None,
     business_status: str | None = None,
     context_mode: str = "customer",
 ) -> str:
@@ -992,6 +1015,7 @@ def build_system_prompt(
     business_goal_context = build_business_goal_context(business_goal or persona.business_goal, catalog_summary)
     action_logic_context = build_action_logic_context(resolved_context_mode, persona, catalog_summary)
     location_context = build_location_summary_context(location_summary)
+    page_highlights_context = build_page_highlights_context(page_highlights)
     business_status_context = build_business_status_context(business_status, persona)
     context_mode_prompt = build_context_mode_prompt(resolved_context_mode)
 
@@ -1030,6 +1054,7 @@ def build_system_prompt(
         f"{catalog_context}"
         f"{action_logic_context}"
         f"{location_context}"
+        f"{page_highlights_context}"
         f"{business_status_context}"
         f"{operational_context}"
         f"{resolved_channel_context}\n"
@@ -1074,6 +1099,7 @@ def generate_response(
     catalog_summary: list[dict[str, str]] | None = None,
     business_goal: str | None = None,
     location_summary: dict[str, str] | None = None,
+    page_highlights: dict[str, bool] | None = None,
     business_status: str | None = None,
     context_mode: str = "customer",
 ) -> str:
@@ -1093,6 +1119,7 @@ def generate_response(
         catalog_summary=catalog_summary,
         business_goal=business_goal,
         location_summary=location_summary,
+        page_highlights=page_highlights,
         business_status=business_status,
         context_mode=context_mode,
     )

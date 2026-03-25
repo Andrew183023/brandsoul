@@ -1,8 +1,7 @@
 import { motion } from 'framer-motion'
 import { useMemo, useState } from 'react'
 
-import Spark from '../components/Spark'
-import { loadCatalogItems, saveCatalogItems } from '../lib/catalog'
+import Spark from '../lib/components/Spark'
 import {
   actModeOptions,
   BUSINESS_DESCRIPTION_MAX_LENGTH,
@@ -19,7 +18,6 @@ import {
   type VoiceStyleOption,
   voiceStyleOptions,
 } from '../lib/persona'
-import { sanitizeWhatsAppInput } from '../lib/whatsapp'
 import '../App.css'
 
 function buildVoiceStylePreview(voiceStyle: VoiceStyleOption) {
@@ -66,7 +64,6 @@ function playActivationChime() {
 
 export default function CreatePersonaPage() {
   const savedPersona = useMemo(() => loadBrandPersona(), [])
-  const savedCatalog = useMemo(() => loadCatalogItems(), [])
   const [brandName, setBrandName] = useState(savedPersona?.brandName ?? '')
   const [businessDescription, setBusinessDescription] = useState(savedPersona?.businessDescription ?? '')
   const [tone, setTone] = useState<ToneOption | null>(savedPersona?.tone ?? null)
@@ -74,7 +71,6 @@ export default function CreatePersonaPage() {
   const [voiceStyle, setVoiceStyle] = useState<VoiceStyleOption>(savedPersona?.voiceStyle ?? 'balanced')
   const [actMode, setActMode] = useState<ActModeOption>(savedPersona?.actMode ?? 'seller')
   const [businessGoal, setBusinessGoal] = useState<BusinessGoalOption>(savedPersona?.businessGoal ?? 'volume')
-  const [whatsapp, setWhatsapp] = useState(savedPersona?.whatsapp ?? savedPersona?.contactInfo ?? '')
   const [errorMessage, setErrorMessage] = useState('')
   const [isActivating, setIsActivating] = useState(false)
 
@@ -108,6 +104,9 @@ export default function CreatePersonaPage() {
       businessGoal,
       businessDescription: businessDescription.trim() || undefined,
       institutionalImage: savedPersona?.institutionalImage,
+      theme: savedPersona?.theme,
+      pageSections: savedPersona?.pageSections,
+      carouselImages: savedPersona?.carouselImages,
       openingHours: savedPersona?.openingHours,
       address: savedPersona?.address,
       city: savedPersona?.city,
@@ -116,15 +115,14 @@ export default function CreatePersonaPage() {
       businessHours: savedPersona?.businessHours,
       serviceRegion: savedPersona?.serviceRegion,
       brandHighlight: savedPersona?.brandHighlight,
-      whatsapp: whatsapp.trim() || savedPersona?.whatsapp,
+      whatsapp: savedPersona?.whatsapp,
       email: savedPersona?.email,
       instagram: savedPersona?.instagram,
       facebook: savedPersona?.facebook,
       tiktok: savedPersona?.tiktok,
       site: savedPersona?.site,
-      contactInfo: whatsapp.trim() || savedPersona?.contactInfo,
+      contactInfo: savedPersona?.contactInfo,
     })
-    saveCatalogItems(savedCatalog)
 
     window.setTimeout(() => {
       navigateTo('/admin')
@@ -192,21 +190,6 @@ export default function CreatePersonaPage() {
                 {businessDescriptionLength}/{BUSINESS_DESCRIPTION_MAX_LENGTH}
               </span>
             </div>
-          </div>
-
-          <div className="persona-field">
-            <label className="persona-label" htmlFor="whatsapp">
-              WhatsApp da marca
-            </label>
-            <input
-              id="whatsapp"
-              className="persona-input"
-              value={whatsapp}
-              onChange={(event) => setWhatsapp(sanitizeWhatsAppInput(event.target.value))}
-              placeholder="Ex: +5531999999999"
-              autoComplete="off"
-            />
-            <span className="persona-field-hint">Use o numero com codigo do pais e DDD, sem espacos.</span>
           </div>
 
           <div className="persona-field">

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 
-import type { ContentHistoryItem, ParsedContent } from '../lib/contentHistory'
+import type { ContentHistoryItem, ParsedContent } from '../contentHistory'
 import ContentBlock from './ContentBlock'
 
 interface ContentHistoryPanelProps {

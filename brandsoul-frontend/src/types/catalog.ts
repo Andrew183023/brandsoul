@@ -10,6 +10,8 @@ export interface CatalogItem {
   highlight?: string
   priority?: CatalogPriority
   isFeatured?: boolean
+  isPromotion?: boolean
+  isNewArrival?: boolean
   complements?: string[]
   image?: string
   images?: string[]

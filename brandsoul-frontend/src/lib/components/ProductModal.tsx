@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 
-import { resolveCatalogAvailability } from '../lib/catalog'
-import type { CatalogItem } from '../types/catalog'
+import { resolveCatalogAvailability } from '../catalog'
+import type { CatalogItem } from '../../types/catalog'
 
 interface ProductModalProps {
   item: CatalogItem | null
@@ -76,6 +76,8 @@ export default function ProductModal({ item, onClose, onPrimaryAction, onWhatsAp
           <div className="product-card-topline">
             {item.category ? <span className="product-category">{item.category}</span> : null}
             {item.highlight ? <span className="product-badge">{item.highlight}</span> : null}
+            {!item.highlight && item.isPromotion ? <span className="product-badge">Promocao</span> : null}
+            {!item.highlight && !item.isPromotion && item.isNewArrival ? <span className="product-badge">Novo</span> : null}
           </div>
           <h3>{item.name}</h3>
           <p>{item.description}</p>

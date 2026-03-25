@@ -39,6 +39,8 @@ export function normalizeCatalogItem(item: Partial<CatalogItem>): CatalogItem | 
   const category = item.category?.trim().slice(0, 40)
   const priority = normalizeCatalogPriority(item.priority)
   const isFeatured = normalizeCatalogFeatured(item.isFeatured)
+  const isPromotion = normalizeCatalogFeatured(item.isPromotion)
+  const isNewArrival = normalizeCatalogFeatured(item.isNewArrival)
   const complements = normalizeCatalogComplements(item.complements)
   const image = normalizeCatalogImage(item.image)
   const images = normalizeCatalogImages(item.images)
@@ -54,6 +56,8 @@ export function normalizeCatalogItem(item: Partial<CatalogItem>): CatalogItem | 
     highlight: highlight || undefined,
     priority,
     isFeatured,
+    isPromotion,
+    isNewArrival,
     complements,
     image,
     images,
@@ -101,6 +105,8 @@ export function buildCatalogSummary(items: CatalogItem[]) {
     availability: resolveCatalogAvailability(item.stock, item.availability),
     is_featured: item.isFeatured ?? false,
     priority: item.priority ?? 'medium',
+    is_promotion: item.isPromotion ?? false,
+    is_new_arrival: item.isNewArrival ?? false,
     highlight: item.highlight,
     description: item.description.slice(0, 80),
     complements: item.complements?.slice(0, 3) ?? [],

@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion'
 import type { CSSProperties } from 'react'
 
-import type { PowerOption, ToneOption } from '../lib/persona'
+import type { PowerOption, ToneOption } from '../persona'
 
 type SparkState = 'idle' | 'thinking' | 'speaking'
 

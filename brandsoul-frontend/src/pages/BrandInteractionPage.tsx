@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import axios from 'axios'
 
-import BrandInteractionList, { type BrandInteractionTurnMessage } from '../components/BrandInteractionList'
-import Spark from '../components/Spark'
+import BrandInteractionList, { type BrandInteractionTurnMessage } from '../lib/components/BrandInteractionList'
+import Spark from '../lib/components/Spark'
 import {
   brandInteractionPresets,
   type BrandInteractionPreset,

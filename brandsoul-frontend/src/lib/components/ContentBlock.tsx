@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-import type { ParsedContent } from '../lib/contentHistory'
+import type { ParsedContent } from '../contentHistory'
 
 interface ContentBlockProps {
   content: ParsedContent

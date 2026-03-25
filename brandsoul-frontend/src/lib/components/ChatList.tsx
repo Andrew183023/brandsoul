@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef } from 'react'
 
 import ChatMessage, { type Message } from './ChatMessage'
 import ContentBlock from './ContentBlock'
-import { parseStructuredContent } from '../lib/contentHistory'
+import { parseStructuredContent } from '../contentHistory'
 
 interface ChatListProps {
   messages: Message[]

@@ -12,6 +12,17 @@ export interface OpeningHours {
   end: string
 }
 
+export interface BrandTheme {
+  primaryColor?: string
+  secondaryColor?: string
+}
+
+export interface PageSectionsConfig {
+  showCarousel?: boolean
+  showPromotions?: boolean
+  showNewArrivals?: boolean
+}
+
 export interface BrandPersona {
   brandName: string
   logo?: string
@@ -22,6 +33,9 @@ export interface BrandPersona {
   businessGoal?: BusinessGoalOption
   businessDescription?: string
   institutionalImage?: string
+  theme?: BrandTheme
+  pageSections?: PageSectionsConfig
+  carouselImages?: string[]
   openingHours?: OpeningHours
   address?: string
   city?: string
@@ -109,6 +123,9 @@ export function loadBrandPersona(): BrandPersona | null {
       businessGoal: normalizeBusinessGoal(parsedPersona.businessGoal) ?? 'volume',
       businessDescription: normalizeBusinessDescription(parsedPersona.businessDescription),
       institutionalImage: normalizeImageField(parsedPersona.institutionalImage),
+      theme: normalizeTheme(parsedPersona.theme),
+      pageSections: normalizePageSections(parsedPersona.pageSections),
+      carouselImages: normalizeImageList(parsedPersona.carouselImages),
       openingHours: normalizeOpeningHours(parsedPersona.openingHours),
       address: normalizeBrandKnowledgeField(parsedPersona.address),
       city: normalizeBrandKnowledgeField(parsedPersona.city),
@@ -142,6 +159,9 @@ export function saveBrandPersona(persona: BrandPersona) {
       businessGoal: normalizeBusinessGoal(persona.businessGoal) ?? 'volume',
       businessDescription: normalizeBusinessDescription(persona.businessDescription),
       institutionalImage: normalizeImageField(persona.institutionalImage),
+      theme: normalizeTheme(persona.theme),
+      pageSections: normalizePageSections(persona.pageSections),
+      carouselImages: normalizeImageList(persona.carouselImages),
       openingHours: normalizeOpeningHours(persona.openingHours),
       address: normalizeBrandKnowledgeField(persona.address),
       city: normalizeBrandKnowledgeField(persona.city),
@@ -217,6 +237,40 @@ function normalizeDeliveryAvailable(value?: boolean): boolean | undefined {
   return value
 }
 
+function normalizeTheme(theme?: BrandTheme): BrandTheme | undefined {
+  if (!theme) {
+    return undefined
+  }
+
+  const primaryColor = normalizeColor(theme.primaryColor)
+  const secondaryColor = normalizeColor(theme.secondaryColor)
+
+  if (!primaryColor && !secondaryColor) {
+    return undefined
+  }
+
+  return {
+    primaryColor,
+    secondaryColor,
+  }
+}
+
+function normalizePageSections(pageSections?: PageSectionsConfig): PageSectionsConfig | undefined {
+  if (!pageSections) {
+    return undefined
+  }
+
+  const normalizedSections = {
+    showCarousel: pageSections.showCarousel === true,
+    showPromotions: pageSections.showPromotions === true,
+    showNewArrivals: pageSections.showNewArrivals === true,
+  }
+
+  return normalizedSections.showCarousel || normalizedSections.showPromotions || normalizedSections.showNewArrivals
+    ? normalizedSections
+    : undefined
+}
+
 function normalizeVoiceStyle(value?: string): VoiceStyleOption | null {
   switch (value) {
     case 'soft':
@@ -277,6 +331,24 @@ function normalizeImageField(value?: string): string | undefined {
   }
 
   return normalizedValue.slice(0, 2_000_000)
+}
+
+function normalizeImageList(values?: string[]): string[] | undefined {
+  if (!Array.isArray(values)) {
+    return undefined
+  }
+
+  const normalizedValues = values.map((value) => normalizeImageField(value)).filter((value): value is string => Boolean(value)).slice(0, 3)
+  return normalizedValues.length > 0 ? normalizedValues : undefined
+}
+
+function normalizeColor(value?: string): string | undefined {
+  const normalizedValue = value?.trim()
+  if (!normalizedValue) {
+    return undefined
+  }
+
+  return /^#[0-9a-fA-F]{6}$/.test(normalizedValue) ? normalizedValue : undefined
 }
 
 function normalizeOpeningHours(value?: Partial<OpeningHours>): OpeningHours | undefined {

@@ -1,4 +1,4 @@
-import type { ContentAction } from '../lib/contentActions'
+import type { ContentAction } from '../contentActions'
 
 export type SuggestionType = 'marketing' | 'sales' | 'operation'
 

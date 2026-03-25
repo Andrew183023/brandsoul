@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import axios from 'axios'
 
-import ChatList from './components/ChatList'
-import ContentHistoryPanel from './components/ContentHistoryPanel'
-import Spark from './components/Spark'
-import SparkSuggestions, { type Suggestion } from './components/SparkSuggestions'
-import type { Message } from './components/ChatMessage'
+import ChatList from './lib/components/ChatList'
+import ContentHistoryPanel from './lib/components/ContentHistoryPanel'
+import Spark from './lib/components/Spark'
+import SparkSuggestions, { type Suggestion } from './lib/components/SparkSuggestions'
+import type { Message } from './lib/components/ChatMessage'
 import { buildApiHeaders, buildApiUrl } from './lib/api'
 import { getBusinessStatus } from './lib/businessStatus'
 import { buildContentActions, type ContentAction } from './lib/contentActions'
@@ -82,6 +82,8 @@ interface CatalogDraft {
   category: string
   priority: CatalogPriority
   isFeatured: boolean
+  isPromotion: boolean
+  isNewArrival: boolean
   complements: string
 }
 
@@ -98,6 +100,8 @@ function createEmptyCatalogDraft(): CatalogDraft {
     category: '',
     priority: 'medium',
     isFeatured: false,
+    isPromotion: false,
+    isNewArrival: false,
     complements: '',
   }
 }
@@ -532,6 +536,12 @@ export default function App() {
   const [logo, setLogo] = useState(savedPersona?.logo ?? '')
   const [businessDescription, setBusinessDescription] = useState(savedPersona?.businessDescription ?? '')
   const [institutionalImage, setInstitutionalImage] = useState(savedPersona?.institutionalImage ?? '')
+  const [themePrimaryColor, setThemePrimaryColor] = useState(savedPersona?.theme?.primaryColor ?? '#ff9460')
+  const [themeSecondaryColor, setThemeSecondaryColor] = useState(savedPersona?.theme?.secondaryColor ?? '#ff5e43')
+  const [showCarousel, setShowCarousel] = useState(savedPersona?.pageSections?.showCarousel === true)
+  const [showPromotions, setShowPromotions] = useState(savedPersona?.pageSections?.showPromotions === true)
+  const [showNewArrivals, setShowNewArrivals] = useState(savedPersona?.pageSections?.showNewArrivals === true)
+  const [carouselImages, setCarouselImages] = useState<string[]>(savedPersona?.carouselImages ?? [])
   const [openingStart, setOpeningStart] = useState(savedPersona?.openingHours?.start ?? '')
   const [openingEnd, setOpeningEnd] = useState(savedPersona?.openingHours?.end ?? '')
   const [address, setAddress] = useState(savedPersona?.address ?? '')
@@ -612,6 +622,51 @@ export default function App() {
     [openingEnd, openingStart],
   )
   const businessStatus = useMemo(() => getBusinessStatus(openingHours), [openingHours])
+  const voiceStyleLabel = useMemo(
+    () => voiceStyleOptions.find((option) => option.value === voiceStyle)?.label ?? 'Equilibrado',
+    [voiceStyle],
+  )
+  const actModeLabel = useMemo(
+    () =>
+      ({
+        seller: 'Vendedor',
+        consultant: 'Consultor',
+        stylist: 'Estilista',
+        coach: 'Coach',
+        chef: 'Chef',
+      })[actMode] ?? 'Vendedor',
+    [actMode],
+  )
+  const businessGoalLabel = useMemo(
+    () =>
+      ({
+        volume: 'Mais vendas',
+        ticket: 'Ticket medio',
+        rotation: 'Giro',
+        launch: 'Novidades',
+      })[businessGoal] ?? 'Mais vendas',
+    [businessGoal],
+  )
+  const identityTagline = useMemo(() => {
+    if (sparkState === 'speaking') {
+      return 'Presença viva da marca em ação.'
+    }
+
+    if (sparkState === 'thinking') {
+      return 'Consciência ativa da marca, lendo o próximo movimento.'
+    }
+
+    return 'A Centelha da marca, pronta para conversar, orientar e vender.'
+  }, [sparkState])
+  const identityChips = useMemo(
+    () => [
+      { label: 'Tom', text: `${tone === 'ousado' ? '⚡' : tone === 'divertido' ? '🎭' : tone === 'inteligente' ? '🧠' : '💼'} ${tone}` },
+      { label: 'Estilo', text: `${voiceStyle === 'irreverent' ? '🎤' : voiceStyle === 'adaptive' ? '🎭' : voiceStyle === 'strong' ? '⚡' : voiceStyle === 'soft' ? '🤍' : '✨'} ${voiceStyleLabel}` },
+      { label: 'Atuação', text: `${actMode === 'chef' ? '🍳' : actMode === 'stylist' ? '👕' : actMode === 'coach' ? '🧠' : actMode === 'consultant' ? '💬' : '💰'} Atua como ${actModeLabel}` },
+      { label: 'Objetivo', text: `${businessGoal === 'launch' ? '🚀' : businessGoal === 'rotation' ? '🔄' : businessGoal === 'ticket' ? '💳' : '🎯'} Foco em ${businessGoalLabel.toLowerCase()}` },
+    ],
+    [actMode, actModeLabel, businessGoal, businessGoalLabel, tone, voiceStyle, voiceStyleLabel],
+  )
   const suggestions = useMemo(
     () =>
       generateSuggestions(
@@ -682,6 +737,19 @@ export default function App() {
       state: trimmedState || undefined,
     }
   }, [address, city, state])
+  const pageHighlights = useMemo(() => {
+    const hasPromotions = showPromotions && catalogItems.some((item) => item.isPromotion)
+    const hasNewArrivals = showNewArrivals && catalogItems.some((item) => item.isNewArrival)
+
+    if (!hasPromotions && !hasNewArrivals) {
+      return undefined
+    }
+
+    return {
+      has_promotions: hasPromotions,
+      has_new_arrivals: hasNewArrivals,
+    }
+  }, [catalogItems, showNewArrivals, showPromotions])
   const shouldShowLearningSignal = useMemo(() => hasMeaningfulSparkMemory(sparkMemory), [sparkMemory])
 
   const buildPersonaPayload = () => ({
@@ -796,6 +864,7 @@ export default function App() {
         ...(buildSparkMemorySummary(nextSparkMemory) ? { memory_summary: buildSparkMemorySummary(nextSparkMemory) } : {}),
         ...(catalogSummary.length > 0 ? { catalog_summary: catalogSummary } : {}),
         ...(locationSummary ? { location_summary: locationSummary } : {}),
+        ...(pageHighlights ? { page_highlights: pageHighlights } : {}),
         },
         { headers: buildApiHeaders(nextContextMode) },
       )
@@ -852,6 +921,12 @@ export default function App() {
     setLogo(savedPersona.logo ?? '')
     setBusinessDescription(savedPersona.businessDescription ?? '')
     setInstitutionalImage(savedPersona.institutionalImage ?? '')
+    setThemePrimaryColor(savedPersona.theme?.primaryColor ?? '#ff9460')
+    setThemeSecondaryColor(savedPersona.theme?.secondaryColor ?? '#ff5e43')
+    setShowCarousel(savedPersona.pageSections?.showCarousel === true)
+    setShowPromotions(savedPersona.pageSections?.showPromotions === true)
+    setShowNewArrivals(savedPersona.pageSections?.showNewArrivals === true)
+    setCarouselImages(savedPersona.carouselImages ?? [])
     setOpeningStart(savedPersona.openingHours?.start ?? '')
     setOpeningEnd(savedPersona.openingHours?.end ?? '')
     setAddress(savedPersona.address ?? '')
@@ -1065,6 +1140,23 @@ export default function App() {
     }
   }
 
+  const handleCarouselImagesChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = event.target.files
+    if (!selectedFiles || selectedFiles.length === 0) {
+      return
+    }
+
+    try {
+      setCarouselImages(await readFilesAsDataUrls(selectedFiles, 3))
+      setConfigStatus('')
+    } catch (error) {
+      console.error(error)
+      setConfigStatus('Nao consegui carregar as imagens do destaque.')
+    } finally {
+      event.target.value = ''
+    }
+  }
+
   const handleCatalogImageChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0]
     if (!selectedFile) {
@@ -1112,6 +1204,8 @@ export default function App() {
       category: catalogDraft.category,
       priority: catalogDraft.priority,
       isFeatured: catalogDraft.isFeatured,
+      isPromotion: catalogDraft.isPromotion,
+      isNewArrival: catalogDraft.isNewArrival,
       complements: catalogDraft.complements
         .split(',')
         .map((value) => value.trim())
@@ -1147,6 +1241,8 @@ export default function App() {
       category: item.category ?? '',
       priority: item.priority ?? 'medium',
       isFeatured: item.isFeatured ?? false,
+      isPromotion: item.isPromotion ?? false,
+      isNewArrival: item.isNewArrival ?? false,
       complements: item.complements?.join(', ') ?? '',
     })
     if (configStatus) {
@@ -1176,6 +1272,16 @@ export default function App() {
       businessGoal,
       businessDescription: businessDescription.trim() || undefined,
       institutionalImage: institutionalImage || undefined,
+      theme: {
+        primaryColor: themePrimaryColor,
+        secondaryColor: themeSecondaryColor,
+      },
+      pageSections: {
+        showCarousel,
+        showPromotions,
+        showNewArrivals,
+      },
+      carouselImages: carouselImages.length > 0 ? carouselImages : undefined,
       openingHours,
       address: address.trim() || undefined,
       city: city.trim() || undefined,
@@ -1231,6 +1337,7 @@ export default function App() {
         ...(memorySummary ? { memory_summary: memorySummary } : {}),
         ...(catalogSummary.length > 0 ? { catalog_summary: catalogSummary } : {}),
         ...(locationSummary ? { location_summary: locationSummary } : {}),
+        ...(pageHighlights ? { page_highlights: pageHighlights } : {}),
         },
         { headers: buildApiHeaders(contextMode) },
       )
@@ -1298,33 +1405,26 @@ export default function App() {
   return (
     <main className={`app-shell ${contextMode === 'admin' ? 'app-shell-admin' : ''}`}>
       <section className="identity-panel">
-        <div className="identity-copy">
-          <div className="eyebrow">BrandSoul Interface</div>
-          <h1>A Centelha responde com presenca.</h1>
-          <p className="hero-copy">
-            Um ponto de contato vivo para a marca: ritmo, atitude e resposta em tempo real.
-          </p>
+        <div className="identity-copy identity-copy--admin">
+          <div className="eyebrow">Painel da marca</div>
+          <h1>{brandName}</h1>
+          <p className="identity-tagline">{identityTagline}</p>
+          <p className="hero-copy">Operação viva da marca: conversa, conteúdo e ajustes da Centelha em um fluxo direto.</p>
         </div>
 
-        <div className="identity-chip-grid" aria-label="Identidade atual da marca">
-          <div className="identity-chip brand">
-            <span className="identity-chip-label">Marca</span>
-            <strong>{brandName}</strong>
-          </div>
-          <div className="identity-chip">
-            <span className="identity-chip-label">Tone</span>
-            <strong>{tone}</strong>
-          </div>
-          <div className="identity-chip">
-            <span className="identity-chip-label">Power</span>
-            <strong>{power}</strong>
-          </div>
+        <div className="identity-chip-grid identity-chip-grid--admin" aria-label="Estado atual da Centelha">
+          {identityChips.map((chip) => (
+            <div key={chip.label} className="identity-chip identity-chip--alive">
+              <span className="identity-chip-label">{chip.label}</span>
+              <strong>{chip.text}</strong>
+            </div>
+          ))}
         </div>
 
         {businessDescription.trim() ? (
-          <div className="identity-context" aria-label="Atuacao da marca">
-            <span className="identity-context-label">Atuacao</span>
-            <p>{businessDescription.trim()}</p>
+          <div className="identity-context" aria-label="Atuação da marca">
+            <span className="identity-context-label">Manifesto curto</span>
+            <p className="brand-description">{businessDescription.trim()}</p>
           </div>
         ) : null}
 
@@ -1344,11 +1444,22 @@ export default function App() {
           </div>
         </div>
 
+        <div className="future-teaser-card" aria-label="Visão futura">
+          <div className="future-teaser-copy">
+            <span className="future-teaser-label">Próxima temporada</span>
+            <strong>Centelhas conversando entre si.</strong>
+            <p>Centelhas colaborando e criando novos movimentos para marcas, em um capítulo futuro do BrandSoul.</p>
+          </div>
+          <button type="button" className="chat-header-button subtle future-teaser-button" onClick={handleOpenInteractionPage}>
+            Ver teaser
+          </button>
+        </div>
+
         <section className="admin-config-panel" aria-label="Configuracao da marca">
           <div className="admin-config-header">
-            <span className="eyebrow">Configuracao viva</span>
-            <h2>Presenca, contato e catalogo</h2>
-            <p>Atualize os dados reais da empresa e reflita isso na pagina publica e nas respostas da Centelha.</p>
+            <span className="eyebrow">Editar Centelha</span>
+            <h2>Marca, página e catálogo</h2>
+            <p>Os ajustes mais profundos continuam aqui, sem pesar o fluxo principal do admin.</p>
           </div>
 
           <details className="admin-config-section" open>
@@ -1446,7 +1557,7 @@ export default function App() {
             </div>
           </details>
 
-          <details className="admin-config-section" open>
+          <details className="admin-config-section">
             <summary className="admin-config-section-title">Marca publica</summary>
             <div className="admin-config-section-body">
             <div className="admin-public-link-card">
@@ -1467,7 +1578,59 @@ export default function App() {
             </div>
           </details>
 
-          <details className="admin-config-section" open>
+          <details className="admin-config-section">
+            <summary className="admin-config-section-title">Estilo visual da pagina</summary>
+            <div className="admin-config-section-body">
+              <div className="admin-config-grid">
+                <label className="persona-field">
+                  <span className="persona-label">Cor principal</span>
+                  <input className="persona-input persona-color-input" type="color" value={themePrimaryColor} onChange={(event) => setThemePrimaryColor(event.target.value)} />
+                </label>
+                <label className="persona-field">
+                  <span className="persona-label">Cor secundaria</span>
+                  <input className="persona-input persona-color-input" type="color" value={themeSecondaryColor} onChange={(event) => setThemeSecondaryColor(event.target.value)} />
+                </label>
+              </div>
+
+              <div className="theme-preview-strip" aria-hidden="true">
+                <span style={{ background: themePrimaryColor }} />
+                <span style={{ background: themeSecondaryColor }} />
+              </div>
+
+              <div className="persona-field admin-config-grid-span">
+                <span className="persona-label">O que mostrar na sua pagina</span>
+                <div className="persona-toggle-row">
+                  <button type="button" className={`persona-toggle ${showCarousel ? 'selected' : ''}`} onClick={() => setShowCarousel((current) => !current)}>
+                    Mostrar carrossel de destaque
+                  </button>
+                  <button type="button" className={`persona-toggle ${showPromotions ? 'selected' : ''}`} onClick={() => setShowPromotions((current) => !current)}>
+                    Mostrar promocoes em destaque
+                  </button>
+                  <button type="button" className={`persona-toggle ${showNewArrivals ? 'selected' : ''}`} onClick={() => setShowNewArrivals((current) => !current)}>
+                    Mostrar novidades
+                  </button>
+                </div>
+              </div>
+
+              <div className="persona-field">
+                <span className="persona-label">Imagens do carrossel</span>
+                <input className="persona-input" type="file" accept="image/*" multiple onChange={handleCarouselImagesChange} />
+                <span className="persona-field-hint">Opcional. Use ate 3 imagens para um destaque mais comercial.</span>
+              </div>
+
+              {carouselImages.length > 0 ? (
+                <div className="admin-inline-gallery">
+                  {carouselImages.map((image, index) => (
+                    <div key={`${image}-${index}`} className="admin-inline-gallery-item">
+                      <img src={image} alt={`Destaque ${index + 1}`} className="admin-inline-gallery-image" />
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          </details>
+
+          <details className="admin-config-section">
             <summary className="admin-config-section-title">Marca e contato</summary>
             <div className="admin-config-section-body">
             <div className="admin-config-grid">
@@ -1510,7 +1673,7 @@ export default function App() {
             </div>
           </details>
 
-          <details className="admin-config-section" open>
+          <details className="admin-config-section">
             <summary className="admin-config-section-title">Acoes do dia</summary>
             <div className="admin-config-section-body">
             <div className="admin-config-grid">
@@ -1552,7 +1715,7 @@ export default function App() {
             </div>
           </details>
 
-          <details className="admin-config-section" open>
+          <details className="admin-config-section">
             <summary className="admin-config-section-title">Localizacao</summary>
             <div className="admin-config-section-body">
             <div className="admin-config-grid">
@@ -1572,7 +1735,7 @@ export default function App() {
             </div>
           </details>
 
-          <details className="admin-config-section" open>
+          <details className="admin-config-section">
             <summary className="admin-config-section-title">Catalogo</summary>
             <div className="admin-config-section-body">
             <div className="admin-config-grid">
@@ -1617,6 +1780,20 @@ export default function App() {
                 <label className="persona-inline-checkbox">
                   <input type="checkbox" checked={catalogDraft.isFeatured} onChange={(event) => handleCatalogDraftChange('isFeatured', event.target.checked)} />
                   <span>Quero empurrar esse item nas sugestoes</span>
+                </label>
+              </div>
+              <div className="persona-field admin-checkbox-field">
+                <span className="persona-label">Promocao</span>
+                <label className="persona-inline-checkbox">
+                  <input type="checkbox" checked={catalogDraft.isPromotion} onChange={(event) => handleCatalogDraftChange('isPromotion', event.target.checked)} />
+                  <span>Mostrar esse item na secao de promocoes</span>
+                </label>
+              </div>
+              <div className="persona-field admin-checkbox-field">
+                <span className="persona-label">Novidade</span>
+                <label className="persona-inline-checkbox">
+                  <input type="checkbox" checked={catalogDraft.isNewArrival} onChange={(event) => handleCatalogDraftChange('isNewArrival', event.target.checked)} />
+                  <span>Mostrar esse item na secao de novidades</span>
                 </label>
               </div>
             </div>
@@ -1722,151 +1899,110 @@ export default function App() {
       <section className="chat-card">
         <header className="chat-card-header">
           <div className="chat-card-header-main">
-            <div className="chat-card-title">Conversa com a Centelha</div>
+            <div className="chat-card-title">{contextMode === 'admin' ? 'Copiloto da marca' : 'Conversa com a Centelha'}</div>
             <div className="chat-card-subtitle">
               {contextMode === 'admin'
                 ? messages.length <= 1
-                  ? 'Conversa interna da marca'
-                  : 'Memoria estrategica ativa'
+                  ? 'Conversa, conteudo e decisao no mesmo fluxo.'
+                  : 'Memoria estrategica ativa.'
                 : messages.length <= 1
                   ? 'Atendimento em simulacao'
                   : 'Contexto publico ativo'}
             </div>
           </div>
 
-          <div className="channel-selector-panel">
-            <div className="channel-selector-copy">
-              <span className="channel-selector-label">Plano de uso</span>
-              <span className="channel-selector-subtitle">
-                {contextMode === 'admin'
-                  ? 'A Centelha fala por dentro, como nucleo estrategico da marca.'
-                  : 'A Centelha fala em publico, como voz da marca para clientes e leads.'}
-              </span>
-            </div>
+          <div className="channel-selector-row context-mode-row admin-context-switch" role="tablist" aria-label="Selecione o modo de contexto">
+            <button
+              type="button"
+              className={`channel-mode-button ${contextMode === 'admin' ? 'active' : ''}`}
+              onClick={() => handleContextModeChange('admin')}
+            >
+              <strong>Operacao</strong>
+              <span>Conteudo, rotina e leitura interna</span>
+            </button>
+            <button
+              type="button"
+              className={`channel-mode-button ${contextMode === 'customer' ? 'active' : ''}`}
+              onClick={() => handleContextModeChange('customer')}
+            >
+              <strong>Atendimento</strong>
+              <span>Cliente, orientacao e proximo passo</span>
+            </button>
+          </div>
 
-            <div className="channel-selector-row context-mode-row" role="tablist" aria-label="Selecione o modo de contexto">
-              <button
-                type="button"
-                className={`channel-mode-button ${contextMode === 'admin' ? 'active' : ''}`}
-                onClick={() => handleContextModeChange('admin')}
-              >
-                <strong>Operacao / Admin</strong>
-                <span>Conversa interna, sugestao e leitura de padroes</span>
-              </button>
-              <button
-                type="button"
-                className={`channel-mode-button ${contextMode === 'customer' ? 'active' : ''}`}
-                onClick={() => handleContextModeChange('customer')}
-              >
-                <strong>Atendimento</strong>
-                <span>Cliente, venda, orientacao e proximo passo</span>
-              </button>
-            </div>
-
-            {contextMode === 'customer' ? (
-              <>
-                <div className="channel-selector-copy">
-                  <span className="channel-selector-label">Simulador de canais</span>
-                  <span className="channel-selector-subtitle">Teste a mesma Centelha em contextos sociais diferentes.</span>
-                  <div className="debug-insights" aria-label="Metadados de inteligencia">
-                    <div className="debug-chip">
-                      <span className="debug-label">Intencao</span>
-                      <strong className="debug-value">{detectedIntent}</strong>
-                    </div>
-                    <div className="debug-chip">
-                      <span className="debug-label">Comercial</span>
-                      <strong className="debug-value">{commercialIntent ? 'sim' : 'nao'}</strong>
-                    </div>
-                    {shouldShowBusinessProfile ? (
-                      <div className="debug-chip debug-chip-wide">
-                        <span className="debug-label">Perfil</span>
-                        <strong className="debug-value">{formatBusinessProfile(effectiveBusinessProfile)}</strong>
-                      </div>
-                    ) : null}
-                  </div>
+          {contextMode === 'customer' ? (
+            <div className="channel-selector-panel">
+              <div className="debug-insights" aria-label="Metadados de inteligencia">
+                <div className="debug-chip">
+                  <span className="debug-label">Intencao</span>
+                  <strong className="debug-value">{detectedIntent}</strong>
                 </div>
-
-                <div className="channel-selector-row" role="tablist" aria-label="Selecione o contexto do canal">
-                  {channelModeOptions.map((option) => {
-                    const isActive = option.value === channelMode
-
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        className={`channel-mode-button ${isActive ? 'active' : ''}`}
-                        onClick={() => handleChannelModeChange(option.value)}
-                      >
-                        <strong>{option.label}</strong>
-                        <span>{option.detail}</span>
-                      </button>
-                    )
-                  })}
+                <div className="debug-chip">
+                  <span className="debug-label">Comercial</span>
+                  <strong className="debug-value">{commercialIntent ? 'sim' : 'nao'}</strong>
                 </div>
-
-                <div className="interaction-entry-panel">
-                  <div className="interaction-entry-copy">
-                    <span className="channel-selector-label">Centelha ↔ Centelha</span>
-                    <span className="channel-selector-subtitle">
-                      A simulacao entre marcas agora vive em uma pagina propria, mais organizada e com palco dedicado.
-                    </span>
-                  </div>
-                  <button type="button" className="chat-header-button interaction-entry-button" onClick={handleOpenInteractionPage}>
-                    Abrir pagina dedicada
-                  </button>
-                </div>
-
-                {isInstagramMode(contextMode, channelMode) ? (
-                  <div className="channel-username-wrap">
-                    <label className="composer-label" htmlFor="instagramUsername">
-                      Usuario do Instagram
-                    </label>
-                    <input
-                      id="instagramUsername"
-                      className="channel-username-input"
-                      value={instagramUsername}
-                      onChange={(event) => setInstagramUsername(event.target.value)}
-                      placeholder="@usuario"
-                      autoComplete="off"
-                    />
+                {shouldShowBusinessProfile ? (
+                  <div className="debug-chip debug-chip-wide">
+                    <span className="debug-label">Perfil</span>
+                    <strong className="debug-value">{formatBusinessProfile(effectiveBusinessProfile)}</strong>
                   </div>
                 ) : null}
-              </>
-            ) : (
-              <div className="admin-mode-panel">
-                <span className="channel-selector-label">Conversa interna</span>
-                <span className="channel-selector-subtitle">
-                  Use este modo para operar a marca por dentro: marketing, conteudo, rotina, leitura de sinais e decisao.
-                </span>
-                <div className="debug-insights" aria-label="Leitura interna da Centelha">
-                  <div className="debug-chip">
-                    <span className="debug-label">Memoria</span>
-                    <strong className="debug-value">{shouldShowLearningSignal ? 'ativa' : 'inicial'}</strong>
-                  </div>
-                  <div className="debug-chip">
-                    <span className="debug-label">Foco</span>
-                    <strong className="debug-value">estrategia</strong>
-                  </div>
-                  {shouldShowBusinessProfile ? (
-                    <div className="debug-chip debug-chip-wide">
-                      <span className="debug-label">Perfil</span>
-                      <strong className="debug-value">{formatBusinessProfile(effectiveBusinessProfile)}</strong>
-                    </div>
-                  ) : null}
-                </div>
               </div>
-            )}
-          </div>
+
+              <div className="channel-selector-row" role="tablist" aria-label="Selecione o contexto do canal">
+                {channelModeOptions.map((option) => {
+                  const isActive = option.value === channelMode
+
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`channel-mode-button ${isActive ? 'active' : ''}`}
+                      onClick={() => handleChannelModeChange(option.value)}
+                    >
+                      <strong>{option.label}</strong>
+                      <span>{option.detail}</span>
+                    </button>
+                  )
+                })}
+              </div>
+
+              {isInstagramMode(contextMode, channelMode) ? (
+                <div className="channel-username-wrap">
+                  <label className="composer-label" htmlFor="instagramUsername">
+                    Usuario do Instagram
+                  </label>
+                  <input
+                    id="instagramUsername"
+                    className="channel-username-input"
+                    value={instagramUsername}
+                    onChange={(event) => setInstagramUsername(event.target.value)}
+                    placeholder="@usuario"
+                    autoComplete="off"
+                  />
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="chat-session-header">
             <div className="chat-session-meta">
               <span className="chat-session-brand">{brandName}</span>
-              <span className="chat-session-chip">{contextMode === 'admin' ? 'Admin' : 'Atendimento'}</span>
               <span className="chat-session-chip">{tone}</span>
-              <span className="chat-session-chip">{power}</span>
-              <span className="chat-session-chip">Canal: {channelContext.channelLabel}</span>
-              <span className="chat-session-chip">Origem: {channelContext.sourceLabel}</span>
-              {channelContext.usernameLabel ? <span className="chat-session-chip">Usuario: {channelContext.usernameLabel}</span> : null}
+              {contextMode === 'admin' ? (
+                <>
+                  <span className="chat-session-chip">{voiceStyleLabel}</span>
+                  <span className="chat-session-chip">{actModeLabel}</span>
+                  <span className="chat-session-chip">{businessGoalLabel}</span>
+                </>
+              ) : (
+                <>
+                  <span className="chat-session-chip">{power}</span>
+                  <span className="chat-session-chip">Canal: {channelContext.channelLabel}</span>
+                  <span className="chat-session-chip">Origem: {channelContext.sourceLabel}</span>
+                  {channelContext.usernameLabel ? <span className="chat-session-chip">Usuario: {channelContext.usernameLabel}</span> : null}
+                </>
+              )}
               <span className="chat-session-memory">{memoryStatus}</span>
               {shouldShowLearningSignal ? <span className="chat-session-learning">Aprendizado recente</span> : null}
             </div>
@@ -1877,6 +2013,12 @@ export default function App() {
               </button>
               <button type="button" className="chat-header-button" onClick={handleEditCentelha}>
                 Editar Centelha
+              </button>
+              <button type="button" className="chat-header-button" onClick={handleOpenPublicPage}>
+                Ver como cliente
+              </button>
+              <button type="button" className="chat-header-button subtle" onClick={handleCopyPublicPageLink}>
+                {linkCopyStatus || 'Compartilhar link'}
               </button>
             </div>
           </div>

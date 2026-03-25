@@ -33,6 +33,11 @@ class LocationSummary(BaseModel):
     state: str | None = None
 
 
+class PageHighlights(BaseModel):
+    has_promotions: bool = False
+    has_new_arrivals: bool = False
+
+
 class ChannelMessage(BaseModel):
     channel: str = Field(..., min_length=1, examples=["web"])
     user_id: str = Field(..., min_length=1, examples=["local-user"])
@@ -49,6 +54,7 @@ class ChannelMessage(BaseModel):
     catalog_summary: list[CatalogSummaryItem] | None = None
     business_goal: Literal["volume", "ticket", "rotation", "launch"] | str | None = "volume"
     location_summary: LocationSummary | None = None
+    page_highlights: PageHighlights | None = None
     business_status: Literal["open", "closed"] | None = None
     context_mode: Literal["customer", "admin"] | str | None = "customer"
 
