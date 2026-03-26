@@ -2300,7 +2300,7 @@
 
 .content-history-trigger {
   display: grid;
-  gap: 0.35rem;
+  gap: 0.32rem;
   border: 0;
   padding: 0;
   background: transparent;
@@ -2309,8 +2309,33 @@
   cursor: pointer;
 }
 
+.content-history-headline,
 .content-history-trigger strong {
   color: var(--text-main);
+  font-size: 0.96rem;
+  line-height: 1.45;
+  text-shadow: none;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.content-history-preview {
+  color: rgba(232, 236, 240, 0.72);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  text-shadow: none;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .content-history-date {
