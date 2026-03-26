@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import axios from 'axios'
 
 import BrandInteractionList, { type BrandInteractionTurnMessage } from '../lib/components/BrandInteractionList'
+import { buildApiUrl } from '../lib/api'
 import Spark from '../lib/components/Spark'
 import {
   brandInteractionPresets,
@@ -42,8 +43,6 @@ interface BrandInteractionResponse {
   transcript: BrandInteractionTurnMessage[]
   metadata?: BrandInteractionMetadata
 }
-
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 
 const interactionContextOptions: Array<{ value: InteractionContext; label: string; detail: string }> = [
   { value: 'parceria', label: 'Parceria', detail: 'Sinergia e valor mutuo' },
@@ -538,7 +537,7 @@ export default function BrandInteractionPage() {
     resetInteractionState()
 
     try {
-      const result = await axios.post<BrandInteractionResponse>(`${API_URL}/interaction/simulate`, {
+      const result = await axios.post<BrandInteractionResponse>(buildApiUrl('/interaction/simulate'), {
         initiator: {
           brand_name: initiatorConfig.brandName.trim(),
           persona: buildInteractionPersonaPayload(initiatorConfig),

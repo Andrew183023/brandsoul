@@ -1,0 +1,292 @@
+from fastapi.testclient import TestClient
+
+from main import app
+
+
+client = TestClient(app)
+
+
+def test_register_creates_user_tenant_and_membership(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRANDSOUL_DB_PATH", str(tmp_path / "auth-register.db"))
+
+    response = client.post(
+        "/auth/register",
+        json={
+            "name": "Andrew",
+            "email": "andrew@example.com",
+            "password": "SenhaSegura123",
+            "tenant_name": "Vista Verde",
+            "business_model": "service",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["token"]
+    assert body["user"]["email"] == "andrew@example.com"
+    assert body["tenant"]["name"] == "Vista Verde"
+    assert body["tenant"]["slug"] == "vista-verde"
+
+
+def test_login_and_authenticated_endpoints_work(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRANDSOUL_DB_PATH", str(tmp_path / "auth-login.db"))
+
+    register_response = client.post(
+        "/auth/register",
+        json={
+            "name": "Andrew",
+            "email": "owner@example.com",
+            "password": "SenhaSegura123",
+            "tenant_name": "Casa Solar",
+            "business_model": "hybrid",
+        },
+    )
+    assert register_response.status_code == 200
+
+    login_response = client.post(
+        "/auth/login",
+        json={
+            "email": "owner@example.com",
+            "password": "SenhaSegura123",
+        },
+    )
+
+    assert login_response.status_code == 200
+    login_body = login_response.json()
+    token = login_body["token"]
+    assert token
+    assert login_body["tenant"]["slug"] == "casa-solar"
+
+    me_response = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    tenant_response = client.get("/tenant/me", headers={"Authorization": f"Bearer {token}"})
+
+    assert me_response.status_code == 200
+    assert me_response.json()["email"] == "owner@example.com"
+
+    assert tenant_response.status_code == 200
+    assert tenant_response.json()["name"] == "Casa Solar"
+
+
+def test_admin_spark_roundtrip_uses_authenticated_tenant(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRANDSOUL_DB_PATH", str(tmp_path / "spark.db"))
+
+    register_response = client.post(
+        "/auth/register",
+        json={
+            "name": "Owner",
+            "email": "spark@example.com",
+            "password": "SenhaSegura123",
+            "tenant_name": "Fogo Vivo",
+            "business_model": "service",
+        },
+    )
+    token = register_response.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    spark_response = client.get("/admin/spark", headers=headers)
+    assert spark_response.status_code == 200
+    assert spark_response.json()["brandName"] == "Fogo Vivo"
+
+    save_response = client.put(
+        "/admin/spark",
+        headers=headers,
+        json={
+            "brandName": "Fogo Vivo",
+            "tone": "ousado",
+            "power": "atração",
+            "voiceStyle": "strong",
+            "actMode": "seller",
+            "businessGoal": "volume",
+            "businessDescription": "Marca com presenca forte.",
+            "theme": {"primaryColor": "#111111", "secondaryColor": "#ff6600"},
+            "pageSections": {"showCarousel": True, "showPromotions": False, "showNewArrivals": True},
+            "carouselImages": ["data:image/png;base64,abc"],
+            "openingHours": {"start": "09:00", "end": "18:00"},
+        },
+    )
+
+    assert save_response.status_code == 200
+    assert save_response.json()["tone"] == "ousado"
+    assert save_response.json()["theme"]["secondaryColor"] == "#ff6600"
+
+    refreshed_response = client.get("/admin/spark", headers=headers)
+    assert refreshed_response.status_code == 200
+    assert refreshed_response.json()["businessDescription"] == "Marca com presenca forte."
+
+
+def test_admin_catalog_crud_uses_authenticated_tenant(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRANDSOUL_DB_PATH", str(tmp_path / "catalog.db"))
+
+    register_response = client.post(
+        "/auth/register",
+        json={
+            "name": "Owner",
+            "email": "catalog@example.com",
+            "password": "SenhaSegura123",
+            "tenant_name": "Atelie Vento",
+            "business_model": "product",
+        },
+    )
+    token = register_response.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    create_response = client.post(
+        "/admin/catalog",
+        headers=headers,
+        json={
+            "name": "Camisa Essencial",
+            "description": "Opcao principal da colecao.",
+            "category": "Vestuario",
+            "price": "R$ 129",
+            "highlight": "Mais vendida",
+            "priority": "high",
+            "isFeatured": True,
+            "complements": ["Calca", "Jaqueta"],
+            "availability": "available",
+        },
+    )
+
+    assert create_response.status_code == 200
+    created_item = create_response.json()
+    item_id = created_item["id"]
+    assert created_item["name"] == "Camisa Essencial"
+
+    list_response = client.get("/admin/catalog", headers=headers)
+    assert list_response.status_code == 200
+    assert len(list_response.json()) == 1
+
+    update_response = client.put(
+        f"/admin/catalog/{item_id}",
+        headers=headers,
+        json={
+            "id": item_id,
+            "name": "Camisa Essencial",
+            "description": "Opcao principal da colecao em nova fase.",
+            "category": "Vestuario",
+            "price": "R$ 139",
+            "highlight": "Destaque",
+            "priority": "medium",
+            "isPromotion": True,
+            "availability": "low",
+        },
+    )
+    assert update_response.status_code == 200
+    assert update_response.json()["price"] == "R$ 139"
+    assert update_response.json()["isPromotion"] is True
+
+    delete_response = client.delete(f"/admin/catalog/{item_id}", headers=headers)
+    assert delete_response.status_code == 200
+
+    final_list_response = client.get("/admin/catalog", headers=headers)
+    assert final_list_response.status_code == 200
+    assert final_list_response.json() == []
+
+
+def test_public_brand_by_slug_returns_public_spark_and_catalog(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRANDSOUL_DB_PATH", str(tmp_path / "public-brand.db"))
+
+    register_response = client.post(
+        "/auth/register",
+        json={
+            "name": "Owner",
+            "email": "public@example.com",
+            "password": "SenhaSegura123",
+            "tenant_name": "Casa Aurora",
+            "business_model": "hybrid",
+        },
+    )
+    token = register_response.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    client.put(
+        "/admin/spark",
+        headers=headers,
+        json={
+            "brandName": "Casa Aurora",
+            "tone": "inteligente",
+            "power": "clareza",
+            "voiceStyle": "balanced",
+            "actMode": "consultant",
+            "businessGoal": "launch",
+            "businessDescription": "Marca de casa e decor com novidades frequentes.",
+            "theme": {"primaryColor": "#224466", "secondaryColor": "#66aacc"},
+            "pageSections": {"showCarousel": False, "showPromotions": True, "showNewArrivals": True},
+        },
+    )
+    client.post(
+        "/admin/catalog",
+        headers=headers,
+        json={
+            "name": "Luminaria Alba",
+            "description": "Peca principal da selecao.",
+            "price": "R$ 289",
+            "isFeatured": True,
+            "isPromotion": True,
+            "isNewArrival": True,
+            "availability": "available",
+        },
+    )
+
+    public_response = client.get("/public/brands/casa-aurora")
+
+    assert public_response.status_code == 200
+    body = public_response.json()
+    assert body["slug"] == "casa-aurora"
+    assert body["spark"]["brandName"] == "Casa Aurora"
+    assert body["theme"]["primaryColor"] == "#224466"
+    assert body["pageSections"]["showPromotions"] is True
+    assert len(body["catalog"]) == 1
+    assert body["pageHighlights"]["hasPromotions"] is True
+
+
+def test_channel_message_uses_public_brand_slug_context(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRANDSOUL_DB_PATH", str(tmp_path / "public-channel.db"))
+
+    register_response = client.post(
+        "/auth/register",
+        json={
+            "name": "Owner",
+            "email": "slug@example.com",
+            "password": "SenhaSegura123",
+            "tenant_name": "Marca Solar",
+            "business_model": "service",
+        },
+    )
+    token = register_response.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    client.put(
+        "/admin/spark",
+        headers=headers,
+        json={
+            "brandName": "Marca Solar",
+            "tone": "ousado",
+            "power": "atração",
+            "voiceStyle": "strong",
+            "actMode": "seller",
+            "businessGoal": "volume",
+            "businessDescription": "Energia solar para casas e empresas.",
+        },
+    )
+
+    response = client.post(
+        "/channel/message",
+        json={
+            "channel": "web",
+            "user_id": "visitor-1",
+            "brand_name": "Ignorar Local",
+            "tenant_slug": "marca-solar",
+            "message": "",
+            "persona": {
+                "tone": "divertido",
+                "power": "conexão",
+                "voice_style": "soft",
+            },
+            "messages": [],
+            "context_mode": "customer",
+            "metadata": {"intent": "conversation_start"},
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["response"] == "Agora quem responde sou eu. Pode mandar."

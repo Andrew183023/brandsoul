@@ -10,6 +10,8 @@ import type { Message } from './lib/components/ChatMessage'
 import { buildApiHeaders, buildApiUrl } from './lib/api'
 import { getBusinessStatus } from './lib/businessStatus'
 import { buildContentActions, type ContentAction } from './lib/contentActions'
+import { fetchSpark, saveSpark } from './lib/sparkApi'
+import { createCatalogItem, deleteCatalogItem, fetchCatalogItems, updateCatalogItem } from './lib/catalogApi'
 import { readFileAsDataUrl, readFilesAsDataUrls } from './lib/media'
 import { sanitizeWhatsAppInput } from './lib/whatsapp'
 import {
@@ -49,6 +51,8 @@ import {
   saveSparkMemory,
   type SparkMemory,
 } from './lib/sparkMemory'
+import { loadSession, logout, type AuthTenant, type AuthUser } from './lib/session'
+import { buildPublicBrandUrl, loadCurrentTenant, refreshCurrentTenant } from './lib/tenant'
 import type { CatalogAvailability, CatalogItem, CatalogPriority } from './types/catalog'
 import './App.css'
 
@@ -104,10 +108,6 @@ function createEmptyCatalogDraft(): CatalogDraft {
     isNewArrival: false,
     complements: '',
   }
-}
-
-function buildPublicPageUrl() {
-  return `${window.location.origin}/`
 }
 
 interface ChannelResponseMetadata {
@@ -521,6 +521,7 @@ function buildSuggestionPrompt(suggestion: Suggestion) {
 }
 
 export default function App() {
+  const savedSession = useMemo(() => loadSession(), [])
   const savedPersona = useMemo(() => loadBrandPersona(), [])
   const initialContextMode = useMemo(() => loadContextMode(), [])
   const initialChannelMode = useMemo(() => loadChannelMode(), [])
@@ -575,6 +576,8 @@ export default function App() {
   const [editingCatalogId, setEditingCatalogId] = useState<string | null>(null)
   const [configStatus, setConfigStatus] = useState('')
   const [linkCopyStatus, setLinkCopyStatus] = useState('')
+  const [currentTenant, setCurrentTenant] = useState<AuthTenant | null>(() => loadCurrentTenant())
+  const [currentUser] = useState<AuthUser | null>(savedSession?.user ?? null)
   const contentHistoryStorageKey = useMemo(
     () =>
       getContentHistoryStorageKey({
@@ -605,7 +608,8 @@ export default function App() {
   const bootstrapRequestIdRef = useRef(0)
   const [isIntroPulseActive, setIsIntroPulseActive] = useState(false)
   const activeMessageStorageKey = useMemo(() => getMessageStorageKey(contextMode, channelMode), [channelMode, contextMode])
-  const publicPageUrl = useMemo(() => buildPublicPageUrl(), [])
+  const publicPageUrl = useMemo(() => buildPublicBrandUrl(currentTenant?.slug), [currentTenant?.slug])
+  const publicSlugLabel = useMemo(() => (currentTenant?.slug ? `/brands/${currentTenant.slug}` : 'Slug pendente'), [currentTenant?.slug])
   const channelContext = useMemo(
     () => getChannelContext(contextMode, channelMode, instagramUsername),
     [channelMode, contextMode, instagramUsername],
@@ -912,42 +916,73 @@ export default function App() {
   }, [sparkMemoryStorageKey])
 
   useEffect(() => {
-    if (!savedPersona) {
-      navigateTo('/create')
-      return
+    const applyPersona = (persona: typeof savedPersona) => {
+      if (!persona) {
+        return
+      }
+
+      setBrandName(persona.brandName)
+      setLogo(persona.logo ?? '')
+      setBusinessDescription(persona.businessDescription ?? '')
+      setInstitutionalImage(persona.institutionalImage ?? '')
+      setThemePrimaryColor(persona.theme?.primaryColor ?? '#ff9460')
+      setThemeSecondaryColor(persona.theme?.secondaryColor ?? '#ff5e43')
+      setShowCarousel(persona.pageSections?.showCarousel === true)
+      setShowPromotions(persona.pageSections?.showPromotions === true)
+      setShowNewArrivals(persona.pageSections?.showNewArrivals === true)
+      setCarouselImages(persona.carouselImages ?? [])
+      setOpeningStart(persona.openingHours?.start ?? '')
+      setOpeningEnd(persona.openingHours?.end ?? '')
+      setAddress(persona.address ?? '')
+      setCity(persona.city ?? '')
+      setState(persona.state ?? '')
+      setDeliveryAvailable(persona.deliveryAvailable)
+      setBusinessHours(persona.businessHours ?? '')
+      setServiceRegion(persona.serviceRegion ?? '')
+      setBrandHighlight(persona.brandHighlight ?? '')
+      setWhatsapp(persona.whatsapp ?? persona.contactInfo ?? '')
+      setEmail(persona.email ?? '')
+      setInstagram(persona.instagram ?? '')
+      setFacebook(persona.facebook ?? '')
+      setTiktok(persona.tiktok ?? '')
+      setSite(persona.site ?? '')
+      setTone(persona.tone)
+      setPower(persona.power)
+      setVoiceStyle(persona.voiceStyle ?? 'balanced')
+      setActMode(persona.actMode ?? 'seller')
+      setBusinessGoal(persona.businessGoal ?? 'volume')
     }
 
-    setBrandName(savedPersona.brandName)
-    setLogo(savedPersona.logo ?? '')
-    setBusinessDescription(savedPersona.businessDescription ?? '')
-    setInstitutionalImage(savedPersona.institutionalImage ?? '')
-    setThemePrimaryColor(savedPersona.theme?.primaryColor ?? '#ff9460')
-    setThemeSecondaryColor(savedPersona.theme?.secondaryColor ?? '#ff5e43')
-    setShowCarousel(savedPersona.pageSections?.showCarousel === true)
-    setShowPromotions(savedPersona.pageSections?.showPromotions === true)
-    setShowNewArrivals(savedPersona.pageSections?.showNewArrivals === true)
-    setCarouselImages(savedPersona.carouselImages ?? [])
-    setOpeningStart(savedPersona.openingHours?.start ?? '')
-    setOpeningEnd(savedPersona.openingHours?.end ?? '')
-    setAddress(savedPersona.address ?? '')
-    setCity(savedPersona.city ?? '')
-    setState(savedPersona.state ?? '')
-    setDeliveryAvailable(savedPersona.deliveryAvailable)
-    setBusinessHours(savedPersona.businessHours ?? '')
-    setServiceRegion(savedPersona.serviceRegion ?? '')
-    setBrandHighlight(savedPersona.brandHighlight ?? '')
-    setWhatsapp(savedPersona.whatsapp ?? savedPersona.contactInfo ?? '')
-    setEmail(savedPersona.email ?? '')
-    setInstagram(savedPersona.instagram ?? '')
-    setFacebook(savedPersona.facebook ?? '')
-    setTiktok(savedPersona.tiktok ?? '')
-    setSite(savedPersona.site ?? '')
-    setTone(savedPersona.tone)
-    setPower(savedPersona.power)
-    setVoiceStyle(savedPersona.voiceStyle ?? 'balanced')
-    setActMode(savedPersona.actMode ?? 'seller')
-    setBusinessGoal(savedPersona.businessGoal ?? 'volume')
+    let isMounted = true
+
+    applyPersona(savedPersona)
     setCatalogItems(loadCatalogItems())
+
+    void (async () => {
+      try {
+        const backendSpark = await fetchSpark()
+        if (!isMounted) {
+          return
+        }
+        saveBrandPersona(backendSpark)
+        applyPersona(backendSpark)
+      } catch (error) {
+        console.error(error)
+      }
+    })()
+
+    void (async () => {
+      try {
+        const backendCatalog = await fetchCatalogItems()
+        if (!isMounted) {
+          return
+        }
+        saveCatalogItems(backendCatalog)
+        setCatalogItems(backendCatalog)
+      } catch (error) {
+        console.error(error)
+      }
+    })()
 
     if (!hasBootstrappedRef.current && initialSavedMessages.length === 0) {
       hasBootstrappedRef.current = true
@@ -955,6 +990,7 @@ export default function App() {
     }
 
     return () => {
+      isMounted = false
       if (timeoutRef.current) {
         window.clearTimeout(timeoutRef.current)
       }
@@ -1105,6 +1141,32 @@ export default function App() {
     window.open(publicPageUrl, '_blank', 'noopener,noreferrer')
   }
 
+  const handleLogout = () => {
+    logout()
+    navigateTo('/login')
+  }
+
+  useEffect(() => {
+    let isMounted = true
+
+    const syncTenant = async () => {
+      try {
+        const tenant = await refreshCurrentTenant()
+        if (isMounted && tenant) {
+          setCurrentTenant(tenant)
+        }
+      } catch (error) {
+        console.error(error)
+      }
+    }
+
+    void syncTenant()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
   const handleInstitutionalImageChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0]
     if (!selectedFile) {
@@ -1190,7 +1252,7 @@ export default function App() {
     }
   }
 
-  const handleCatalogSave = () => {
+  const handleCatalogSave = async () => {
     const normalizedItem = normalizeCatalogItem({
       id: editingCatalogId ?? undefined,
       name: catalogDraft.name,
@@ -1217,14 +1279,25 @@ export default function App() {
       return
     }
 
-    setCatalogItems((currentItems) =>
-      editingCatalogId !== null
-        ? currentItems.map((item) => (item.id === editingCatalogId ? normalizedItem : item))
-        : [...currentItems, normalizedItem].slice(0, 6),
-    )
-    setCatalogDraft(createEmptyCatalogDraft())
-    setEditingCatalogId(null)
-    setConfigStatus('')
+    try {
+      const savedItem =
+        editingCatalogId !== null ? await updateCatalogItem(editingCatalogId, normalizedItem) : await createCatalogItem(normalizedItem)
+
+      setCatalogItems((currentItems) => {
+        const nextItems =
+          editingCatalogId !== null
+            ? currentItems.map((item) => (item.id === editingCatalogId ? savedItem : item))
+            : [...currentItems, savedItem].slice(0, 6)
+        saveCatalogItems(nextItems)
+        return nextItems
+      })
+      setCatalogDraft(createEmptyCatalogDraft())
+      setEditingCatalogId(null)
+      setConfigStatus('')
+    } catch (error) {
+      console.error(error)
+      setConfigStatus('Nao consegui salvar esse item no backend agora.')
+    }
   }
 
   const handleCatalogEdit = (item: CatalogItem) => {
@@ -1250,19 +1323,29 @@ export default function App() {
     }
   }
 
-  const handleCatalogRemove = (itemId: string) => {
-    setCatalogItems((currentItems) => currentItems.filter((item) => item.id !== itemId))
-    if (editingCatalogId === itemId) {
-      setEditingCatalogId(null)
-      setCatalogDraft(createEmptyCatalogDraft())
-    }
-    if (configStatus) {
-      setConfigStatus('')
+  const handleCatalogRemove = async (itemId: string) => {
+    try {
+      await deleteCatalogItem(itemId)
+      setCatalogItems((currentItems) => {
+        const nextItems = currentItems.filter((item) => item.id !== itemId)
+        saveCatalogItems(nextItems)
+        return nextItems
+      })
+      if (editingCatalogId === itemId) {
+        setEditingCatalogId(null)
+        setCatalogDraft(createEmptyCatalogDraft())
+      }
+      if (configStatus) {
+        setConfigStatus('')
+      }
+    } catch (error) {
+      console.error(error)
+      setConfigStatus('Nao consegui remover esse item no backend agora.')
     }
   }
 
-  const handleSaveBrandConfiguration = () => {
-    saveBrandPersona({
+  const handleSaveBrandConfiguration = async () => {
+    const nextPersona = {
       brandName: brandName.trim() || 'BrandSoul Demo',
       logo: logo || undefined,
       tone,
@@ -1297,9 +1380,19 @@ export default function App() {
       tiktok: tiktok.trim() || undefined,
       site: site.trim() || undefined,
       contactInfo: whatsapp.trim() || undefined,
-    })
+    }
+
+    saveBrandPersona(nextPersona)
     saveCatalogItems(catalogItems)
-    setConfigStatus('Configuracao salva. A pagina publica ja reflete isso.')
+
+    try {
+      const savedBackendSpark = await saveSpark(nextPersona)
+      saveBrandPersona(savedBackendSpark)
+      setConfigStatus('Configuracao salva. A pagina publica ja reflete isso.')
+    } catch (error) {
+      console.error(error)
+      setConfigStatus('Salvei localmente, mas nao consegui sincronizar com o backend agora.')
+    }
   }
 
   const sendUserMessage = async (rawMessage: string) => {
@@ -1407,6 +1500,11 @@ export default function App() {
       <section className="identity-panel">
         <div className="identity-copy identity-copy--admin">
           <div className="eyebrow">Painel da marca</div>
+          <div className="admin-tenant-strip" aria-label="Contexto autenticado da marca">
+            <span className="admin-tenant-chip">{currentTenant?.name || brandName}</span>
+            <span className="admin-tenant-chip admin-tenant-chip--slug">{publicSlugLabel}</span>
+            <span className="admin-tenant-chip admin-tenant-chip--session">{currentUser?.email ? `Sessao ativa: ${currentUser.email}` : 'Sessao ativa'}</span>
+          </div>
           <h1>{brandName}</h1>
           <p className="identity-tagline">{identityTagline}</p>
           <p className="hero-copy">Operação viva da marca: conversa, conteúdo e ajustes da Centelha em um fluxo direto.</p>
@@ -1562,6 +1660,9 @@ export default function App() {
             <div className="admin-config-section-body">
             <div className="admin-public-link-card">
               <div className="admin-public-link-copy">
+                <span className="persona-label">Tenant atual</span>
+                <strong>{currentTenant?.name || brandName}</strong>
+                <span className="admin-public-link-slug">{publicSlugLabel}</span>
                 <span className="persona-label">Link atual</span>
                 <strong>{publicPageUrl}</strong>
                 <span>Esse e o link que posso abrir para clientes agora.</span>
@@ -2019,6 +2120,9 @@ export default function App() {
               </button>
               <button type="button" className="chat-header-button subtle" onClick={handleCopyPublicPageLink}>
                 {linkCopyStatus || 'Compartilhar link'}
+              </button>
+              <button type="button" className="chat-header-button subtle" onClick={handleLogout}>
+                Sair
               </button>
             </div>
           </div>

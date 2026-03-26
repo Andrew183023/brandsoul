@@ -42,6 +42,7 @@ class ChannelMessage(BaseModel):
     channel: str = Field(..., min_length=1, examples=["web"])
     user_id: str = Field(..., min_length=1, examples=["local-user"])
     brand_name: str = Field(..., min_length=1, examples=["BrandSoul"])
+    tenant_slug: str | None = Field(default=None, min_length=1, examples=["vista-verde"])
     message: str = Field(
         ...,
         min_length=0,

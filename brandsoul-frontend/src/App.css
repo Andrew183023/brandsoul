@@ -11,6 +11,54 @@
   z-index: 1;
 }
 
+.auth-page-shell {
+  min-height: 100vh;
+  width: min(540px, calc(100vw - 1.5rem));
+  margin: 0 auto;
+  display: grid;
+  align-items: center;
+  padding: 1.5rem 0;
+}
+
+.auth-card {
+  display: grid;
+  gap: 1.4rem;
+  padding: 1.8rem;
+  border-radius: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(7, 11, 18, 0.9), rgba(5, 8, 14, 0.96));
+  box-shadow: 0 26px 90px rgba(0, 0, 0, 0.42);
+}
+
+.auth-copy {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.auth-copy h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 5vw, 2.9rem);
+  line-height: 0.96;
+}
+
+.auth-copy p {
+  margin: 0;
+  color: var(--text-soft);
+  line-height: 1.55;
+}
+
+.auth-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.auth-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
 .customer-shell {
   --brand-accent: #ff9460;
   --brand-accent-soft: #ff5e43;
@@ -871,6 +919,36 @@
   z-index: 1;
 }
 
+.admin-tenant-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 0.95rem;
+}
+
+.admin-tenant-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 0.85rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(255, 245, 233, 0.88);
+  font-size: 0.78rem;
+  letter-spacing: 0.03em;
+}
+
+.admin-tenant-chip--slug {
+  color: rgba(255, 225, 197, 0.82);
+  background: rgba(255, 148, 96, 0.08);
+  border-color: rgba(255, 148, 96, 0.18);
+}
+
+.admin-tenant-chip--session {
+  color: rgba(230, 234, 238, 0.74);
+}
+
 .identity-copy--admin h1 {
   max-width: 10ch;
 }
@@ -1116,6 +1194,12 @@
 .admin-public-link-copy strong {
   color: var(--text-main);
   word-break: break-all;
+}
+
+.admin-public-link-slug {
+  color: rgba(255, 225, 197, 0.82);
+  font-size: 0.86rem;
+  letter-spacing: 0.04em;
 }
 
 .admin-public-link-copy span:last-child {
@@ -3232,6 +3316,10 @@
     max-width: none;
   }
 
+  .admin-tenant-strip {
+    margin-top: 0.7rem;
+  }
+
   .channel-selector-row {
     grid-template-columns: 1fr;
   }
@@ -3398,6 +3486,11 @@
 
   .chat-session-actions {
     width: 100%;
+  }
+
+  .admin-tenant-chip {
+    width: 100%;
+    justify-content: center;
   }
 
   .chat-header-button {

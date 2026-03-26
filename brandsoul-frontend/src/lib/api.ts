@@ -1,3 +1,5 @@
+import { getAuthToken } from './session'
+
 type ContextMode = 'customer' | 'admin'
 
 const LOCAL_DEV_API_URL = 'http://localhost:8000'
@@ -27,17 +29,19 @@ export function buildApiUrl(path: string) {
 }
 
 export function buildApiHeaders(contextMode: ContextMode) {
-  if (contextMode !== 'admin') {
-    return undefined
+  const token = getAuthToken()
+  const headers: Record<string, string> = {}
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
   }
 
-  const adminAccessKey = import.meta.env.VITE_ADMIN_ACCESS_KEY?.trim()
-  if (!adminAccessKey) {
-    console.error('VITE_ADMIN_ACCESS_KEY is required for admin requests.')
-    return undefined
+  if (contextMode === 'admin') {
+    const adminAccessKey = import.meta.env.VITE_ADMIN_ACCESS_KEY?.trim()
+    if (adminAccessKey) {
+      headers['x-admin-key'] = adminAccessKey
+    }
   }
 
-  return {
-    'x-admin-key': adminAccessKey,
-  }
+  return Object.keys(headers).length > 0 ? headers : undefined
 }

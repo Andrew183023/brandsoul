@@ -11,6 +11,7 @@ import { mockCatalog } from '../data/mockCatalog'
 import { buildApiUrl } from '../lib/api'
 import { getBusinessStatus } from '../lib/businessStatus'
 import { buildCatalogSummary, CATALOG_STORAGE_KEY, loadCatalogItems } from '../lib/catalog'
+import { fetchPublicBrand } from '../lib/publicBrandApi'
 import { loadBrandPersona, PERSONA_STORAGE_KEY, type BrandPersona } from '../lib/persona'
 import { buildWhatsAppMessage, buildWhatsAppUrl, normalizeWhatsAppNumber } from '../lib/whatsapp'
 import {
@@ -51,13 +52,16 @@ interface PageHighlightsSummary {
 }
 
 const USER_ID_STORAGE_KEY = 'brandsoul_user_id'
-const CUSTOMER_MESSAGES_STORAGE_KEY = 'brandsoul_messages:customer:web'
 const BOOTSTRAP_LOCK_KEY = 'brandsoul_bootstrap_lock'
 const BOOTSTRAP_LOCK_MAX_AGE = 8000
 const BOOTSTRAP_ERROR_MESSAGE = 'Tive um ruido aqui agora. Me chama de novo que eu volto.'
 
-function loadMessages(): Message[] {
-  const savedMessages = window.localStorage.getItem(CUSTOMER_MESSAGES_STORAGE_KEY)
+function getCustomerMessageStorageKey(brandSlug?: string) {
+  return brandSlug ? `brandsoul_messages:customer:web:${brandSlug}` : 'brandsoul_messages:customer:web'
+}
+
+function loadMessages(storageKey: string): Message[] {
+  const savedMessages = window.localStorage.getItem(storageKey)
   if (!savedMessages) {
     return []
   }
@@ -248,14 +252,15 @@ function buildCustomerThemeStyle(persona: BrandPersona): CSSProperties {
   } as CSSProperties
 }
 
-export default function CustomerChatPage() {
-  const [persona, setPersona] = useState<BrandPersona | null>(() => loadBrandPersona())
-  const initialMessages = useMemo(() => loadMessages(), [])
+export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) {
+  const customerMessagesStorageKey = useMemo(() => getCustomerMessageStorageKey(brandSlug), [brandSlug])
+  const [persona, setPersona] = useState<BrandPersona | null>(() => (brandSlug ? null : loadBrandPersona()))
   const userId = useMemo(() => getOrCreateUserId(), [])
-  const [messages, setMessages] = useState<Message[]>(initialMessages)
+  const [messages, setMessages] = useState<Message[]>(() => loadMessages(customerMessagesStorageKey))
   const [message, setMessage] = useState('')
   const [sparkState, setSparkState] = useState<SparkState>('idle')
   const [isLoading, setIsLoading] = useState(false)
+  const [publicBrandStatus, setPublicBrandStatus] = useState<'loading' | 'ready' | 'not-found'>(brandSlug ? 'loading' : 'ready')
   const timeoutRef = useRef<number | null>(null)
   const bootstrapRequestIdRef = useRef(0)
   const [isIntroPulseActive, setIsIntroPulseActive] = useState(false)
@@ -263,7 +268,7 @@ export default function CustomerChatPage() {
   const [mobileSection, setMobileSection] = useState<'catalog' | 'chat'>('catalog')
   const [activeCarouselIndex, setActiveCarouselIndex] = useState(0)
   const introPulseTimeoutRef = useRef<number | null>(null)
-  const hasBootstrappedRef = useRef(initialMessages.length > 0)
+  const hasBootstrappedRef = useRef(messages.length > 0)
   const sparkMemoryStorageKey = useMemo(
     () =>
       getSparkMemoryStorageKey({
@@ -280,6 +285,10 @@ export default function CustomerChatPage() {
   const whatsappNumber = useMemo(() => normalizeWhatsAppNumber(persona?.whatsapp ?? persona?.contactInfo), [persona])
   const brandCategory = useMemo(() => (persona ? buildBrandCategory(persona) : null), [persona])
   const [catalogItems, setCatalogItems] = useState<CatalogItem[]>(() => {
+    if (brandSlug) {
+      return []
+    }
+
     const configuredCatalog = loadCatalogItems()
     return configuredCatalog.length > 0 ? configuredCatalog : mockCatalog
   })
@@ -309,6 +318,55 @@ export default function CustomerChatPage() {
   }, [newArrivalItems.length, promotionItems.length, showNewArrivals, showPromotions])
 
   useEffect(() => {
+    const nextMessages = loadMessages(customerMessagesStorageKey)
+    setMessages(nextMessages)
+    hasBootstrappedRef.current = nextMessages.length > 0
+  }, [customerMessagesStorageKey])
+
+  useEffect(() => {
+    if (!brandSlug) {
+      setPublicBrandStatus('ready')
+      return
+    }
+
+    let isMounted = true
+
+    const loadPublicBrand = async () => {
+      setPublicBrandStatus('loading')
+
+      try {
+        const publicBrand = await fetchPublicBrand(brandSlug)
+        if (!isMounted) {
+          return
+        }
+
+        setPersona(publicBrand.spark)
+        setCatalogItems(publicBrand.catalog)
+        setPublicBrandStatus('ready')
+      } catch (error) {
+        if (!isMounted) {
+          return
+        }
+
+        console.error(error)
+        setPersona(null)
+        setCatalogItems([])
+        setPublicBrandStatus('not-found')
+      }
+    }
+
+    void loadPublicBrand()
+
+    return () => {
+      isMounted = false
+    }
+  }, [brandSlug])
+
+  useEffect(() => {
+    if (brandSlug) {
+      return
+    }
+
     const syncPublicData = () => {
       const nextPersona = loadBrandPersona()
       setPersona(nextPersona)
@@ -340,7 +398,7 @@ export default function CustomerChatPage() {
       window.removeEventListener('focus', syncPublicData)
       document.removeEventListener('visibilitychange', handleVisibility)
     }
-  }, [])
+  }, [brandSlug])
 
   useEffect(() => {
     if (!persona || !showCarousel || !persona.carouselImages || persona.carouselImages.length <= 1) {
@@ -414,6 +472,7 @@ export default function CustomerChatPage() {
         channel: 'web',
         user_id: userId,
         brand_name: persona.brandName,
+        ...(brandSlug ? { tenant_slug: brandSlug } : {}),
         message: '',
         persona: buildPersonaPayload(persona),
         messages: [],
@@ -460,7 +519,11 @@ export default function CustomerChatPage() {
   }, [sparkMemoryStorageKey])
 
   useEffect(() => {
-    if (!hasBootstrappedRef.current && initialMessages.length === 0) {
+    if (publicBrandStatus !== 'ready' || !persona) {
+      return
+    }
+
+    if (!hasBootstrappedRef.current && messages.length === 0) {
       hasBootstrappedRef.current = true
       void startConversation()
     }
@@ -474,16 +537,16 @@ export default function CustomerChatPage() {
         window.clearTimeout(introPulseTimeoutRef.current)
       }
     }
-  }, [initialMessages.length])
+  }, [messages.length, persona, publicBrandStatus])
 
   useEffect(() => {
     if (messages.length > 0) {
-      window.localStorage.setItem(CUSTOMER_MESSAGES_STORAGE_KEY, JSON.stringify(messages))
+      window.localStorage.setItem(customerMessagesStorageKey, JSON.stringify(messages))
       return
     }
 
-    window.localStorage.removeItem(CUSTOMER_MESSAGES_STORAGE_KEY)
-  }, [messages])
+    window.localStorage.removeItem(customerMessagesStorageKey)
+  }, [customerMessagesStorageKey, messages])
 
   const sendUserMessage = async (rawMessage: string) => {
     if (!persona) {
@@ -511,6 +574,7 @@ export default function CustomerChatPage() {
         channel: 'web',
         user_id: userId,
         brand_name: persona.brandName,
+        ...(brandSlug ? { tenant_slug: brandSlug } : {}),
         message: trimmedMessage,
         persona: buildPersonaPayload(persona),
         messages,
@@ -561,6 +625,34 @@ export default function CustomerChatPage() {
     }
 
     window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
+  if (brandSlug && publicBrandStatus === 'loading') {
+    return (
+      <main className="customer-shell spark-idle">
+        <section className="customer-hero">
+          <div className="customer-hero-copy">
+            <div className="customer-brand-badge">Carregando marca</div>
+            <h1 className="customer-title brand-headline">Estou preparando esse espaco para voce.</h1>
+            <p className="customer-subtitle brand-subtext">So um instante enquanto eu trago a marca certa.</p>
+          </div>
+        </section>
+      </main>
+    )
+  }
+
+  if (brandSlug && publicBrandStatus === 'not-found') {
+    return (
+      <main className="customer-shell spark-idle">
+        <section className="customer-hero">
+          <div className="customer-hero-copy">
+            <div className="customer-brand-badge">Marca nao encontrada</div>
+            <h1 className="customer-title brand-headline">Nao encontrei essa marca por aqui.</h1>
+            <p className="customer-subtitle brand-subtext">Confere o link e tenta de novo. Se quiser, eu volto quando a marca estiver publicada.</p>
+          </div>
+        </section>
+      </main>
+    )
   }
 
   if (!persona) {

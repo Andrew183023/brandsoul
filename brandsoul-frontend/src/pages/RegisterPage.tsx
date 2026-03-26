@@ -1,0 +1,94 @@
+import { useState } from 'react'
+import type { FormEvent } from 'react'
+
+import { registerAccount } from '../lib/auth'
+import { navigateTo } from '../lib/persona'
+import { saveSession } from '../lib/session'
+import '../App.css'
+
+export default function RegisterPage() {
+  const [name, setName] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [tenantName, setTenantName] = useState('')
+  const [businessModel, setBusinessModel] = useState<'product' | 'service' | 'hybrid'>('hybrid')
+  const [errorMessage, setErrorMessage] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setIsSubmitting(true)
+    setErrorMessage('')
+
+    try {
+      const session = await registerAccount({
+        name,
+        email,
+        password,
+        tenant_name: tenantName,
+        business_model: businessModel,
+      })
+      saveSession(session)
+      navigateTo('/admin')
+    } catch (error) {
+      console.error(error)
+      setErrorMessage('Nao consegui criar sua conta agora. Revise os dados e tente de novo.')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  return (
+    <main className="auth-page-shell">
+      <section className="auth-card">
+        <div className="auth-copy">
+          <div className="eyebrow">Criar conta</div>
+          <h1>Comece sua operacao no BrandSoul.</h1>
+          <p>Crie seu acesso, abra seu tenant e siga para o admin da marca.</p>
+        </div>
+
+        <form className="auth-form" onSubmit={handleSubmit}>
+          <label className="persona-field">
+            <span className="persona-label">Seu nome</span>
+            <input className="persona-input" value={name} onChange={(event) => setName(event.target.value)} placeholder="Como posso te chamar?" autoComplete="name" />
+          </label>
+
+          <label className="persona-field">
+            <span className="persona-label">Email</span>
+            <input className="persona-input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@marca.com" autoComplete="email" />
+          </label>
+
+          <label className="persona-field">
+            <span className="persona-label">Senha</span>
+            <input className="persona-input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="Crie uma senha segura" autoComplete="new-password" />
+          </label>
+
+          <label className="persona-field">
+            <span className="persona-label">Nome da empresa</span>
+            <input className="persona-input" value={tenantName} onChange={(event) => setTenantName(event.target.value)} placeholder="Nome da sua marca" autoComplete="organization" />
+          </label>
+
+          <label className="persona-field">
+            <span className="persona-label">Modelo de negocio</span>
+            <select className="persona-input" value={businessModel} onChange={(event) => setBusinessModel(event.target.value as 'product' | 'service' | 'hybrid')}>
+              <option value="product">Produto</option>
+              <option value="service">Servico</option>
+              <option value="hybrid">Hibrido</option>
+            </select>
+          </label>
+
+          {errorMessage ? <p className="persona-error">{errorMessage}</p> : null}
+
+          <div className="auth-actions">
+            <button type="submit" className="persona-submit" disabled={isSubmitting}>
+              {isSubmitting ? 'Criando...' : 'Criar conta'}
+            </button>
+            <button type="button" className="chat-header-button subtle" onClick={() => navigateTo('/login')}>
+              Ja tenho conta
+            </button>
+          </div>
+        </form>
+      </section>
+    </main>
+  )
+}
