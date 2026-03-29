@@ -18,7 +18,7 @@ interface SparkSuggestionsProps {
 const suggestionTypeLabel: Record<SuggestionType, string> = {
   marketing: 'Marketing',
   sales: 'Vendas',
-  operation: 'Operacao',
+  operation: 'Operação',
 }
 
 export default function SparkSuggestions({
@@ -36,9 +36,9 @@ export default function SparkSuggestions({
   const secondarySuggestions = suggestions.slice(1)
 
   return (
-    <section className="suggestions-container" aria-label="Sugestoes proativas da Centelha">
+    <section className="suggestions-container" aria-label="Sugestões proativas da Centelha">
       <div className="suggestions-header">
-        <span className="suggestions-title">{introMode ? 'Posso te ajudar com' : 'Sugestoes da Centelha'}</span>
+        <span className="suggestions-title">{introMode ? 'Posso te ajudar com' : 'Sugestões da Centelha'}</span>
         <span className="suggestions-subtitle">
           {introMode ? 'Escolha um caminho e eu puxo a conversa daqui.' : 'Movimentos que eu posso puxar agora para ganhar ritmo.'}
         </span>
@@ -56,7 +56,7 @@ export default function SparkSuggestions({
               className="suggestion-chip"
               onClick={() => onSelect(primarySuggestion)}
             >
-              <span>Seguir essa sugestao</span>
+              <span>Seguir essa sugestão</span>
             </button>
           </div>
         </div>
@@ -74,7 +74,7 @@ export default function SparkSuggestions({
       ) : null}
 
       {contentActions.length > 0 ? (
-        <div className="suggestions-actions-row" aria-label="Acoes de conteudo">
+        <div className="suggestions-actions-row" aria-label="Ações de conteúdo">
           {contentActions.map((action) => (
             <button
               key={action.type}
@@ -82,7 +82,7 @@ export default function SparkSuggestions({
               className="suggestion-chip"
               onClick={() => onContentActionSelect?.(action)}
             >
-              <span className="suggestion-chip-tag">Conteudo</span>
+              <span className="suggestion-chip-tag">Conteúdo</span>
               <span>{action.label}</span>
             </button>
           ))}

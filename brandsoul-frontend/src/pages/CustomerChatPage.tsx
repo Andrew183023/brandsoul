@@ -3,9 +3,9 @@ import type { CSSProperties, FormEvent } from 'react'
 import axios from 'axios'
 
 import ChatList from '../lib/components/ChatList'
+import BrandSpark from '../lib/components/BrandSpark'
 import ProductCard from '../lib/components/ProductCard'
 import ProductModal from '../lib/components/ProductModal'
-import Spark from '../lib/components/Spark'
 import type { Message } from '../lib/components/ChatMessage'
 import { mockCatalog } from '../data/mockCatalog'
 import { buildApiUrl } from '../lib/api'
@@ -54,7 +54,7 @@ interface PageHighlightsSummary {
 const USER_ID_STORAGE_KEY = 'brandsoul_user_id'
 const BOOTSTRAP_LOCK_KEY = 'brandsoul_bootstrap_lock'
 const BOOTSTRAP_LOCK_MAX_AGE = 8000
-const BOOTSTRAP_ERROR_MESSAGE = 'Tive um ruido aqui agora. Me chama de novo que eu volto.'
+const BOOTSTRAP_ERROR_MESSAGE = 'Tive um ruído aqui agora. Me chama de novo que eu volto.'
 
 function getCustomerMessageStorageKey(brandSlug?: string) {
   return brandSlug ? `brandsoul_messages:customer:web:${brandSlug}` : 'brandsoul_messages:customer:web'
@@ -112,7 +112,7 @@ function releaseBootstrapLock() {
 
 function buildCustomerHeadline(persona: BrandPersona) {
   if (persona.tone === 'ousado') {
-    return 'Agora voce esta falando comigo.'
+    return 'Agora você está falando comigo.'
   }
 
   if (persona.tone === 'divertido') {
@@ -123,19 +123,19 @@ function buildCustomerHeadline(persona: BrandPersona) {
     return 'Bem-vindo. Estou por aqui.'
   }
 
-  return 'Agora voce esta falando comigo.'
+  return 'Agora você está falando comigo.'
 }
 
 function buildCustomerSubtext(persona: BrandPersona) {
   if (persona.deliveryAvailable) {
-    return 'Posso te ajudar com pedidos, duvidas ou o que voce precisar.'
+    return 'Posso te ajudar com pedidos, dúvidas ou o que você precisar.'
   }
 
   if (persona.tone === 'sério') {
     return 'Estou aqui pra te atender.'
   }
 
-  return 'Me diz o que voce precisa.'
+  return 'Me diz o que você precisa.'
 }
 
 function buildBrandCategory(persona: BrandPersona) {
@@ -155,7 +155,7 @@ function buildBrandCategory(persona: BrandPersona) {
   }
 
   if (normalizedDescription.includes('clinica') || normalizedDescription.includes('saude') || normalizedDescription.includes('odont')) {
-    return 'Saude'
+    return 'Saúde'
   }
 
   if (normalizedDescription.includes('loja') || normalizedDescription.includes('varejo') || normalizedDescription.includes('moda')) {
@@ -163,7 +163,7 @@ function buildBrandCategory(persona: BrandPersona) {
   }
 
   if (normalizedDescription.includes('agencia') || normalizedDescription.includes('branding') || normalizedDescription.includes('design') || normalizedDescription.includes('studio') || normalizedDescription.includes('estudio')) {
-    return 'Estudio criativo'
+    return 'Estúdio criativo'
   }
 
   if (normalizedDescription.includes('software') || normalizedDescription.includes('plataforma') || normalizedDescription.includes('tecnologia') || normalizedDescription.includes('saas')) {
@@ -180,10 +180,10 @@ function buildCatalogIntro(persona: BrandPersona) {
   }
 
   if (persona.tone === 'sério') {
-    return 'Posso te ajudar a escolher a melhor opcao.'
+    return 'Posso te ajudar a escolher a melhor opção.'
   }
 
-  return 'Voce pode olhar as opcoes ou falar comigo direto.'
+  return 'Você pode olhar as opções ou falar comigo direto.'
 }
 
 function buildItemMessage(item: CatalogItem) {
@@ -316,6 +316,32 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
       has_new_arrivals: hasNewArrivals,
     }
   }, [newArrivalItems.length, promotionItems.length, showNewArrivals, showPromotions])
+
+  useEffect(() => {
+    if (!persona?.theme) {
+      return
+    }
+
+    const previousAccent = document.documentElement.style.getPropertyValue('--brand-accent')
+    const previousAccentSoft = document.documentElement.style.getPropertyValue('--brand-accent-soft')
+
+    document.documentElement.style.setProperty('--brand-accent', persona.theme.primaryColor || '#ff9460')
+    document.documentElement.style.setProperty('--brand-accent-soft', persona.theme.secondaryColor || '#ff5e43')
+
+    return () => {
+      if (previousAccent) {
+        document.documentElement.style.setProperty('--brand-accent', previousAccent)
+      } else {
+        document.documentElement.style.removeProperty('--brand-accent')
+      }
+
+      if (previousAccentSoft) {
+        document.documentElement.style.setProperty('--brand-accent-soft', previousAccentSoft)
+      } else {
+        document.documentElement.style.removeProperty('--brand-accent-soft')
+      }
+    }
+  }, [persona])
 
   useEffect(() => {
     const nextMessages = loadMessages(customerMessagesStorageKey)
@@ -633,7 +659,7 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
         <section className="customer-hero">
           <div className="customer-hero-copy">
             <div className="customer-brand-badge">Carregando marca</div>
-            <h1 className="customer-title brand-headline">Estou preparando esse espaco para voce.</h1>
+            <h1 className="customer-title brand-headline">Estou preparando esse espaço para você.</h1>
             <p className="customer-subtitle brand-subtext">So um instante enquanto eu trago a marca certa.</p>
           </div>
         </section>
@@ -646,8 +672,8 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
       <main className="customer-shell spark-idle">
         <section className="customer-hero">
           <div className="customer-hero-copy">
-            <div className="customer-brand-badge">Marca nao encontrada</div>
-            <h1 className="customer-title brand-headline">Nao encontrei essa marca por aqui.</h1>
+            <div className="customer-brand-badge">Marca não encontrada</div>
+            <h1 className="customer-title brand-headline">Não encontrei essa marca por aqui.</h1>
             <p className="customer-subtitle brand-subtext">Confere o link e tenta de novo. Se quiser, eu volto quando a marca estiver publicada.</p>
           </div>
         </section>
@@ -692,14 +718,14 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
 
         <div className="customer-spark-wrap">
           <div className={`spark-stage customer-spark-stage ${isIntroPulseActive ? 'spark-intro-active' : ''}`}>
-            <Spark state={sparkState} tone={persona.tone} power={persona.power} />
+            <BrandSpark brandName={persona.brandName} state={sparkState} tone={persona.tone} power={persona.power} logo={persona.logo} />
           </div>
         </div>
       </section>
 
-      <section className="customer-mobile-nav" aria-label="Navegacao da experiencia">
+      <section className="customer-mobile-nav" aria-label="Navegação da experiência">
         <button type="button" className={`customer-mobile-toggle ${mobileSection === 'catalog' ? 'active' : ''}`} onClick={() => setMobileSection('catalog')}>
-          Explorar opcoes
+          Explorar opções
         </button>
         <button type="button" className={`customer-mobile-toggle ${mobileSection === 'chat' ? 'active' : ''}`} onClick={() => setMobileSection('chat')}>
           Falar comigo
@@ -710,7 +736,7 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
         <section className="customer-highlight-section customer-carousel-section" aria-label="Destaques visuais da marca">
           <div className="customer-section-heading">
             <span className="catalog-kicker">Destaques</span>
-            <h2>Posso te mostrar o que esta em evidência agora.</h2>
+            <h2>Posso te mostrar o que está em evidência agora.</h2>
           </div>
           <div className="customer-carousel-card">
             <img
@@ -736,10 +762,10 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
       ) : null}
 
       {showPromotions && promotionItems.length > 0 ? (
-        <section className="customer-highlight-section" aria-label="Promocoes em destaque">
+        <section className="customer-highlight-section" aria-label="Promoções em destaque">
           <div className="customer-section-heading">
-            <span className="catalog-kicker">Promocoes em destaque</span>
-            <h2>Posso te mostrar o que esta com condicao especial agora.</h2>
+            <span className="catalog-kicker">Promoções em destaque</span>
+            <h2>Posso te mostrar o que está com condição especial agora.</h2>
           </div>
           <div className="catalog-grid">
             {promotionItems.map((item) => (
@@ -753,7 +779,7 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
         <section className="customer-highlight-section" aria-label="Novidades">
           <div className="customer-section-heading">
             <span className="catalog-kicker">Novidades</span>
-            <h2>Tambem tenho novidades que podem te interessar.</h2>
+            <h2>Também tenho novidades que podem te interessar.</h2>
           </div>
           <div className="catalog-grid">
             {newArrivalItems.map((item) => (
@@ -763,10 +789,10 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
         </section>
       ) : null}
 
-      <section className={`catalog-section customer-section ${mobileSection === 'chat' ? 'mobile-collapsed' : ''}`} aria-label="Catalogo da marca">
+      <section className={`catalog-section customer-section ${mobileSection === 'chat' ? 'mobile-collapsed' : ''}`} aria-label="Catálogo da marca">
         <div className="catalog-copy">
-          <span className="catalog-kicker">Explorar opcoes</span>
-          <h2>Escolha uma opcao ou fale comigo para eu te ajudar a encontrar o melhor para voce.</h2>
+          <span className="catalog-kicker">Explorar opções</span>
+          <h2>Escolha uma opção ou fale comigo para eu te ajudar a encontrar o melhor para você.</h2>
           <p>{buildCatalogIntro(persona)}</p>
         </div>
 

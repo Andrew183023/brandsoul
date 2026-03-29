@@ -25,11 +25,11 @@ interface ContentActionPersonaContext {
 
 function resolveTimeWindowLabel(currentHour: number, sparkMemory: SparkMemory) {
   if (sparkMemory.interaction_windows.includes('noite') || currentHour >= 18) {
-    return 'hoje a noite'
+    return 'hoje à noite'
   }
 
   if (sparkMemory.interaction_windows.includes('tarde') || currentHour >= 12) {
-    return 'hoje a tarde'
+    return 'hoje à tarde'
   }
 
   return 'hoje'
@@ -49,16 +49,16 @@ function resolveContentFocus(
   }
 
   if (sparkMemory.common_topics.includes('promocao')) {
-    return primaryCatalogItem ? `uma promocao com ${primaryCatalogItem}` : 'uma promocao de hoje'
+    return primaryCatalogItem ? `uma promoção com ${primaryCatalogItem}` : 'uma promoção de hoje'
   }
 
   if (sparkMemory.top_intents.includes('contact_action')) {
-    return 'conversao e contato direto'
+    return 'conversão e contato direto'
   }
 
   if (persona.businessGoal === 'ticket') {
     const premiumItem = catalogItems.find((item) => item.priority === 'high' || item.isFeatured)?.name
-    return premiumItem ? `combinacoes em torno de ${premiumItem}` : 'uma escolha de maior valor'
+    return premiumItem ? `combinações em torno de ${premiumItem}` : 'uma escolha de maior valor'
   }
 
   if (persona.businessGoal === 'launch') {
@@ -68,7 +68,7 @@ function resolveContentFocus(
 
   if (persona.businessGoal === 'rotation') {
     const rotationItem = catalogItems.find((item) => item.priority === 'low')?.name
-    return rotationItem ? `giro de ${rotationItem}` : 'itens que merecem mais saida agora'
+    return rotationItem ? `giro de ${rotationItem}` : 'itens que merecem mais saída agora'
   }
 
   if (primaryCatalogItem) {
@@ -130,8 +130,8 @@ export function buildContentActions(
     },
     {
       type: 'promotion',
-      label: 'Criar promocao',
-      prompt: `Cria uma promocao curta para ${timeWindowLabel} focada em ${focus}, ${voiceGuide}. Quero Titulo, Texto promocional e CTA.`,
+      label: 'Criar promoção',
+      prompt: `Cria uma promoção curta para ${timeWindowLabel} focada em ${focus}, ${voiceGuide}. Quero Título, Texto promocional e CTA.`,
     },
   ]
 }

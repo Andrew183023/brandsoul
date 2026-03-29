@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion'
 import { useMemo, useState } from 'react'
 
+import HintBox from '../lib/components/HintBox'
 import Spark from '../lib/components/Spark'
 import {
   actModeOptions,
@@ -23,15 +24,15 @@ import '../App.css'
 function buildVoiceStylePreview(voiceStyle: VoiceStyleOption) {
   switch (voiceStyle) {
     case 'soft':
-      return 'Oi, eu sou a sua marca falando com calma, cuidado e presenca.'
+      return 'Oi, eu sou a sua marca falando com calma, cuidado e presença.'
     case 'strong':
-      return 'Cheguei. Posso resolver isso com voce de forma rapida e clara.'
+      return 'Cheguei. Posso resolver isso com você de forma rápida e clara.'
     case 'adaptive':
       return 'Eu me ajusto a conversa para te responder do melhor jeito.'
     case 'irreverent':
-      return 'Cheguei. E prometo nao ser uma conversa sem graca.'
+      return 'Cheguei. E prometo não ser uma conversa sem graça.'
     default:
-      return 'Estou aqui para te atender com clareza e presenca.'
+      return 'Estou aqui para te atender com clareza e presença.'
   }
 }
 
@@ -140,11 +141,11 @@ export default function CreatePersonaPage() {
         <div className="persona-copy-block">
           <div className="eyebrow">Nascimento da Centelha</div>
           <h1 className="persona-title">
-            A sua marca nao precisa so de presenca.
+            A sua marca não precisa só de presença.
             <br />
             Ela precisa de uma alma.
           </h1>
-          <p className="persona-subtitle">Crie a Centelha que vai dar vida, ritmo e voz propria para a sua marca.</p>
+          <p className="persona-subtitle">Crie a Centelha que vai dar vida, ritmo e voz própria para a sua marca.</p>
         </div>
 
         <div className={`persona-spark-wrap ${isActivating ? 'persona-spark-wrap-activating' : ''}`}>
@@ -152,6 +153,13 @@ export default function CreatePersonaPage() {
         </div>
 
         <div className="persona-experience-form">
+          <HintBox
+            icon="✨"
+            title="O que é isso?"
+            description="Sua marca pode conversar com clientes com contexto, estilo e personalidade própria."
+            example="Você define a base agora. A comunicação vai ficando mais precisa ao longo do uso."
+          />
+
           <div className="persona-field">
             <label className="persona-label" htmlFor="brandName">
               Nome da marca
@@ -175,12 +183,18 @@ export default function CreatePersonaPage() {
             <label className="persona-label" htmlFor="businessDescription">
               O que a sua marca faz?
             </label>
+            <HintBox
+              compact
+              icon="🏪"
+              title="Sobre sua empresa"
+              description="Explique em poucas palavras o que sua marca faz. Isso ajuda a Centelha a responder com mais contexto e naturalidade."
+            />
             <textarea
               id="businessDescription"
               className="persona-input persona-textarea"
               value={businessDescription}
               onChange={(event) => setBusinessDescription(event.target.value.slice(0, BUSINESS_DESCRIPTION_MAX_LENGTH))}
-              placeholder="Em uma frase curta, me conta o que voce faz e o que faz sua marca ter presenca."
+              placeholder="Em uma frase curta, me conta o que você faz e o que faz sua marca ter presença."
               rows={3}
               maxLength={BUSINESS_DESCRIPTION_MAX_LENGTH}
             />
@@ -194,6 +208,12 @@ export default function CreatePersonaPage() {
 
           <div className="persona-field">
             <div className="persona-label">Personalidade</div>
+            <HintBox
+              compact
+              icon="💬"
+              title="Como sua marca fala"
+              description="Define a personalidade da sua marca ao conversar com clientes. Ex.: mais divertida, séria ou ousada."
+            />
             <div className="persona-chip-grid">
               {toneOptions.map((option) => {
                 const isSelected = tone === option.value
@@ -220,6 +240,12 @@ export default function CreatePersonaPage() {
 
           <div className="persona-field">
             <div className="persona-label">Energia</div>
+            <HintBox
+              compact
+              icon="⚡"
+              title="Como sua marca impacta"
+              description="Mostra como sua comunicação influencia o cliente: atrair, conectar, acelerar ou trazer clareza."
+            />
             <div className="persona-chip-grid">
               {powerOptions.map((option) => {
                 const isSelected = power === option.value
@@ -246,6 +272,12 @@ export default function CreatePersonaPage() {
 
           <div className="persona-field">
             <div className="persona-label">Como eu me comunico</div>
+            <HintBox
+              compact
+              icon="🎙️"
+              title="Forma de se comunicar"
+              description="Ajusta como a marca responde: de forma mais suave, forte, equilibrada ou adaptativa."
+            />
             <div className="persona-style-grid">
               {voiceStyleOptions.map((option) => {
                 const isSelected = voiceStyle === option.value
@@ -265,6 +297,12 @@ export default function CreatePersonaPage() {
 
           <div className="persona-field">
             <div className="persona-label">Como eu atuo com seus clientes</div>
+            <HintBox
+              compact
+              icon="🧠"
+              title="Como sua marca ajuda"
+              description="Define como a marca age durante a conversa: como vendedora, consultora, estilista, coach ou especialista."
+            />
             <div className="persona-style-grid">
               {actModeOptions.map((option) => {
                 const isSelected = actMode === option.value
@@ -282,7 +320,13 @@ export default function CreatePersonaPage() {
           </div>
 
           <div className="persona-field">
-            <div className="persona-label">Objetivo do negocio agora</div>
+            <div className="persona-label">Objetivo do negócio agora</div>
+            <HintBox
+              compact
+              icon="🎯"
+              title="Foco principal agora"
+              description="Ajuda a IA a entender o que sua marca quer priorizar: vender mais, aumentar ticket, girar estoque ou destacar novidades."
+            />
             <div className="persona-style-grid">
               {businessGoalOptions.map((option) => {
                 const isSelected = businessGoal === option.value
@@ -306,7 +350,7 @@ export default function CreatePersonaPage() {
 
           <div className="persona-action-row">
             <button type="button" className="persona-submit" onClick={handleCreatePersona} disabled={!isReady || isActivating}>
-              {isActivating ? 'Dando vida a minha Centelha...' : 'Criar minha Centelha'}
+              {isActivating ? 'Dando vida à minha Centelha...' : 'Criar minha Centelha'}
             </button>
 
             {errorMessage ? <p className="persona-error">{errorMessage}</p> : null}

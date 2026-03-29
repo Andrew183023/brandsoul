@@ -76,21 +76,21 @@ export const voiceStyleOptions: Array<{ value: VoiceStyleOption; label: string; 
   { value: 'strong', label: 'Forte', description: 'Sou mais direto e confiante' },
   { value: 'balanced', label: 'Equilibrado', description: 'Sou claro e equilibrado' },
   { value: 'adaptive', label: 'Adaptativo', description: 'Me ajusto conforme a conversa' },
-  { value: 'irreverent', label: 'Irreverente', description: 'Sou leve, faço humor e nao sou tao formal' },
+  { value: 'irreverent', label: 'Irreverente', description: 'Sou leve, faço humor e não sou tão formal' },
 ]
 
 export const actModeOptions: Array<{ value: ActModeOption; label: string; emoji: string; description: string }> = [
-  { value: 'seller', label: 'Vendedor especialista', emoji: '💰', description: 'Destaco beneficios e ajudo na decisao' },
-  { value: 'consultant', label: 'Consultor', emoji: '💬', description: 'Explico opcoes com clareza e seguranca' },
-  { value: 'stylist', label: 'Estilista', emoji: '👕', description: 'Sugiro combinacoes, ocasioes e estilo' },
-  { value: 'coach', label: 'Coach', emoji: '🧠', description: 'Incentivo acao com energia positiva' },
-  { value: 'chef', label: 'Chef', emoji: '🍳', description: 'Recomendo sabores, experiencia e sensacao' },
+  { value: 'seller', label: 'Vendedor especialista', emoji: '💰', description: 'Destaco benefícios e ajudo na decisão' },
+  { value: 'consultant', label: 'Consultor', emoji: '💬', description: 'Explico opções com clareza e segurança' },
+  { value: 'stylist', label: 'Estilista', emoji: '👕', description: 'Sugiro combinações, ocasiões e estilo' },
+  { value: 'coach', label: 'Coach', emoji: '🧠', description: 'Incentivo ação com energia positiva' },
+  { value: 'chef', label: 'Chef', emoji: '🍳', description: 'Recomendo sabores, experiência e sensação' },
 ]
 
 export const businessGoalOptions: Array<{ value: BusinessGoalOption; label: string; emoji: string; description: string }> = [
-  { value: 'volume', label: 'Vender mais volume', emoji: '📦', description: 'Prioriza itens faceis de girar e vender mais vezes' },
-  { value: 'ticket', label: 'Aumentar ticket medio', emoji: '💰', description: 'Puxa combinacoes e escolhas de maior valor' },
-  { value: 'rotation', label: 'Girar estoque', emoji: '🔄', description: 'Ajuda a dar saida ao que precisa circular' },
+  { value: 'volume', label: 'Vender mais volume', emoji: '📦', description: 'Prioriza itens fáceis de girar e vender mais vezes' },
+  { value: 'ticket', label: 'Aumentar ticket médio', emoji: '💰', description: 'Puxa combinações e escolhas de maior valor' },
+  { value: 'rotation', label: 'Girar estoque', emoji: '🔄', description: 'Ajuda a dar saída ao que precisa circular' },
   { value: 'launch', label: 'Destacar novidades', emoji: '🚀', description: 'Coloca foco no que acabou de chegar ou merece holofote' },
 ]
 

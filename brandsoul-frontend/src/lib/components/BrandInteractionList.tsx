@@ -29,7 +29,7 @@ export default function BrandInteractionList({
   if (transcript.length === 0) {
     return (
       <div className="brand-interaction-empty-state">
-        <p>{executionState === 'running' ? 'Estamos prestes a entrar em cena.' : 'Ainda nao comecamos essa troca.'}</p>
+        <p>{executionState === 'running' ? 'Estamos prestes a entrar em cena.' : 'Ainda não começamos essa troca.'}</p>
         <span>
           {executionState === 'running'
             ? 'Vamos aparecendo turno por turno.'

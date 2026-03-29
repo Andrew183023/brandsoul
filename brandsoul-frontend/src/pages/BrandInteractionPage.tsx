@@ -45,11 +45,11 @@ interface BrandInteractionResponse {
 }
 
 const interactionContextOptions: Array<{ value: InteractionContext; label: string; detail: string }> = [
-  { value: 'parceria', label: 'Parceria', detail: 'Sinergia e valor mutuo' },
-  { value: 'indicacao', label: 'Indicacao', detail: 'Recomendacao entre marcas' },
+  { value: 'parceria', label: 'Parceria', detail: 'Sinergia e valor mútuo' },
+  { value: 'indicacao', label: 'Indicação', detail: 'Recomendação entre marcas' },
   { value: 'combo', label: 'Combo', detail: 'Oferta conjunta controlada' },
-  { value: 'negociacao', label: 'Negociacao', detail: 'Ajuste comercial direto' },
-  { value: 'colaboracao', label: 'Colaboracao', detail: 'Criacao ou ativacao em conjunto' },
+  { value: 'negociacao', label: 'Negociação', detail: 'Ajuste comercial direto' },
+  { value: 'colaboracao', label: 'Colaboração', detail: 'Criação ou ativação em conjunto' },
 ]
 
 const interactionTurnOptions: InteractionTurns[] = [2, 3, 4]
@@ -66,7 +66,7 @@ function getDefaultInteractionPersonas(savedPersona: BrandPersona | null) {
       brandName: 'Studio Prisma',
       tone: 'inteligente' as ToneOption,
       power: 'conexão' as PowerOption,
-      businessDescription: 'Somos um estudio de design de embalagens e identidade para marcas autorais de varejo e gastronomia.',
+      businessDescription: 'Somos um estúdio de design de embalagens e identidade para marcas autorais de varejo e gastronomia.',
     } satisfies InteractionPersonaConfig,
   }
 }
@@ -76,7 +76,7 @@ function interactionButtonLabel(turns: InteractionTurns) {
 }
 
 function interactionStatusCopy(isLoading: boolean) {
-  return isLoading ? 'Estamos medindo o encaixe entre nos.' : 'Interacao guiada por contexto e identidade.'
+  return isLoading ? 'Estamos medindo o encaixe entre nós.' : 'Interação guiada por contexto e identidade.'
 }
 
 function playbackStatusCopy(executionState: InteractionExecutionState, isLoading: boolean) {
@@ -182,29 +182,29 @@ function formatBusinessProfile(profile?: BusinessProfile) {
   }
 
   const businessTypeLabels = {
-    service: 'servico',
+    service: 'serviço',
     product: 'produto',
-    industry: 'industria',
-    unknown: 'negocio',
+    industry: 'indústria',
+    unknown: 'negócio',
   }
   const sectorLabels = {
-    food: 'alimentacao',
+    food: 'alimentação',
     retail: 'varejo',
-    health: 'saude',
+    health: 'saúde',
     tech: 'tecnologia',
     industrial: 'industrial',
-    logistics: 'logistica',
+    logistics: 'logística',
     general: 'geral',
   }
   const modelLabels = {
     b2c: 'B2C',
     b2b: 'B2B',
-    hybrid: 'hibrido',
-    unknown: 'flexivel',
+    hybrid: 'híbrido',
+    unknown: 'flexível',
   }
   const complexityLabels = {
     low: 'baixa',
-    medium: 'media',
+    medium: 'média',
     high: 'alta',
   }
 
@@ -222,11 +222,11 @@ function buildDescriptionDescriptor(description: string) {
   }
 
   if (containsScenarioKeyword(description, ['delivery', 'entrega', 'entregas', 'motoboy', 'logistica'])) {
-    return 'uma operacao de entrega'
+    return 'uma operação de entrega'
   }
 
   if (containsScenarioKeyword(description, ['restaurante', 'gastronomia', 'cafe', 'cafeteria', 'hamburgueria', 'confeitaria', 'alimentacao'])) {
-    return 'uma marca de alimentacao'
+    return 'uma marca de alimentação'
   }
 
   if (containsScenarioKeyword(description, ['consultoria', 'consultor', 'consultores'])) {
@@ -234,11 +234,11 @@ function buildDescriptionDescriptor(description: string) {
   }
 
   if (containsScenarioKeyword(description, ['clinica', 'estetica', 'saude', 'odontologia'])) {
-    return 'uma clinica'
+    return 'uma clínica'
   }
 
   if (containsScenarioKeyword(description, ['laboratorio', 'exames', 'diagnostico'])) {
-    return 'um laboratorio'
+    return 'um laboratório'
   }
 
   if (containsScenarioKeyword(description, ['saas', 'software', 'tecnologia', 'tech', 'plataforma', 'produto digital'])) {
@@ -246,7 +246,7 @@ function buildDescriptionDescriptor(description: string) {
   }
 
   if (containsScenarioKeyword(description, ['agencia', 'design', 'branding', 'criativo', 'criativa', 'studio', 'estudio'])) {
-    return 'um estudio criativo'
+    return 'um estúdio criativo'
   }
 
   if (containsScenarioKeyword(description, ['varejo', 'loja', 'ecommerce', 'moda'])) {
@@ -254,11 +254,11 @@ function buildDescriptionDescriptor(description: string) {
   }
 
   if (containsScenarioKeyword(description, ['industria', 'industrial', 'fabrica', 'manufatura'])) {
-    return 'uma operacao industrial'
+    return 'uma operação industrial'
   }
 
   if (containsScenarioKeyword(description, ['servico', 'servicos'])) {
-    return 'uma operacao de servicos'
+    return 'uma operação de serviços'
   }
 
   return null
@@ -270,7 +270,7 @@ function buildProfileDescriptor(profile?: BusinessProfile) {
   }
 
   if (profile.sector === 'food') {
-    return 'uma marca de alimentacao'
+    return 'uma marca de alimentação'
   }
 
   if (profile.sector === 'tech') {
@@ -278,7 +278,7 @@ function buildProfileDescriptor(profile?: BusinessProfile) {
   }
 
   if (profile.sector === 'health') {
-    return profile.business_type === 'service' ? 'uma operacao de saude' : 'uma marca de saude'
+    return profile.business_type === 'service' ? 'uma operação de saúde' : 'uma marca de saúde'
   }
 
   if (profile.sector === 'retail') {
@@ -286,11 +286,11 @@ function buildProfileDescriptor(profile?: BusinessProfile) {
   }
 
   if (profile.sector === 'industrial') {
-    return 'uma operacao industrial'
+    return 'uma operação industrial'
   }
 
   if (profile.sector === 'logistics') {
-    return 'uma operacao de entrega'
+    return 'uma operação de entrega'
   }
 
   if (profile.model === 'b2b') {
@@ -302,7 +302,7 @@ function buildProfileDescriptor(profile?: BusinessProfile) {
   }
 
   if (profile.model === 'hybrid') {
-    return 'uma operacao hibrida'
+    return 'uma operação híbrida'
   }
 
   return 'uma marca'
@@ -325,7 +325,7 @@ function buildScenarioActorsSummary(
     initiatorProfile.model !== 'unknown'
   ) {
     if (initiatorProfile.model === 'hybrid') {
-      return 'Duas marcas hibridas'
+      return 'Duas marcas híbridas'
     }
 
     return `Duas marcas ${initiatorProfile.model.toUpperCase()}`
@@ -566,7 +566,7 @@ export default function BrandInteractionPage() {
       }
 
       console.error(error)
-      setInteractionError('Perdemos o fio dessa troca por um instante. Se voce rodar de novo, eu retomo.')
+      setInteractionError('Perdemos o fio dessa troca por um instante. Se você rodar de novo, eu retomo.')
       setInteractionTranscript([])
       setVisibleTranscript([])
       setExecutionState('idle')
@@ -659,12 +659,12 @@ export default function BrandInteractionPage() {
       </div>
 
       <label className="persona-field">
-        <span className="persona-label">Business description</span>
+        <span className="persona-label">Descrição do negócio</span>
         <textarea
           className="persona-input persona-textarea"
           value={persona.businessDescription}
           onChange={(event) => updateInteractionPersona(side, 'businessDescription', event.target.value)}
-          placeholder="Descreva de forma breve o negocio, setor e posicionamento."
+          placeholder="Descreva de forma breve o negócio, o setor e o posicionamento."
         />
       </label>
     </div>
@@ -678,13 +678,13 @@ export default function BrandInteractionPage() {
       <section className="identity-panel interaction-page-identity">
         <div className="identity-copy">
           <div className="eyebrow">BrandSoul Simulation</div>
-          <h1>Duas Centelhas em interacao controlada.</h1>
+          <h1>Duas Centelhas em interação controlada.</h1>
           <p className="hero-copy">
-            Uma pagina dedicada para validar interacao coerente entre marcas sem comprimir tudo no simulador principal.
+            Uma página dedicada para validar interação coerente entre marcas sem comprimir tudo no simulador principal.
           </p>
         </div>
 
-        <div className="interaction-hero-chips" aria-label="Contexto atual da simulacao">
+        <div className="interaction-hero-chips" aria-label="Contexto atual da simulação">
           <div className="identity-chip brand">
             <span className="identity-chip-label">Contexto</span>
             <strong>{interactionContextLabel}</strong>
@@ -762,7 +762,7 @@ export default function BrandInteractionPage() {
         <header className="chat-card-header">
           <div className="chat-card-header-main">
             <div className="chat-card-title">Centelha ↔ Centelha</div>
-            <div className="chat-card-subtitle">Uma tela propria para configurar, rodar e observar a simulacao.</div>
+            <div className="chat-card-subtitle">Uma tela própria para configurar, rodar e observar a simulação.</div>
           </div>
 
           <div className="channel-selector-panel">
@@ -771,7 +771,7 @@ export default function BrandInteractionPage() {
               <span className="channel-selector-subtitle">Carregue pares de marcas prontos e depois ajuste os campos livremente.</span>
             </div>
 
-            <div className="interaction-preset-grid" aria-label="Presets de interacao entre marcas">
+            <div className="interaction-preset-grid" aria-label="Presets de interação entre marcas">
               {brandInteractionPresets.map((preset) => (
                 <button
                   key={preset.id}
@@ -789,7 +789,7 @@ export default function BrandInteractionPage() {
             </div>
 
             <div className="channel-selector-copy">
-              <span className="channel-selector-label">Contexto da interacao</span>
+              <span className="channel-selector-label">Contexto da interação</span>
               <span className="channel-selector-subtitle">Escolha um enquadramento claro para a troca entre marcas.</span>
             </div>
 
@@ -842,10 +842,10 @@ export default function BrandInteractionPage() {
 
             <div className="chat-session-actions">
               <button type="button" className="chat-header-button subtle" onClick={clearSimulation}>
-                Limpar simulacao
+                Limpar simulação
               </button>
               <button type="button" className="chat-header-button" onClick={runInteractionSimulation} disabled={isSimulationBusy}>
-                {isLoading ? 'Preparando...' : isRunningPlayback ? 'Interacao em curso' : 'Simular interacao'}
+                {isLoading ? 'Preparando...' : isRunningPlayback ? 'Interação em curso' : 'Simular interação'}
               </button>
             </div>
           </div>
@@ -876,7 +876,7 @@ export default function BrandInteractionPage() {
           />
         </section>
 
-        <div className="interaction-business-insight" aria-label="Insight de negocio da simulacao">
+        <div className="interaction-business-insight" aria-label="Insight de negócio da simulação">
           <span className="interaction-business-insight-label">Leitura de valor</span>
           <p>{interactionBusinessInsightCopy(interactionContext)}</p>
         </div>

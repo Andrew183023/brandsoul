@@ -29,7 +29,7 @@ export default function ChatList({
     return (
       <div className="chat-empty-state">
         <p>Estou aqui.</p>
-        <span>Me diga por onde voce quer comecar que eu sustento a conversa daqui.</span>
+        <span>Me diga por onde você quer começar que eu sustento a conversa daqui.</span>
       </div>
     )
   }

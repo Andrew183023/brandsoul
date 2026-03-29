@@ -11,7 +11,7 @@ interface ProductCardProps {
 
 export default function ProductCard({ item, primaryLabel, onPrimaryAction, onOpen, onWhatsAppAction }: ProductCardProps) {
   const availability = resolveCatalogAvailability(item.stock, item.availability)
-  const availabilityLabel = availability === 'out' ? 'Esgotado' : availability === 'low' ? 'Poucas unidades' : 'Disponivel'
+  const availabilityLabel = availability === 'out' ? 'Esgotado' : availability === 'low' ? 'Poucas unidades' : 'Disponível'
   const displayImage = item.image ?? item.images?.[0]
 
   return (
@@ -26,7 +26,7 @@ export default function ProductCard({ item, primaryLabel, onPrimaryAction, onOpe
         <div className="product-card-topline">
           {item.category ? <span className="product-category">{item.category}</span> : null}
           {item.highlight ? <span className="product-badge">{item.highlight}</span> : null}
-          {!item.highlight && item.isPromotion ? <span className="product-badge">Promocao</span> : null}
+          {!item.highlight && item.isPromotion ? <span className="product-badge">Promoção</span> : null}
           {!item.highlight && !item.isPromotion && item.isNewArrival ? <span className="product-badge">Novo</span> : null}
         </div>
         <h3>{item.name}</h3>

@@ -29,7 +29,7 @@ export default function ContentBlock({ content }: ContentBlockProps) {
   const sections = [
     { key: 'principal', label: 'Principal', value: content.blocks.principal },
     { key: 'cta', label: 'CTA', value: content.blocks.cta },
-    { key: 'variacao', label: 'Variacao', value: content.blocks.variacao },
+    { key: 'variacao', label: 'Variação', value: content.blocks.variacao },
     { key: 'hashtags', label: 'Hashtags', value: content.blocks.hashtags },
   ].filter((section) => section.value)
 

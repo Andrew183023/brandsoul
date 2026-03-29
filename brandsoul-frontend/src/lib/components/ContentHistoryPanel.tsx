@@ -67,14 +67,14 @@ export default function ContentHistoryPanel({ items, onClear }: ContentHistoryPa
   }
 
   return (
-    <section className="content-history-panel" aria-label="Conteudos recentes">
+    <section className="content-history-panel" aria-label="Conteúdos recentes">
       <div className="content-history-header">
         <div>
-          <span className="channel-selector-label">Conteudos recentes</span>
+          <span className="channel-selector-label">Conteúdos recentes</span>
           <span className="channel-selector-subtitle">Materiais prontos que eu gerei aqui por dentro.</span>
         </div>
         <button type="button" className="chat-header-button subtle" onClick={onClear}>
-          Limpar conteudos recentes
+          Limpar conteúdos recentes
         </button>
       </div>
 

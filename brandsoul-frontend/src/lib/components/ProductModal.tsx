@@ -45,7 +45,7 @@ export default function ProductModal({ item, onClose, onPrimaryAction, onWhatsAp
   }
 
   const availability = resolveCatalogAvailability(item.stock, item.availability)
-  const availabilityLabel = availability === 'out' ? 'Esgotado' : availability === 'low' ? 'Poucas unidades' : 'Disponivel'
+  const availabilityLabel = availability === 'out' ? 'Esgotado' : availability === 'low' ? 'Poucas unidades' : 'Disponível'
 
   return (
     <div className="product-modal-overlay" role="dialog" aria-modal="true" aria-label={`Detalhes de ${item.name}`} onClick={onClose}>
@@ -72,11 +72,11 @@ export default function ProductModal({ item, onClose, onPrimaryAction, onWhatsAp
         ) : null}
 
         <div className="product-modal-copy">
-          <span className="product-modal-section-label">Informacoes</span>
+          <span className="product-modal-section-label">Informações</span>
           <div className="product-card-topline">
             {item.category ? <span className="product-category">{item.category}</span> : null}
             {item.highlight ? <span className="product-badge">{item.highlight}</span> : null}
-            {!item.highlight && item.isPromotion ? <span className="product-badge">Promocao</span> : null}
+            {!item.highlight && item.isPromotion ? <span className="product-badge">Promoção</span> : null}
             {!item.highlight && !item.isPromotion && item.isNewArrival ? <span className="product-badge">Novo</span> : null}
           </div>
           <h3>{item.name}</h3>

@@ -32,7 +32,7 @@ export default function RegisterPage() {
       navigateTo('/admin')
     } catch (error) {
       console.error(error)
-      setErrorMessage('Nao consegui criar sua conta agora. Revise os dados e tente de novo.')
+      setErrorMessage('Não consegui criar sua conta agora. Revise os dados e tente de novo.')
     } finally {
       setIsSubmitting(false)
     }
@@ -43,7 +43,7 @@ export default function RegisterPage() {
       <section className="auth-card">
         <div className="auth-copy">
           <div className="eyebrow">Criar conta</div>
-          <h1>Comece sua operacao no BrandSoul.</h1>
+          <h1>Comece sua operação no BrandSoul.</h1>
           <p>Crie seu acesso, abra seu tenant e siga para o admin da marca.</p>
         </div>
 
@@ -55,7 +55,7 @@ export default function RegisterPage() {
 
           <label className="persona-field">
             <span className="persona-label">Email</span>
-            <input className="persona-input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@marca.com" autoComplete="email" />
+            <input className="persona-input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="contato@marca.com" autoComplete="email" />
           </label>
 
           <label className="persona-field">
@@ -69,11 +69,11 @@ export default function RegisterPage() {
           </label>
 
           <label className="persona-field">
-            <span className="persona-label">Modelo de negocio</span>
+            <span className="persona-label">Modelo de negócio</span>
             <select className="persona-input" value={businessModel} onChange={(event) => setBusinessModel(event.target.value as 'product' | 'service' | 'hybrid')}>
               <option value="product">Produto</option>
-              <option value="service">Servico</option>
-              <option value="hybrid">Hibrido</option>
+              <option value="service">Serviço</option>
+              <option value="hybrid">Híbrido</option>
             </select>
           </label>
 
@@ -84,7 +84,7 @@ export default function RegisterPage() {
               {isSubmitting ? 'Criando...' : 'Criar conta'}
             </button>
             <button type="button" className="chat-header-button subtle" onClick={() => navigateTo('/login')}>
-              Ja tenho conta
+              Já tenho conta
             </button>
           </div>
         </form>

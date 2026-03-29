@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
 import axios from 'axios'
 
 import ChatList from './lib/components/ChatList'
+import BrandSpark from './lib/components/BrandSpark'
 import ContentHistoryPanel from './lib/components/ContentHistoryPanel'
-import Spark from './lib/components/Spark'
+import HintBox from './lib/components/HintBox'
 import SparkSuggestions, { type Suggestion } from './lib/components/SparkSuggestions'
 import type { Message } from './lib/components/ChatMessage'
 import { buildApiHeaders, buildApiUrl } from './lib/api'
@@ -26,14 +27,17 @@ import {
 import { inferInteractionProfilePreview, type BusinessProfile } from './lib/interactionProfilePreview'
 import {
   actModeOptions,
+  type BrandPersona,
   businessGoalOptions,
   loadBrandPersona,
   navigateTo,
+  powerOptions,
   saveBrandPersona,
   type ActModeOption,
   type BusinessGoalOption,
   type PowerOption,
   type ToneOption,
+  toneOptions,
   type VoiceStyleOption,
   voiceStyleOptions,
 } from './lib/persona'
@@ -134,7 +138,7 @@ const USER_ID_STORAGE_KEY = 'brandsoul_user_id'
 const CHANNEL_MODE_STORAGE_KEY = 'brandsoul_channel_mode'
 const CONTEXT_MODE_STORAGE_KEY = 'brandsoul_context_mode'
 const INSTAGRAM_USERNAME_STORAGE_KEY = 'brandsoul_instagram_username'
-const BOOTSTRAP_ERROR_MESSAGE = 'Tive um ruido aqui agora. Me chama de novo que eu volto.'
+const BOOTSTRAP_ERROR_MESSAGE = 'Tive um ruído aqui agora. Me chama de novo que eu volto.'
 const BOOTSTRAP_LOCK_KEY = 'brandsoul_bootstrap_lock'
 const BOOTSTRAP_LOCK_MAX_AGE = 8000
 const INSTAGRAM_COMMENT_POST_ID = 'mock-post-001'
@@ -143,7 +147,7 @@ const INSTAGRAM_COMMENT_ID = 'mock-comment-001'
 const channelModeOptions: Array<{ value: ChannelMode; label: string; detail: string }> = [
   { value: 'web', label: 'Web', detail: 'Site e chat direto' },
   { value: 'instagram_dm', label: 'Instagram DM', detail: 'Conversa privada' },
-  { value: 'instagram_comment', label: 'Instagram Comentario', detail: 'Espaco publico' },
+  { value: 'instagram_comment', label: 'Instagram Comentário', detail: 'Espaço público' },
 ]
 
 function getMessageStorageKey(contextMode: ContextMode, channelMode: ChannelMode) {
@@ -303,7 +307,7 @@ function getChannelContext(contextMode: ContextMode, channelMode: ChannelMode, i
   if (channelMode === 'instagram_comment') {
     return {
       channelLabel: 'Instagram',
-      sourceLabel: 'Comentario',
+      sourceLabel: 'Comentário',
       usernameLabel: normalizedUsername ? `@${normalizedUsername}` : null,
     }
   }
@@ -317,7 +321,7 @@ function getChannelContext(contextMode: ContextMode, channelMode: ChannelMode, i
 
 function getComposerPlaceholder(contextMode: ContextMode, channelMode: ChannelMode) {
   if (contextMode === 'admin') {
-    return 'Me diga o que voce quer destravar na operacao, marketing ou comunicacao...'
+    return 'Me diga o que você quer destravar na operação, no marketing ou na comunicação...'
   }
 
   if (channelMode === 'instagram_dm') {
@@ -325,7 +329,7 @@ function getComposerPlaceholder(contextMode: ContextMode, channelMode: ChannelMo
   }
 
   if (channelMode === 'instagram_comment') {
-    return 'Escreva um comentario e eu respondo em publico...'
+    return 'Escreva um comentário e eu respondo em público...'
   }
 
   return 'Escreva comigo por aqui...'
@@ -349,7 +353,7 @@ function buildIntroTagline(tone: ToneOption, power: PowerOption, contextMode: Co
   }
 
   if (tone === 'ousado') {
-    return 'Voce nao esta falando com um perfil.'
+    return 'Você não está falando com um perfil.'
   }
 
   return 'Voz ativa da marca.'
@@ -410,7 +414,7 @@ function generateSuggestions(
   if (businessStatus === 'closed') {
     pushSuggestion({
       type: 'operation',
-      text: 'Agora estou fechado. Posso preparar uma mensagem para segurar interesse e puxar a proxima abertura.',
+      text: 'Agora estou fechado. Posso preparar uma mensagem para segurar interesse e puxar a próxima abertura.',
     })
   }
 
@@ -445,7 +449,7 @@ function generateSuggestions(
   if (persona.businessGoal === 'ticket' && highPriorityItem) {
     pushSuggestion({
       type: 'sales',
-      text: `Posso conduzir a conversa para ${highPriorityItem.name} e abrir espaco para uma combinacao de maior valor.`,
+      text: `Posso conduzir a conversa para ${highPriorityItem.name} e abrir espaço para uma combinação de maior valor.`,
     })
   }
 
@@ -473,14 +477,14 @@ function generateSuggestions(
   if (hasContactChannel && !recentContentTypes.has('whatsapp_message')) {
     pushSuggestion({
       type: 'sales',
-      text: 'Posso criar uma mensagem curta para puxar contato e conversao sem friccao.',
+      text: 'Posso criar uma mensagem curta para puxar contato e conversão sem fricção.',
     })
   }
 
   if (persona.businessHours?.trim()) {
     pushSuggestion({
       type: 'operation',
-      text: 'Posso deixar meu horario mais claro na comunicacao de hoje.',
+      text: 'Posso deixar meu horário mais claro na comunicação de hoje.',
     })
   }
 
@@ -501,7 +505,7 @@ function generateSuggestions(
   if (suggestions.length < 2) {
     pushSuggestion({
       type: persona.tone === 'ousado' ? 'marketing' : 'operation',
-      text: 'Posso puxar uma acao curta agora para dar mais ritmo ao dia.',
+      text: 'Posso puxar uma ação curta agora para dar mais ritmo ao dia.',
     })
   }
 
@@ -514,7 +518,7 @@ function buildSuggestionPrompt(suggestion: Suggestion) {
   }
 
   if (suggestion.type === 'sales') {
-    return `Perfeito. Me ajuda a transformar isso em uma acao comercial: ${suggestion.text}`
+    return `Perfeito. Me ajuda a transformar isso em uma ação comercial: ${suggestion.text}`
   }
 
   return `Me ajuda a comunicar isso de forma clara para os clientes: ${suggestion.text}`
@@ -576,6 +580,7 @@ export default function App() {
   const [editingCatalogId, setEditingCatalogId] = useState<string | null>(null)
   const [configStatus, setConfigStatus] = useState('')
   const [linkCopyStatus, setLinkCopyStatus] = useState('')
+  const [isEditingCentelha, setIsEditingCentelha] = useState(false)
   const [currentTenant, setCurrentTenant] = useState<AuthTenant | null>(() => loadCurrentTenant())
   const [currentUser] = useState<AuthUser | null>(savedSession?.user ?? null)
   const contentHistoryStorageKey = useMemo(
@@ -645,7 +650,7 @@ export default function App() {
     () =>
       ({
         volume: 'Mais vendas',
-        ticket: 'Ticket medio',
+        ticket: 'Ticket médio',
         rotation: 'Giro',
         launch: 'Novidades',
       })[businessGoal] ?? 'Mais vendas',
@@ -756,28 +761,131 @@ export default function App() {
   }, [catalogItems, showNewArrivals, showPromotions])
   const shouldShowLearningSignal = useMemo(() => hasMeaningfulSparkMemory(sparkMemory), [sparkMemory])
 
+  const applyPersonaState = useCallback((persona: BrandPersona) => {
+    setBrandName(persona.brandName)
+    setLogo(persona.logo ?? '')
+    setBusinessDescription(persona.businessDescription ?? '')
+    setInstitutionalImage(persona.institutionalImage ?? '')
+    setThemePrimaryColor(persona.theme?.primaryColor ?? '#ff9460')
+    setThemeSecondaryColor(persona.theme?.secondaryColor ?? '#ff5e43')
+    setShowCarousel(persona.pageSections?.showCarousel === true)
+    setShowPromotions(persona.pageSections?.showPromotions === true)
+    setShowNewArrivals(persona.pageSections?.showNewArrivals === true)
+    setCarouselImages(persona.carouselImages ?? [])
+    setOpeningStart(persona.openingHours?.start ?? '')
+    setOpeningEnd(persona.openingHours?.end ?? '')
+    setAddress(persona.address ?? '')
+    setCity(persona.city ?? '')
+    setState(persona.state ?? '')
+    setDeliveryAvailable(persona.deliveryAvailable)
+    setBusinessHours(persona.businessHours ?? '')
+    setServiceRegion(persona.serviceRegion ?? '')
+    setBrandHighlight(persona.brandHighlight ?? '')
+    setWhatsapp(persona.whatsapp ?? persona.contactInfo ?? '')
+    setEmail(persona.email ?? '')
+    setInstagram(persona.instagram ?? '')
+    setFacebook(persona.facebook ?? '')
+    setTiktok(persona.tiktok ?? '')
+    setSite(persona.site ?? '')
+    setTone(persona.tone)
+    setPower(persona.power)
+    setVoiceStyle(persona.voiceStyle ?? 'balanced')
+    setActMode(persona.actMode ?? 'seller')
+    setBusinessGoal(persona.businessGoal ?? 'volume')
+  }, [])
+
+  const currentPersona = useMemo<BrandPersona>(
+    () => ({
+      brandName: brandName.trim() || 'BrandSoul Demo',
+      logo: logo || undefined,
+      tone,
+      power,
+      voiceStyle,
+      actMode,
+      businessGoal,
+      businessDescription: businessDescription.trim() || undefined,
+      institutionalImage: institutionalImage || undefined,
+      theme: {
+        primaryColor: themePrimaryColor,
+        secondaryColor: themeSecondaryColor,
+      },
+      pageSections: {
+        showCarousel,
+        showPromotions,
+        showNewArrivals,
+      },
+      carouselImages: carouselImages.length > 0 ? carouselImages : undefined,
+      openingHours,
+      address: address.trim() || undefined,
+      city: city.trim() || undefined,
+      state: state.trim() || undefined,
+      deliveryAvailable,
+      businessHours: businessHours.trim() || undefined,
+      serviceRegion: serviceRegion.trim() || undefined,
+      brandHighlight: brandHighlight.trim() || undefined,
+      whatsapp: whatsapp.trim() || undefined,
+      email: email.trim() || undefined,
+      instagram: instagram.trim() || undefined,
+      facebook: facebook.trim() || undefined,
+      tiktok: tiktok.trim() || undefined,
+      site: site.trim() || undefined,
+      contactInfo: whatsapp.trim() || undefined,
+    }),
+    [
+      actMode,
+      address,
+      brandHighlight,
+      brandName,
+      businessDescription,
+      businessGoal,
+      businessHours,
+      carouselImages,
+      city,
+      deliveryAvailable,
+      email,
+      facebook,
+      institutionalImage,
+      instagram,
+      logo,
+      openingHours,
+      power,
+      serviceRegion,
+      showCarousel,
+      showNewArrivals,
+      showPromotions,
+      site,
+      state,
+      themePrimaryColor,
+      themeSecondaryColor,
+      tiktok,
+      tone,
+      voiceStyle,
+      whatsapp,
+    ],
+  )
+
   const buildPersonaPayload = () => ({
-    tone,
-    power,
-    voice_style: voiceStyle,
-    act_mode: actMode,
-    business_goal: businessGoal,
-    business_description: businessDescription || undefined,
-    opening_hours: openingHours,
-    address: address || undefined,
-    city: city || undefined,
-    state: state || undefined,
-    delivery_available: deliveryAvailable,
-    business_hours: businessHours || undefined,
-    service_region: serviceRegion || undefined,
-    brand_highlight: brandHighlight || undefined,
-    whatsapp: whatsapp || undefined,
-    email: email || undefined,
-    instagram: instagram || undefined,
-    facebook: facebook || undefined,
-    tiktok: tiktok || undefined,
-    site: site || undefined,
-    contact_info: whatsapp || email || instagram || site || undefined,
+    tone: currentPersona.tone,
+    power: currentPersona.power,
+    voice_style: currentPersona.voiceStyle,
+    act_mode: currentPersona.actMode,
+    business_goal: currentPersona.businessGoal,
+    business_description: currentPersona.businessDescription,
+    opening_hours: currentPersona.openingHours,
+    address: currentPersona.address,
+    city: currentPersona.city,
+    state: currentPersona.state,
+    delivery_available: currentPersona.deliveryAvailable,
+    business_hours: currentPersona.businessHours,
+    service_region: currentPersona.serviceRegion,
+    brand_highlight: currentPersona.brandHighlight,
+    whatsapp: currentPersona.whatsapp,
+    email: currentPersona.email,
+    instagram: currentPersona.instagram,
+    facebook: currentPersona.facebook,
+    tiktok: currentPersona.tiktok,
+    site: currentPersona.site,
+    contact_info: currentPersona.contactInfo || currentPersona.email || currentPersona.instagram || currentPersona.site || undefined,
   })
 
   const scheduleSparkReset = (nextState: SparkState) => {
@@ -915,57 +1023,27 @@ export default function App() {
     lastShownSuggestionsKeyRef.current = ''
   }, [sparkMemoryStorageKey])
 
+  const loadSparkFromBackend = useCallback(async () => {
+    const backendSpark = await fetchSpark()
+    saveBrandPersona(backendSpark)
+    return backendSpark
+  }, [])
+
   useEffect(() => {
-    const applyPersona = (persona: typeof savedPersona) => {
-      if (!persona) {
-        return
-      }
-
-      setBrandName(persona.brandName)
-      setLogo(persona.logo ?? '')
-      setBusinessDescription(persona.businessDescription ?? '')
-      setInstitutionalImage(persona.institutionalImage ?? '')
-      setThemePrimaryColor(persona.theme?.primaryColor ?? '#ff9460')
-      setThemeSecondaryColor(persona.theme?.secondaryColor ?? '#ff5e43')
-      setShowCarousel(persona.pageSections?.showCarousel === true)
-      setShowPromotions(persona.pageSections?.showPromotions === true)
-      setShowNewArrivals(persona.pageSections?.showNewArrivals === true)
-      setCarouselImages(persona.carouselImages ?? [])
-      setOpeningStart(persona.openingHours?.start ?? '')
-      setOpeningEnd(persona.openingHours?.end ?? '')
-      setAddress(persona.address ?? '')
-      setCity(persona.city ?? '')
-      setState(persona.state ?? '')
-      setDeliveryAvailable(persona.deliveryAvailable)
-      setBusinessHours(persona.businessHours ?? '')
-      setServiceRegion(persona.serviceRegion ?? '')
-      setBrandHighlight(persona.brandHighlight ?? '')
-      setWhatsapp(persona.whatsapp ?? persona.contactInfo ?? '')
-      setEmail(persona.email ?? '')
-      setInstagram(persona.instagram ?? '')
-      setFacebook(persona.facebook ?? '')
-      setTiktok(persona.tiktok ?? '')
-      setSite(persona.site ?? '')
-      setTone(persona.tone)
-      setPower(persona.power)
-      setVoiceStyle(persona.voiceStyle ?? 'balanced')
-      setActMode(persona.actMode ?? 'seller')
-      setBusinessGoal(persona.businessGoal ?? 'volume')
-    }
-
     let isMounted = true
 
-    applyPersona(savedPersona)
+    if (savedPersona) {
+      applyPersonaState(savedPersona)
+    }
     setCatalogItems(loadCatalogItems())
 
     void (async () => {
       try {
-        const backendSpark = await fetchSpark()
+        const backendSpark = await loadSparkFromBackend()
         if (!isMounted) {
           return
         }
-        saveBrandPersona(backendSpark)
-        applyPersona(backendSpark)
+        applyPersonaState(backendSpark)
       } catch (error) {
         console.error(error)
       }
@@ -999,7 +1077,7 @@ export default function App() {
         window.clearTimeout(introPulseTimeoutRef.current)
       }
     }
-  }, [initialSavedMessages.length, savedPersona])
+  }, [applyPersonaState, initialSavedMessages.length, loadSparkFromBackend, savedPersona])
 
   useEffect(() => {
     window.localStorage.setItem(CONTEXT_MODE_STORAGE_KEY, contextMode)
@@ -1110,7 +1188,10 @@ export default function App() {
   }
 
   const handleEditCentelha = () => {
-    navigateTo('/create')
+    setIsEditingCentelha(true)
+    window.requestAnimationFrame(() => {
+      document.querySelector('.admin-config-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
   }
 
   const handleOpenInteractionPage = () => {
@@ -1133,7 +1214,7 @@ export default function App() {
       }, 1600)
     } catch (error) {
       console.error(error)
-      setLinkCopyStatus('Nao consegui copiar agora')
+      setLinkCopyStatus('Não consegui copiar agora')
     }
   }
 
@@ -1167,6 +1248,14 @@ export default function App() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!import.meta.env.DEV) {
+      return
+    }
+
+    console.log('🎨 persona atual:', currentPersona)
+  }, [currentPersona])
+
   const handleInstitutionalImageChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0]
     if (!selectedFile) {
@@ -1179,10 +1268,15 @@ export default function App() {
       setConfigStatus('')
     } catch (error) {
       console.error(error)
-      setConfigStatus('Nao consegui carregar essa imagem agora.')
+      setConfigStatus('Não consegui carregar essa imagem agora.')
     } finally {
       event.target.value = ''
     }
+  }
+
+  const handleRemoveInstitutionalImage = () => {
+    setInstitutionalImage('')
+    setConfigStatus('')
   }
 
   const handleLogoChange = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1196,7 +1290,7 @@ export default function App() {
       setConfigStatus('')
     } catch (error) {
       console.error(error)
-      setConfigStatus('Nao consegui carregar a logo agora.')
+      setConfigStatus('Não consegui carregar a logo agora.')
     } finally {
       event.target.value = ''
     }
@@ -1213,7 +1307,7 @@ export default function App() {
       setConfigStatus('')
     } catch (error) {
       console.error(error)
-      setConfigStatus('Nao consegui carregar as imagens do destaque.')
+      setConfigStatus('Não consegui carregar as imagens do destaque.')
     } finally {
       event.target.value = ''
     }
@@ -1230,7 +1324,7 @@ export default function App() {
       handleCatalogDraftChange('image', nextImage)
     } catch (error) {
       console.error(error)
-      setConfigStatus('Nao consegui carregar a imagem do produto.')
+      setConfigStatus('Não consegui carregar a imagem do produto.')
     } finally {
       event.target.value = ''
     }
@@ -1246,7 +1340,7 @@ export default function App() {
       handleCatalogDraftChange('images', await readFilesAsDataUrls(selectedFiles, 3))
     } catch (error) {
       console.error(error)
-      setConfigStatus('Nao consegui carregar as imagens adicionais.')
+      setConfigStatus('Não consegui carregar as imagens adicionais.')
     } finally {
       event.target.value = ''
     }
@@ -1275,7 +1369,7 @@ export default function App() {
     })
 
     if (!normalizedItem) {
-      setConfigStatus('Preencha nome e descricao do item para salvar o catalogo.')
+      setConfigStatus('Preencha nome e descrição do item para salvar o catálogo.')
       return
     }
 
@@ -1296,7 +1390,7 @@ export default function App() {
       setConfigStatus('')
     } catch (error) {
       console.error(error)
-      setConfigStatus('Nao consegui salvar esse item no backend agora.')
+      setConfigStatus('Não consegui salvar esse item no backend agora.')
     }
   }
 
@@ -1340,58 +1434,23 @@ export default function App() {
       }
     } catch (error) {
       console.error(error)
-      setConfigStatus('Nao consegui remover esse item no backend agora.')
+      setConfigStatus('Não consegui remover esse item no backend agora.')
     }
   }
 
   const handleSaveBrandConfiguration = async () => {
-    const nextPersona = {
-      brandName: brandName.trim() || 'BrandSoul Demo',
-      logo: logo || undefined,
-      tone,
-      power,
-      voiceStyle,
-      actMode,
-      businessGoal,
-      businessDescription: businessDescription.trim() || undefined,
-      institutionalImage: institutionalImage || undefined,
-      theme: {
-        primaryColor: themePrimaryColor,
-        secondaryColor: themeSecondaryColor,
-      },
-      pageSections: {
-        showCarousel,
-        showPromotions,
-        showNewArrivals,
-      },
-      carouselImages: carouselImages.length > 0 ? carouselImages : undefined,
-      openingHours,
-      address: address.trim() || undefined,
-      city: city.trim() || undefined,
-      state: state.trim() || undefined,
-      deliveryAvailable,
-      businessHours: businessHours.trim() || undefined,
-      serviceRegion: serviceRegion.trim() || undefined,
-      brandHighlight: brandHighlight.trim() || undefined,
-      whatsapp: whatsapp.trim() || undefined,
-      email: email.trim() || undefined,
-      instagram: instagram.trim() || undefined,
-      facebook: facebook.trim() || undefined,
-      tiktok: tiktok.trim() || undefined,
-      site: site.trim() || undefined,
-      contactInfo: whatsapp.trim() || undefined,
-    }
-
-    saveBrandPersona(nextPersona)
+    saveBrandPersona(currentPersona)
     saveCatalogItems(catalogItems)
 
     try {
-      const savedBackendSpark = await saveSpark(nextPersona)
-      saveBrandPersona(savedBackendSpark)
-      setConfigStatus('Configuracao salva. A pagina publica ja reflete isso.')
+      await saveSpark(currentPersona)
+      const updatedSpark = await loadSparkFromBackend()
+      applyPersonaState(updatedSpark)
+      setIsEditingCentelha(false)
+      setConfigStatus('Configuração salva. A página pública já reflete isso.')
     } catch (error) {
       console.error(error)
-      setConfigStatus('Salvei localmente, mas nao consegui sincronizar com o backend agora.')
+      setConfigStatus('Salvei localmente, mas não consegui sincronizar com o backend agora.')
     }
   }
 
@@ -1503,7 +1562,7 @@ export default function App() {
           <div className="admin-tenant-strip" aria-label="Contexto autenticado da marca">
             <span className="admin-tenant-chip">{currentTenant?.name || brandName}</span>
             <span className="admin-tenant-chip admin-tenant-chip--slug">{publicSlugLabel}</span>
-            <span className="admin-tenant-chip admin-tenant-chip--session">{currentUser?.email ? `Sessao ativa: ${currentUser.email}` : 'Sessao ativa'}</span>
+            <span className="admin-tenant-chip admin-tenant-chip--session">{currentUser?.email ? `Sessão ativa: ${currentUser.email}` : 'Sessão ativa'}</span>
           </div>
           <h1>{brandName}</h1>
           <p className="identity-tagline">{identityTagline}</p>
@@ -1528,7 +1587,7 @@ export default function App() {
 
         <div className="spark-spotlight">
           <div className={`spark-stage ${isIntroPulseActive ? 'spark-intro-active' : ''}`}>
-            <Spark state={sparkState} tone={tone} power={power} />
+            <BrandSpark brandName={brandName} state={sparkState} tone={tone} power={power} logo={logo} />
           </div>
           <div className="spark-caption">
             <span className={`spark-status-dot ${sparkState}`} />
@@ -1553,11 +1612,18 @@ export default function App() {
           </button>
         </div>
 
-        <section className="admin-config-panel" aria-label="Configuracao da marca">
+        {isEditingCentelha ? (
+        <section className="admin-config-panel" aria-label="Configuração da marca">
           <div className="admin-config-header">
             <span className="eyebrow">Editar Centelha</span>
             <h2>Marca, página e catálogo</h2>
             <p>Os ajustes mais profundos continuam aqui, sem pesar o fluxo principal do admin.</p>
+            <HintBox
+              compact
+              icon="✨"
+              title="O que você ajusta aqui?"
+              description="Essas configurações moldam como a marca aparece, conversa e conduz o cliente até o próximo passo."
+            />
           </div>
 
           <details className="admin-config-section" open>
@@ -1581,7 +1647,13 @@ export default function App() {
             </div>
 
             <label className="persona-field">
-              <span className="persona-label">Atuacao</span>
+              <span className="persona-label">Atuação</span>
+              <HintBox
+                compact
+                icon="🏪"
+                title="Sobre sua empresa"
+                description="Explique em poucas palavras o que sua marca faz. Isso ajuda a Centelha a responder com mais contexto e naturalidade."
+              />
               <textarea
                 className="persona-input persona-textarea"
                 value={businessDescription}
@@ -1592,7 +1664,67 @@ export default function App() {
             </label>
 
             <div className="persona-field admin-config-grid-span">
+              <span className="persona-label">Personalidade</span>
+              <HintBox
+                compact
+                icon="💬"
+                title="Como sua marca fala"
+                description="Define a personalidade da sua marca ao conversar com clientes."
+              />
+              <div className="persona-chip-grid">
+                {toneOptions.map((option) => {
+                  const isSelected = tone === option.value
+
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`persona-chip ${isSelected ? 'selected' : ''}`}
+                      onClick={() => setTone(option.value)}
+                    >
+                      <span>{option.label}</span>
+                      <strong>{option.emoji}</strong>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="persona-field admin-config-grid-span">
+              <span className="persona-label">Energia</span>
+              <HintBox
+                compact
+                icon="⚡"
+                title="Como sua marca impacta"
+                description="Define a energia principal da comunicação da marca."
+              />
+              <div className="persona-chip-grid">
+                {powerOptions.map((option) => {
+                  const isSelected = power === option.value
+
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`persona-chip ${isSelected ? 'selected power' : 'power'}`}
+                      onClick={() => setPower(option.value)}
+                    >
+                      <span>{option.label}</span>
+                      <strong>{option.emoji}</strong>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="persona-field admin-config-grid-span">
               <span className="persona-label">Como eu me comunico</span>
+              <HintBox
+                compact
+                icon="🎙️"
+                title="Forma de se comunicar"
+                description="Ajusta como a marca responde: de forma mais suave, forte, equilibrada ou adaptativa."
+              />
               <div className="persona-style-grid">
                 {voiceStyleOptions.map((option) => {
                   const isSelected = voiceStyle === option.value
@@ -1619,6 +1751,12 @@ export default function App() {
 
             <div className="persona-field admin-config-grid-span">
               <span className="persona-label">Como eu atuo com seus clientes</span>
+              <HintBox
+                compact
+                icon="🧠"
+                title="Como sua marca ajuda"
+                description="Define como a marca age durante a conversa: como vendedora, consultora, estilista, coach ou especialista."
+              />
               <div className="persona-style-grid">
                 {actModeOptions.map((option) => {
                   const isSelected = actMode === option.value
@@ -1636,7 +1774,13 @@ export default function App() {
             </div>
 
             <div className="persona-field admin-config-grid-span">
-              <span className="persona-label">Objetivo do negocio agora</span>
+              <span className="persona-label">Objetivo do negócio agora</span>
+              <HintBox
+                compact
+                icon="🎯"
+                title="Foco principal agora"
+                description="Ajuda a IA a entender o que sua marca quer priorizar: vender mais, aumentar ticket, girar estoque ou destacar novidades."
+              />
               <div className="persona-style-grid">
                 {businessGoalOptions.map((option) => {
                   const isSelected = businessGoal === option.value
@@ -1656,7 +1800,7 @@ export default function App() {
           </details>
 
           <details className="admin-config-section">
-            <summary className="admin-config-section-title">Marca publica</summary>
+            <summary className="admin-config-section-title">Marca pública</summary>
             <div className="admin-config-section-body">
             <div className="admin-public-link-card">
               <div className="admin-public-link-copy">
@@ -1665,14 +1809,14 @@ export default function App() {
                 <span className="admin-public-link-slug">{publicSlugLabel}</span>
                 <span className="persona-label">Link atual</span>
                 <strong>{publicPageUrl}</strong>
-                <span>Esse e o link que posso abrir para clientes agora.</span>
+                <span>Esse é o link que posso abrir para clientes agora.</span>
               </div>
               <div className="admin-config-actions">
                 <button type="button" className="chat-header-button subtle" onClick={handleCopyPublicPageLink}>
                   {linkCopyStatus || 'Copiar link'}
                 </button>
                 <button type="button" className="chat-header-button" onClick={handleOpenPublicPage}>
-                  Abrir pagina em nova aba
+                  Abrir página em nova aba
                 </button>
               </div>
             </div>
@@ -1680,7 +1824,7 @@ export default function App() {
           </details>
 
           <details className="admin-config-section">
-            <summary className="admin-config-section-title">Estilo visual da pagina</summary>
+            <summary className="admin-config-section-title">Estilo visual da página</summary>
             <div className="admin-config-section-body">
               <div className="admin-config-grid">
                 <label className="persona-field">
@@ -1699,13 +1843,13 @@ export default function App() {
               </div>
 
               <div className="persona-field admin-config-grid-span">
-                <span className="persona-label">O que mostrar na sua pagina</span>
+                <span className="persona-label">O que mostrar na sua página</span>
                 <div className="persona-toggle-row">
                   <button type="button" className={`persona-toggle ${showCarousel ? 'selected' : ''}`} onClick={() => setShowCarousel((current) => !current)}>
                     Mostrar carrossel de destaque
                   </button>
                   <button type="button" className={`persona-toggle ${showPromotions ? 'selected' : ''}`} onClick={() => setShowPromotions((current) => !current)}>
-                    Mostrar promocoes em destaque
+                    Mostrar promoções em destaque
                   </button>
                   <button type="button" className={`persona-toggle ${showNewArrivals ? 'selected' : ''}`} onClick={() => setShowNewArrivals((current) => !current)}>
                     Mostrar novidades
@@ -1716,7 +1860,7 @@ export default function App() {
               <div className="persona-field">
                 <span className="persona-label">Imagens do carrossel</span>
                 <input className="persona-input" type="file" accept="image/*" multiple onChange={handleCarouselImagesChange} />
-                <span className="persona-field-hint">Opcional. Use ate 3 imagens para um destaque mais comercial.</span>
+                <span className="persona-field-hint">Opcional. Use até 3 imagens para um destaque mais comercial.</span>
               </div>
 
               {carouselImages.length > 0 ? (
@@ -1737,8 +1881,14 @@ export default function App() {
             <div className="admin-config-grid">
               <label className="persona-field">
                 <span className="persona-label">WhatsApp da marca</span>
+                <HintBox
+                  compact
+                  icon="📲"
+                  title="Para onde a conversa vai depois"
+                  description="Quando o cliente estiver pronto para continuar, a marca pode direcionar para você pelo WhatsApp ou outro canal."
+                />
                 <input className="persona-input" value={whatsapp} onChange={(event) => setWhatsapp(sanitizeWhatsAppInput(event.target.value))} placeholder="Ex: +5531999999999" />
-                <span className="persona-field-hint">Use o numero com codigo do pais e DDD, sem espacos.</span>
+                <span className="persona-field-hint">Use o número com código do país e DDD, sem espaços.</span>
               </label>
               <label className="persona-field">
                 <span className="persona-label">Email</span>
@@ -1766,16 +1916,23 @@ export default function App() {
               <div className="admin-image-preview-shell">
                 {institutionalImage ? <img src={institutionalImage} alt={`Imagem institucional de ${brandName}`} className="admin-image-preview" /> : <div className="admin-image-placeholder">Imagem institucional</div>}
               </div>
-              <label className="persona-field admin-upload-field">
-                <span className="persona-label">Foto institucional</span>
-                <input className="persona-input" type="file" accept="image/*" onChange={handleInstitutionalImageChange} />
-              </label>
+              <div className="admin-upload-stack">
+                <label className="persona-field admin-upload-field">
+                  <span className="persona-label">Foto institucional</span>
+                  <input className="persona-input" type="file" accept="image/*" onChange={handleInstitutionalImageChange} />
+                </label>
+                {institutionalImage ? (
+                  <button type="button" className="chat-header-button subtle admin-remove-button" onClick={handleRemoveInstitutionalImage}>
+                    Remover imagem
+                  </button>
+                ) : null}
+              </div>
             </div>
             </div>
           </details>
 
           <details className="admin-config-section">
-            <summary className="admin-config-section-title">Acoes do dia</summary>
+            <summary className="admin-config-section-title">Ações do dia</summary>
             <div className="admin-config-section-body">
             <div className="admin-config-grid">
               <label className="persona-field">
@@ -1787,16 +1944,16 @@ export default function App() {
                 <input className="persona-input" type="time" value={openingEnd} onChange={(event) => setOpeningEnd(event.target.value)} />
               </label>
               <label className="persona-field">
-                <span className="persona-label">Regiao</span>
+                <span className="persona-label">Região</span>
                 <input className="persona-input" value={serviceRegion} onChange={(event) => setServiceRegion(event.target.value)} placeholder="Belo Horizonte" />
               </label>
               <label className="persona-field">
-                <span className="persona-label">Horario</span>
-                <input className="persona-input" value={businessHours} onChange={(event) => setBusinessHours(event.target.value)} placeholder="18h as 23h" />
+                <span className="persona-label">Horário</span>
+                <input className="persona-input" value={businessHours} onChange={(event) => setBusinessHours(event.target.value)} placeholder="18h às 23h" />
               </label>
               <label className="persona-field">
                 <span className="persona-label">Diferencial</span>
-                <input className="persona-input" value={brandHighlight} onChange={(event) => setBrandHighlight(event.target.value)} placeholder="Sabor autoral e atendimento agil" />
+                <input className="persona-input" value={brandHighlight} onChange={(event) => setBrandHighlight(event.target.value)} placeholder="Sabor autoral e atendimento ágil" />
               </label>
               <div className="persona-field admin-checkbox-field">
                 <span className="persona-label">Delivery</span>
@@ -1805,10 +1962,10 @@ export default function App() {
                     Sim
                   </button>
                   <button type="button" className={`persona-toggle ${deliveryAvailable === false ? 'selected' : ''}`} onClick={() => setDeliveryAvailable(false)}>
-                    Nao
+                    Não
                   </button>
                   <button type="button" className={`persona-toggle subtle ${deliveryAvailable === undefined ? 'selected' : ''}`} onClick={() => setDeliveryAvailable(undefined)}>
-                    Ainda nao
+                    Ainda não
                   </button>
                 </div>
               </div>
@@ -1817,11 +1974,11 @@ export default function App() {
           </details>
 
           <details className="admin-config-section">
-            <summary className="admin-config-section-title">Localizacao</summary>
+            <summary className="admin-config-section-title">Localização</summary>
             <div className="admin-config-section-body">
             <div className="admin-config-grid">
               <label className="persona-field">
-                <span className="persona-label">Endereco</span>
+                <span className="persona-label">Endereço</span>
                 <input className="persona-input" value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Rua X, 123" />
               </label>
               <label className="persona-field">
@@ -1837,19 +1994,19 @@ export default function App() {
           </details>
 
           <details className="admin-config-section">
-            <summary className="admin-config-section-title">Catalogo</summary>
+            <summary className="admin-config-section-title">Catálogo</summary>
             <div className="admin-config-section-body">
             <div className="admin-config-grid">
               <label className="persona-field">
                 <span className="persona-label">Nome do item</span>
-                <input className="persona-input" value={catalogDraft.name} onChange={(event) => handleCatalogDraftChange('name', event.target.value)} placeholder="Selecao Essencial" />
+                <input className="persona-input" value={catalogDraft.name} onChange={(event) => handleCatalogDraftChange('name', event.target.value)} placeholder="Seleção Essencial" />
               </label>
               <label className="persona-field">
                 <span className="persona-label">Categoria</span>
-                <input className="persona-input" value={catalogDraft.category} onChange={(event) => handleCatalogDraftChange('category', event.target.value)} placeholder="Selecao" />
+                <input className="persona-input" value={catalogDraft.category} onChange={(event) => handleCatalogDraftChange('category', event.target.value)} placeholder="Seleção" />
               </label>
               <label className="persona-field">
-                <span className="persona-label">Preco</span>
+                <span className="persona-label">Preço</span>
                 <input className="persona-input" value={catalogDraft.price} onChange={(event) => handleCatalogDraftChange('price', event.target.value)} placeholder="R$ 59,90" />
               </label>
               <label className="persona-field">
@@ -1860,7 +2017,7 @@ export default function App() {
                 <span className="persona-label">Prioridade</span>
                 <select className="persona-input" value={catalogDraft.priority} onChange={(event) => handleCatalogDraftChange('priority', event.target.value as CatalogPriority)}>
                   <option value="high">Alta</option>
-                  <option value="medium">Media</option>
+                  <option value="medium">Média</option>
                   <option value="low">Baixa</option>
                 </select>
               </label>
@@ -1871,7 +2028,7 @@ export default function App() {
               <label className="persona-field">
                 <span className="persona-label">Disponibilidade</span>
                 <select className="persona-input" value={catalogDraft.availability} onChange={(event) => handleCatalogDraftChange('availability', event.target.value as CatalogAvailability)}>
-                  <option value="available">Disponivel</option>
+                  <option value="available">Disponível</option>
                   <option value="low">Poucas unidades</option>
                   <option value="out">Esgotado</option>
                 </select>
@@ -1880,14 +2037,14 @@ export default function App() {
                 <span className="persona-label">Destaque</span>
                 <label className="persona-inline-checkbox">
                   <input type="checkbox" checked={catalogDraft.isFeatured} onChange={(event) => handleCatalogDraftChange('isFeatured', event.target.checked)} />
-                  <span>Quero empurrar esse item nas sugestoes</span>
+                  <span>Quero empurrar esse item nas sugestões</span>
                 </label>
               </div>
               <div className="persona-field admin-checkbox-field">
-                <span className="persona-label">Promocao</span>
+                <span className="persona-label">Promoção</span>
                 <label className="persona-inline-checkbox">
                   <input type="checkbox" checked={catalogDraft.isPromotion} onChange={(event) => handleCatalogDraftChange('isPromotion', event.target.checked)} />
-                  <span>Mostrar esse item na secao de promocoes</span>
+                  <span>Mostrar esse item na seção de promoções</span>
                 </label>
               </div>
               <div className="persona-field admin-checkbox-field">
@@ -1900,12 +2057,12 @@ export default function App() {
             </div>
 
             <label className="persona-field">
-              <span className="persona-label">Descricao</span>
+              <span className="persona-label">Descrição</span>
               <textarea
                 className="persona-input persona-textarea"
                 value={catalogDraft.description}
                 onChange={(event) => handleCatalogDraftChange('description', event.target.value)}
-                placeholder="Uma opcao completa para ajudar o cliente a encontrar o melhor para ele."
+                placeholder="Uma opção completa para ajudar o cliente a encontrar o melhor para ele."
                 rows={3}
               />
             </label>
@@ -1916,9 +2073,9 @@ export default function App() {
                 className="persona-input"
                 value={catalogDraft.complements}
                 onChange={(event) => handleCatalogDraftChange('complements', event.target.value)}
-                placeholder="Ex: bebida, sobremesa, acessorio"
+                placeholder="Ex: bebida, sobremesa, acessório"
               />
-              <span className="persona-field-hint">Opcional. Separe por virgulas para eu considerar combinacoes.</span>
+              <span className="persona-field-hint">Opcional. Separe por vírgulas para eu considerar combinações.</span>
             </label>
 
             <div className="admin-image-panel">
@@ -1957,7 +2114,7 @@ export default function App() {
                     setCatalogDraft(createEmptyCatalogDraft())
                   }}
                 >
-                  Cancelar edicao
+                  Cancelar edição
                 </button>
               ) : null}
             </div>
@@ -1970,7 +2127,7 @@ export default function App() {
                       {item.image ? <img src={item.image} alt={item.name} className="admin-catalog-thumb" /> : null}
                       <strong>{item.name}</strong>
                       <span>{item.description}</span>
-                      <small>{item.availability === 'out' ? 'Esgotado' : item.availability === 'low' ? 'Poucas unidades' : 'Disponivel'}</small>
+                      <small>{item.availability === 'out' ? 'Esgotado' : item.availability === 'low' ? 'Poucas unidades' : 'Disponível'}</small>
                       {item.price ? <small>{item.price}</small> : null}
                     </div>
                     <div className="admin-catalog-actions">
@@ -1990,11 +2147,12 @@ export default function App() {
 
           <div className="admin-config-actions admin-config-actions--save">
             <button type="button" className="persona-submit" onClick={handleSaveBrandConfiguration}>
-              Salvar configuracao
+              Salvar configuração
             </button>
             {configStatus ? <span className="admin-config-status">{configStatus}</span> : null}
           </div>
         </section>
+        ) : null}
       </section>
 
       <section className="chat-card">
@@ -2004,11 +2162,11 @@ export default function App() {
             <div className="chat-card-subtitle">
               {contextMode === 'admin'
                 ? messages.length <= 1
-                  ? 'Conversa, conteudo e decisao no mesmo fluxo.'
-                  : 'Memoria estrategica ativa.'
+                  ? 'Conversa, conteúdo e decisão no mesmo fluxo.'
+                  : 'Memória estratégica ativa.'
                 : messages.length <= 1
-                  ? 'Atendimento em simulacao'
-                  : 'Contexto publico ativo'}
+                  ? 'Atendimento em simulação'
+                  : 'Contexto público ativo'}
             </div>
           </div>
 
@@ -2018,8 +2176,8 @@ export default function App() {
               className={`channel-mode-button ${contextMode === 'admin' ? 'active' : ''}`}
               onClick={() => handleContextModeChange('admin')}
             >
-              <strong>Operacao</strong>
-              <span>Conteudo, rotina e leitura interna</span>
+              <strong>Operação</strong>
+              <span>Conteúdo, rotina e leitura interna</span>
             </button>
             <button
               type="button"
@@ -2027,20 +2185,20 @@ export default function App() {
               onClick={() => handleContextModeChange('customer')}
             >
               <strong>Atendimento</strong>
-              <span>Cliente, orientacao e proximo passo</span>
+              <span>Cliente, orientação e próximo passo</span>
             </button>
           </div>
 
           {contextMode === 'customer' ? (
             <div className="channel-selector-panel">
-              <div className="debug-insights" aria-label="Metadados de inteligencia">
+              <div className="debug-insights" aria-label="Metadados de inteligência">
                 <div className="debug-chip">
-                  <span className="debug-label">Intencao</span>
+                  <span className="debug-label">Intenção</span>
                   <strong className="debug-value">{detectedIntent}</strong>
                 </div>
                 <div className="debug-chip">
                   <span className="debug-label">Comercial</span>
-                  <strong className="debug-value">{commercialIntent ? 'sim' : 'nao'}</strong>
+                  <strong className="debug-value">{commercialIntent ? 'sim' : 'não'}</strong>
                 </div>
                 {shouldShowBusinessProfile ? (
                   <div className="debug-chip debug-chip-wide">
@@ -2112,8 +2270,19 @@ export default function App() {
               <button type="button" className="chat-header-button subtle" onClick={handleNewConversation}>
                 Nova conversa
               </button>
-              <button type="button" className="chat-header-button" onClick={handleEditCentelha}>
-                Editar Centelha
+              <button
+                type="button"
+                className="chat-header-button"
+                onClick={() => {
+                  if (isEditingCentelha) {
+                    setIsEditingCentelha(false)
+                    return
+                  }
+
+                  handleEditCentelha()
+                }}
+              >
+                {isEditingCentelha ? 'Fechar edição' : 'Editar Centelha'}
               </button>
               <button type="button" className="chat-header-button" onClick={handleOpenPublicPage}>
                 Ver como cliente

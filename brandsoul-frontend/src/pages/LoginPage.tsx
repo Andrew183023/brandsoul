@@ -23,7 +23,7 @@ export default function LoginPage() {
       navigateTo('/admin')
     } catch (error) {
       console.error(error)
-      setErrorMessage('Nao consegui entrar agora. Revise seu email e sua senha.')
+      setErrorMessage('Não consegui entrar agora. Revise seu email e sua senha.')
     } finally {
       setIsSubmitting(false)
     }
@@ -41,7 +41,7 @@ export default function LoginPage() {
         <form className="auth-form" onSubmit={handleSubmit}>
           <label className="persona-field">
             <span className="persona-label">Email</span>
-            <input className="persona-input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="voce@marca.com" autoComplete="email" />
+            <input className="persona-input" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="contato@marca.com" autoComplete="email" />
           </label>
 
           <label className="persona-field">
