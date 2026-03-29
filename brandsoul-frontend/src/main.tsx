@@ -7,8 +7,10 @@ import { isAuthenticated } from './lib/session'
 import BrandInteractionPage from './pages/BrandInteractionPage.tsx'
 import CreatePersonaPage from './pages/CreatePersonaPage.tsx'
 import CustomerChatPage from './pages/CustomerChatPage.tsx'
+import ForgotPasswordPage from './pages/ForgotPasswordPage.tsx'
 import LoginPage from './pages/LoginPage.tsx'
 import RegisterPage from './pages/RegisterPage.tsx'
+import ResetPasswordPage from './pages/ResetPasswordPage.tsx'
 
 function Root() {
   const [pathname, setPathname] = useState(window.location.pathname)
@@ -29,6 +31,8 @@ function Root() {
   const hasSession = isAuthenticated()
   const showLoginPage = pathname === '/login'
   const showRegisterPage = pathname === '/register'
+  const showForgotPasswordPage = pathname === '/forgot-password'
+  const showResetPasswordPage = pathname === '/reset-password'
   const showCreatePersonaPage = pathname === '/create' || pathname === '/create-persona'
   const showBrandInteractionPage = pathname === '/interaction' || pathname === '/centelha-interacao'
   const showAdminPage = pathname === '/admin'
@@ -42,11 +46,11 @@ function Root() {
       return
     }
 
-    if ((showLoginPage || showRegisterPage) && hasSession) {
+    if ((showLoginPage || showRegisterPage || showForgotPasswordPage || showResetPasswordPage) && hasSession) {
       window.history.replaceState({}, '', '/admin')
       setPathname('/admin')
     }
-  }, [hasSession, showAdminPage, showLoginPage, showRegisterPage])
+  }, [hasSession, showAdminPage, showForgotPasswordPage, showLoginPage, showRegisterPage, showResetPasswordPage])
 
   if (showLoginPage) {
     return <LoginPage />
@@ -54,6 +58,14 @@ function Root() {
 
   if (showRegisterPage) {
     return <RegisterPage />
+  }
+
+  if (showForgotPasswordPage) {
+    return <ForgotPasswordPage />
+  }
+
+  if (showResetPasswordPage) {
+    return <ResetPasswordPage />
   }
 
   if (showCreatePersonaPage) {

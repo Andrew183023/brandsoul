@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion'
 import { useMemo, useState } from 'react'
 
+import brandsoulLogo from '../assets/brandsoul-logo-original.jpeg'
 import HintBox from '../lib/components/HintBox'
 import Spark from '../lib/components/Spark'
 import {
@@ -19,6 +20,7 @@ import {
   type VoiceStyleOption,
   voiceStyleOptions,
 } from '../lib/persona'
+import { isAuthenticated } from '../lib/session'
 import '../App.css'
 
 function buildVoiceStylePreview(voiceStyle: VoiceStyleOption) {
@@ -76,6 +78,7 @@ export default function CreatePersonaPage() {
   const [isActivating, setIsActivating] = useState(false)
 
   const isReady = Boolean(brandName.trim() && tone && power)
+  const hasActiveSession = useMemo(() => isAuthenticated(), [])
   const sparkTone = useMemo(() => tone ?? 'divertido', [tone])
   const sparkPower = useMemo(() => power ?? 'atração', [power])
   const businessDescriptionLength = businessDescription.trim().length
@@ -138,7 +141,16 @@ export default function CreatePersonaPage() {
         animate={{ opacity: 1, scale: 1, y: 0 }}
         transition={{ duration: 0.7, ease: 'easeOut' }}
       >
+        <div className="persona-top-actions">
+          <button type="button" className="chat-header-button subtle" onClick={() => navigateTo(hasActiveSession ? '/admin' : '/login')}>
+            {hasActiveSession ? 'Ir para painel' : 'Entrar'}
+          </button>
+        </div>
+
         <div className="persona-copy-block">
+          <div className="brandsoul-hero-logo">
+            <img src={brandsoulLogo} alt="BrandSoul" className="brandsoul-logo brandsoul-logo--hero" />
+          </div>
           <div className="eyebrow">Nascimento da Centelha</div>
           <h1 className="persona-title">
             A sua marca não precisa só de presença.
@@ -353,8 +365,20 @@ export default function CreatePersonaPage() {
               {isActivating ? 'Dando vida à minha Centelha...' : 'Criar minha Centelha'}
             </button>
 
+            <div className="persona-secondary-action">
+              <span>Já tem uma conta?</span>
+              <button type="button" className="auth-inline-link" onClick={() => navigateTo(hasActiveSession ? '/admin' : '/login')}>
+                {hasActiveSession ? 'Ir para painel' : 'Entrar'}
+              </button>
+            </div>
+
             {errorMessage ? <p className="persona-error">{errorMessage}</p> : null}
           </div>
+        </div>
+
+        <div className="brandsoul-contact">
+          <span>Contato</span>
+          <a href="mailto:andrew@flowcoregroup.space">andrew@flowcoregroup.space</a>
         </div>
       </motion.section>
     </main>

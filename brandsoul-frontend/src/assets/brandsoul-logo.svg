@@ -1,0 +1,31 @@
+<svg width="640" height="220" viewBox="0 0 640 220" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="brandsoulWord" x1="210" y1="90" x2="530" y2="170" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F9F7FF"/>
+      <stop offset="0.45" stop-color="#C48CFF"/>
+      <stop offset="1" stop-color="#7F62FF"/>
+    </linearGradient>
+    <linearGradient id="brandsoulFlame" x1="86" y1="16" x2="130" y2="164" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF7AE6"/>
+      <stop offset="0.36" stop-color="#A34CFF"/>
+      <stop offset="0.72" stop-color="#5674FF"/>
+      <stop offset="1" stop-color="#74E0FF"/>
+    </linearGradient>
+    <radialGradient id="brandsoulCore" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(101 92) rotate(61.2) scale(49.2 54.2)">
+      <stop stop-color="#FFF0C8"/>
+      <stop offset="0.45" stop-color="#FFB05E"/>
+      <stop offset="1" stop-color="#16132A" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="brandsoulGlow" x="0" y="0" width="220" height="220" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
+      <feGaussianBlur stdDeviation="10" result="effect1_foregroundBlur"/>
+    </filter>
+  </defs>
+  <g filter="url(#brandsoulGlow)">
+    <path d="M118.828 18C146.83 50.5545 150.053 77.4258 127.738 98.6132C112.161 113.404 112.05 128.988 131.752 146.363C142.239 155.611 146.48 166.976 144.484 180.459C116.68 170.886 96.451 171.544 83.7984 182.434C69.7723 194.507 57.3197 207.695 46.4404 222C57.6454 185.808 56.5741 157.614 43.2264 137.418C27.5158 113.65 28.3068 90.2225 45.5994 67.1383C61.6107 45.7647 86.0202 29.3853 118.828 18Z" transform="translate(18 -6)" fill="url(#brandsoulFlame)"/>
+    <path d="M121.305 23.5C143.315 47.9406 144.599 69.0461 125.159 86.8166C103.564 106.56 103.388 125.492 124.632 143.614C138.844 155.732 145.078 170.62 143.334 188.279C117.468 177.178 98.1874 176.102 85.4913 185.053C74.3495 192.908 63.4098 203.271 52.6723 216.141C58.1912 186.645 53.3983 162.312 38.2937 143.142C23.3304 124.151 23.4929 103.646 38.7813 81.6261C53.4194 60.5427 80.9275 41.1673 121.305 23.5Z" transform="translate(18 -6)" fill="white" fill-opacity="0.12"/>
+    <ellipse cx="101" cy="92" rx="34" ry="38" fill="url(#brandsoulCore)"/>
+  </g>
+  <text x="190" y="154" fill="url(#brandsoulWord)" font-family="Inter, Arial, sans-serif" font-size="84" font-weight="650" letter-spacing="-0.04em">BrandSoul</text>
+</svg>

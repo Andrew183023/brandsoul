@@ -51,6 +51,12 @@ export default function LoginPage() {
 
           {errorMessage ? <p className="persona-error">{errorMessage}</p> : null}
 
+          <div className="auth-inline-link-row">
+            <button type="button" className="auth-inline-link" onClick={() => navigateTo('/forgot-password')}>
+              Esqueci minha senha
+            </button>
+          </div>
+
           <div className="auth-actions">
             <button type="submit" className="persona-submit" disabled={isSubmitting}>
               {isSubmitting ? 'Entrando...' : 'Entrar'}

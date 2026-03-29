@@ -9,6 +9,10 @@ interface AuthResponse {
   tenant: AuthTenant
 }
 
+interface MessageResponse {
+  message: string
+}
+
 export async function registerAccount(payload: {
   name: string
   email: string
@@ -22,6 +26,16 @@ export async function registerAccount(payload: {
 
 export async function loginAccount(payload: { email: string; password: string }): Promise<AuthSession> {
   const response = await axios.post<AuthResponse>(buildApiUrl('/auth/login'), payload)
+  return response.data
+}
+
+export async function requestPasswordReset(payload: { email: string }): Promise<MessageResponse> {
+  const response = await axios.post<MessageResponse>(buildApiUrl('/auth/forgot-password'), payload)
+  return response.data
+}
+
+export async function resetPassword(payload: { token: string; new_password: string }): Promise<MessageResponse> {
+  const response = await axios.post<MessageResponse>(buildApiUrl('/auth/reset-password'), payload)
   return response.data
 }
 
@@ -42,4 +56,3 @@ export async function fetchCurrentTenant(token: string): Promise<AuthTenant> {
   })
   return response.data
 }
-

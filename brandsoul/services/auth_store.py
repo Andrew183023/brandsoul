@@ -125,6 +125,19 @@ def initialize_database(connection: sqlite3.Connection, database_key: str) -> No
             updated_at TEXT NOT NULL,
             FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
         );
+
+        CREATE TABLE IF NOT EXISTS password_reset_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token TEXT NOT NULL UNIQUE,
+            expires_at TEXT NOT NULL,
+            used_at TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id
+        ON password_reset_tokens(user_id);
         """
     )
     connection.commit()
@@ -203,6 +216,21 @@ def get_user_by_id(user_id: int, *, connection: sqlite3.Connection | None = None
             connection.close()
 
 
+def update_user_password(*, user_id: int, password_hash: str) -> dict | None:
+    now = utcnow_iso()
+    with get_connection() as connection:
+        connection.execute(
+            """
+            UPDATE users
+            SET password_hash = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (password_hash, now, user_id),
+        )
+        connection.commit()
+        return get_user_by_id(user_id, connection=connection)
+
+
 def get_tenant_by_slug(slug: str, *, connection: sqlite3.Connection | None = None) -> dict | None:
     owns_connection = connection is None
     connection = connection or get_connection()
@@ -242,6 +270,70 @@ def get_membership_for_user(user_id: int, *, connection: sqlite3.Connection | No
     finally:
         if owns_connection:
             connection.close()
+
+
+def create_password_reset_token(*, user_id: int, token: str, expires_at: str) -> dict:
+    now = utcnow_iso()
+    with get_connection() as connection:
+        cursor = connection.execute(
+            """
+            INSERT INTO password_reset_tokens (user_id, token, expires_at, used_at, created_at)
+            VALUES (?, ?, ?, NULL, ?)
+            """,
+            (user_id, token, expires_at, now),
+        )
+        connection.commit()
+        row = connection.execute("SELECT * FROM password_reset_tokens WHERE id = ?", (cursor.lastrowid,)).fetchone()
+        return row_to_dict(row) or {}
+
+
+def get_password_reset_token_by_token(token: str, *, connection: sqlite3.Connection | None = None) -> dict | None:
+    owns_connection = connection is None
+    connection = connection or get_connection()
+    try:
+        row = connection.execute(
+            "SELECT * FROM password_reset_tokens WHERE token = ?",
+            (token,),
+        ).fetchone()
+        return row_to_dict(row)
+    finally:
+        if owns_connection:
+            connection.close()
+
+
+def get_latest_password_reset_token_for_user(user_id: int, *, connection: sqlite3.Connection | None = None) -> dict | None:
+    owns_connection = connection is None
+    connection = connection or get_connection()
+    try:
+        row = connection.execute(
+            """
+            SELECT * FROM password_reset_tokens
+            WHERE user_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (user_id,),
+        ).fetchone()
+        return row_to_dict(row)
+    finally:
+        if owns_connection:
+            connection.close()
+
+
+def mark_password_reset_token_used(*, token_id: int) -> dict | None:
+    used_at = utcnow_iso()
+    with get_connection() as connection:
+        connection.execute(
+            """
+            UPDATE password_reset_tokens
+            SET used_at = ?
+            WHERE id = ?
+            """,
+            (used_at, token_id),
+        )
+        connection.commit()
+        row = connection.execute("SELECT * FROM password_reset_tokens WHERE id = ?", (token_id,)).fetchone()
+        return row_to_dict(row)
 
 
 def get_spark_by_tenant_id(tenant_id: int, *, connection: sqlite3.Connection | None = None) -> dict | None:

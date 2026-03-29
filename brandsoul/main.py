@@ -3,7 +3,7 @@ import os
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from models.auth import AuthResponse, LoginRequest, RegisterRequest, TenantPublic, UserPublic
+from models.auth import AuthResponse, ForgotPasswordRequest, LoginRequest, MessageResponse, RegisterRequest, ResetPasswordRequest, TenantPublic, UserPublic
 from models.catalog import CatalogItemPayload
 from models.channel import ChannelMessage, ChannelResponse, ChatRequest, ChatResponse
 from models.interaction import InteractionRequest, InteractionResponse
@@ -13,7 +13,9 @@ from services.auth_service import (
     get_current_tenant,
     get_current_user,
     login_account,
+    request_password_reset,
     register_account,
+    reset_password_with_token,
     resolve_token_from_request,
     serialize_tenant,
     serialize_user,
@@ -102,6 +104,18 @@ def register(payload: RegisterRequest) -> AuthResponse:
 def login(payload: LoginRequest) -> AuthResponse:
     token, user, tenant = login_account(email=payload.email, password=payload.password)
     return AuthResponse(token=token, user=user, tenant=tenant)
+
+
+@app.post("/auth/forgot-password", response_model=MessageResponse)
+def forgot_password(payload: ForgotPasswordRequest) -> MessageResponse:
+    request_password_reset(email=payload.email)
+    return MessageResponse(message="Se existir uma conta com este email, enviaremos instruções.")
+
+
+@app.post("/auth/reset-password", response_model=MessageResponse)
+def reset_password(payload: ResetPasswordRequest) -> MessageResponse:
+    reset_password_with_token(token=payload.token, new_password=payload.new_password)
+    return MessageResponse(message="Senha redefinida com sucesso")
 
 
 @app.get("/auth/me", response_model=UserPublic)

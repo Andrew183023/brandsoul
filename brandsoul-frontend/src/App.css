@@ -59,6 +59,92 @@
   gap: 0.75rem;
 }
 
+.auth-inline-link-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.auth-inline-link {
+  border: 0;
+  background: transparent;
+  color: rgba(255, 224, 196, 0.82);
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+  transition: color 160ms ease, opacity 160ms ease;
+}
+
+.auth-inline-link:hover {
+  color: rgba(255, 240, 226, 0.96);
+}
+
+.auth-feedback {
+  margin: 0;
+  padding: 0.9rem 1rem;
+  border-radius: 18px;
+  line-height: 1.5;
+}
+
+.auth-feedback.success {
+  border: 1px solid rgba(164, 236, 197, 0.18);
+  background: rgba(109, 207, 160, 0.08);
+  color: rgba(229, 247, 237, 0.92);
+}
+
+.brandsoul-logo {
+  display: block;
+  width: 130px;
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 0 12px rgba(120, 80, 255, 0.25));
+}
+
+.brandsoul-hero-logo {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 32px;
+}
+
+.brandsoul-logo--hero {
+  margin: 0 auto;
+}
+
+.brandsoul-contact {
+  display: grid;
+  gap: 0.15rem;
+  justify-items: center;
+  color: rgba(226, 230, 234, 0.52);
+  font-size: 0.84rem;
+  text-align: center;
+}
+
+.brandsoul-contact span {
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 0.66rem;
+}
+
+.brandsoul-contact a {
+  color: rgba(242, 228, 212, 0.74);
+  text-decoration: none;
+}
+
+.brandsoul-contact a:hover {
+  color: rgba(248, 240, 233, 0.94);
+}
+
+@media (max-width: 768px) {
+  .brandsoul-logo {
+    width: 96px;
+  }
+
+  .brandsoul-hero-logo {
+    margin-bottom: 24px;
+  }
+}
+
 .customer-shell {
   --brand-accent: #ff9460;
   --brand-accent-soft: #ff5e43;
@@ -85,6 +171,25 @@
   --spark-title-glow: 10%;
   --spark-card-shadow: 0.12;
   --spark-cta-strength: 100%;
+}
+
+.brandsoul-signature {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7rem;
+  padding: 0.2rem 0 1.4rem;
+  color: rgba(226, 230, 234, 0.46);
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
+}
+
+.brandsoul-footer-mark {
+  max-width: 92px;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  opacity: 0.78;
 }
 
 .customer-shell.spark-thinking {
@@ -2875,6 +2980,12 @@
   backdrop-filter: blur(20px);
 }
 
+.persona-top-actions {
+  width: 100%;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .persona-copy-block {
   display: grid;
   gap: 1rem;
@@ -3263,6 +3374,16 @@
   opacity: 0.42;
   cursor: not-allowed;
   box-shadow: none;
+}
+
+.persona-secondary-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  color: var(--text-soft);
+  font-size: 0.94rem;
 }
 
 @keyframes personaBirthPulse {
@@ -3777,6 +3898,14 @@
 
   .persona-field-meta {
     align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .persona-top-actions {
+    justify-content: center;
+  }
+
+  .persona-secondary-action {
     flex-direction: column;
   }
 

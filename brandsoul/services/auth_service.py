@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
 import secrets
@@ -9,21 +10,30 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from passlib.context import CryptContext
+import resend
 
 from models.auth import TenantPublic, UserPublic
 from services.auth_store import (
     create_membership,
+    create_password_reset_token,
     create_tenant,
     create_user,
     get_membership_for_user,
+    get_password_reset_token_by_token,
     get_tenant_by_id,
     get_tenant_by_slug,
+    get_latest_password_reset_token_for_user,
     get_user_by_email,
     get_user_by_id,
+    mark_password_reset_token_used,
+    update_user_password,
 )
 
 
 bearer_scheme = HTTPBearer(auto_error=False)
+password_context = CryptContext(schemes=["bcrypt_sha256"], deprecated="auto")
+logger = logging.getLogger(__name__)
 
 
 def get_jwt_secret() -> str:
@@ -42,13 +52,40 @@ def get_access_token_expiry_minutes() -> int:
         return 1440
 
 
+def get_password_reset_expiry_minutes() -> int:
+    raw_value = os.getenv("PASSWORD_RESET_EXPIRE_MINUTES", "15").strip()
+    try:
+        return min(30, max(15, int(raw_value)))
+    except ValueError:
+        return 15
+
+
+def get_password_reset_url_base() -> str:
+    return os.getenv("PASSWORD_RESET_URL_BASE", "http://localhost:5173/reset-password").strip() or "http://localhost:5173/reset-password"
+
+
+def get_resend_api_key() -> str:
+    return os.getenv("RESEND_API_KEY", "").strip()
+
+
+def get_email_from() -> str:
+    return os.getenv("EMAIL_FROM", "").strip()
+
+
 def hash_password(password: str) -> str:
-    salt = secrets.token_bytes(16)
-    derived_key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 120_000)
-    return f"{base64.b64encode(salt).decode()}${base64.b64encode(derived_key).decode()}"
+    return password_context.hash(password)
 
 
 def verify_password(password: str, password_hash: str) -> bool:
+    if not password_hash:
+        return False
+
+    if password_hash.startswith("$2") or password_hash.startswith("$bcrypt-sha256$"):
+        try:
+            return password_context.verify(password, password_hash)
+        except Exception:
+            return False
+
     try:
         encoded_salt, encoded_hash = password_hash.split("$", 1)
         salt = base64.b64decode(encoded_salt.encode())
@@ -166,6 +203,70 @@ def login_account(*, email: str, password: str) -> tuple[str, UserPublic, Tenant
 
     token = build_access_token(user["id"], tenant["id"])
     return token, serialize_user(user), serialize_tenant(tenant)
+
+
+def build_password_reset_url(token: str) -> str:
+    separator = "&" if "?" in get_password_reset_url_base() else "?"
+    return f"{get_password_reset_url_base()}{separator}token={token}"
+
+
+def send_password_reset_email(email: str, token: str) -> None:
+    reset_url = build_password_reset_url(token)
+    resend_api_key = get_resend_api_key()
+    email_from = get_email_from()
+
+    if not resend_api_key or not email_from:
+        logger.info("RESET LINK for %s: %s", email, reset_url)
+        return
+
+    try:
+        resend.api_key = resend_api_key
+        resend.Emails.send(
+            {
+                "from": email_from,
+                "to": [email],
+                "subject": "Recuperação de senha",
+                "text": (
+                    "Você solicitou redefinição de senha.\n\n"
+                    f"Clique no link abaixo:\n{reset_url}\n\n"
+                    "Se não foi você, ignore este email."
+                ),
+            }
+        )
+    except Exception:
+        logger.exception("Failed to send password reset email to %s", email)
+        logger.info("RESET LINK for %s: %s", email, reset_url)
+
+
+def request_password_reset(*, email: str) -> None:
+    user = get_user_by_email(email.strip().lower())
+    if not user:
+        return
+
+    reset_token = secrets.token_urlsafe(32)
+    expires_at = (datetime.now(UTC) + timedelta(minutes=get_password_reset_expiry_minutes())).isoformat()
+    create_password_reset_token(user_id=user["id"], token=reset_token, expires_at=expires_at)
+    send_password_reset_email(user["email"], reset_token)
+
+
+def reset_password_with_token(*, token: str, new_password: str) -> None:
+    reset_token = get_password_reset_token_by_token(token.strip())
+    if not reset_token:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid reset token.")
+
+    if reset_token.get("used_at"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid reset token.")
+
+    expires_at = datetime.fromisoformat(reset_token["expires_at"])
+    if expires_at < datetime.now(UTC):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid reset token.")
+
+    user = get_user_by_id(reset_token["user_id"])
+    if not user or not user["is_active"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid reset token.")
+
+    update_user_password(user_id=user["id"], password_hash=hash_password(new_password))
+    mark_password_reset_token_used(token_id=reset_token["id"])
 
 
 def resolve_token_from_request(

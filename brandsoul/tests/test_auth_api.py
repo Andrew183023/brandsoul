@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from main import app
+from services.auth_store import get_latest_password_reset_token_for_user, get_user_by_email
 
 
 client = TestClient(app)
@@ -290,3 +291,109 @@ def test_channel_message_uses_public_brand_slug_context(tmp_path, monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["response"] == "Agora quem responde sou eu. Pode mandar."
+
+
+def test_forgot_password_returns_same_message_for_existing_and_missing_email(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRANDSOUL_DB_PATH", str(tmp_path / "forgot-password.db"))
+
+    client.post(
+        "/auth/register",
+        json={
+            "name": "Owner",
+            "email": "reset@example.com",
+            "password": "SenhaSegura123",
+            "tenant_name": "Marca Reset",
+            "business_model": "service",
+        },
+    )
+
+    existing_response = client.post("/auth/forgot-password", json={"email": "reset@example.com"})
+    missing_response = client.post("/auth/forgot-password", json={"email": "naoexiste@example.com"})
+
+    assert existing_response.status_code == 200
+    assert missing_response.status_code == 200
+    assert existing_response.json() == {"message": "Se existir uma conta com este email, enviaremos instruções."}
+    assert missing_response.json() == {"message": "Se existir uma conta com este email, enviaremos instruções."}
+
+    user = get_user_by_email("reset@example.com")
+    assert user is not None
+    token_record = get_latest_password_reset_token_for_user(user["id"])
+    assert token_record is not None
+    assert token_record["used_at"] is None
+
+
+def test_reset_password_accepts_valid_token_and_rejects_reuse(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRANDSOUL_DB_PATH", str(tmp_path / "reset-password.db"))
+
+    client.post(
+        "/auth/register",
+        json={
+            "name": "Owner",
+            "email": "reuse@example.com",
+            "password": "SenhaSegura123",
+            "tenant_name": "Marca Reuso",
+            "business_model": "service",
+        },
+    )
+    client.post("/auth/forgot-password", json={"email": "reuse@example.com"})
+
+    user = get_user_by_email("reuse@example.com")
+    assert user is not None
+    token_record = get_latest_password_reset_token_for_user(user["id"])
+    assert token_record is not None
+
+    reset_response = client.post(
+        "/auth/reset-password",
+        json={"token": token_record["token"], "new_password": "NovaSenhaSegura456"},
+    )
+    assert reset_response.status_code == 200
+    assert reset_response.json() == {"message": "Senha redefinida com sucesso"}
+
+    login_response = client.post(
+        "/auth/login",
+        json={"email": "reuse@example.com", "password": "NovaSenhaSegura456"},
+    )
+    assert login_response.status_code == 200
+
+    reused_response = client.post(
+        "/auth/reset-password",
+        json={"token": token_record["token"], "new_password": "OutraSenha789"},
+    )
+    assert reused_response.status_code == 400
+
+
+def test_reset_password_rejects_expired_token(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRANDSOUL_DB_PATH", str(tmp_path / "expired-reset.db"))
+
+    client.post(
+        "/auth/register",
+        json={
+            "name": "Owner",
+            "email": "expired@example.com",
+            "password": "SenhaSegura123",
+            "tenant_name": "Marca Expirada",
+            "business_model": "service",
+        },
+    )
+    client.post("/auth/forgot-password", json={"email": "expired@example.com"})
+
+    user = get_user_by_email("expired@example.com")
+    assert user is not None
+    token_record = get_latest_password_reset_token_for_user(user["id"])
+    assert token_record is not None
+
+    monkeypatch.setenv("BRANDSOUL_DB_PATH", str(tmp_path / "expired-reset.db"))
+    from services.auth_store import get_connection
+
+    with get_connection() as connection:
+        connection.execute(
+            "UPDATE password_reset_tokens SET expires_at = ? WHERE id = ?",
+            ("2000-01-01T00:00:00+00:00", token_record["id"]),
+        )
+        connection.commit()
+
+    expired_response = client.post(
+        "/auth/reset-password",
+        json={"token": token_record["token"], "new_password": "NovaSenhaSegura456"},
+    )
+    assert expired_response.status_code == 400

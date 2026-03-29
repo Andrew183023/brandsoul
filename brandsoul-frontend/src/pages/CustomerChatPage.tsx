@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
 import axios from 'axios'
 
+import brandsoulLogo from '../assets/brandsoul-logo-original.jpeg'
 import ChatList from '../lib/components/ChatList'
 import BrandSpark from '../lib/components/BrandSpark'
 import ProductCard from '../lib/components/ProductCard'
@@ -829,6 +830,11 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
           </div>
         </form>
       </section>
+
+      <footer className="brandsoul-signature" aria-label="Assinatura do BrandSoul">
+        <img src={brandsoulLogo} alt="BrandSoul" className="brandsoul-footer-mark" />
+        <span>Powered by BrandSoul</span>
+      </footer>
 
       <ProductModal item={selectedItem} onClose={() => setSelectedItem(null)} onPrimaryAction={handleCatalogAction} onWhatsAppAction={whatsappNumber ? handleWhatsAppOpen : undefined} />
     </main>
