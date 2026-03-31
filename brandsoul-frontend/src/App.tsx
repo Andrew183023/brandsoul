@@ -28,6 +28,7 @@ import { inferInteractionProfilePreview, type BusinessProfile } from './lib/inte
 import {
   actModeOptions,
   businessModelOptions,
+  type CtaConfig,
   type BrandPersona,
   type BrandTypeOption,
   type BrandFeatures,
@@ -43,6 +44,7 @@ import {
   saveBrandPersona,
   type ActModeOption,
   type BusinessGoalOption,
+  type EmergencyModeConfig,
   type EmergencyTypeOption,
   type PowerOption,
   type ProfessionalPageData,
@@ -137,6 +139,26 @@ function createDefaultModes(): SparkModes {
   }
 }
 
+function createDefaultEmergencyMode(businessModel: BusinessModelOption): EmergencyModeConfig {
+  return {
+    enabled: businessModel === 'professional',
+    autoStart: false,
+    showUploadEarly: true,
+  }
+}
+
+function createDefaultCtaConfig(): CtaConfig {
+  return {
+    whatsappEnabled: false,
+    whatsappNumber: '',
+    whatsappMessageTemplate: 'Olá, organizei meu caso pelo BrandSoul e gostaria de encaminhar para análise.\n\nTipo de situação: {tipo}\nResumo: {resumo}\nImpacto: {impacto}\nEvidências: {evidencias}\n\nPodemos seguir com a análise?',
+    showAfterEvidence: true,
+    showOnCompletion: true,
+    primaryText: 'Encaminhar para profissional',
+    secondaryText: 'Leve este caso organizado para análise profissional.',
+  }
+}
+
 function createDefaultFeatures(businessModel: BusinessModelOption): BrandFeatures {
   if (businessModel === 'service') {
     return {
@@ -210,6 +232,48 @@ function createEmptyProfessionalData(): ProfessionalPageData {
   }
 }
 
+type AdminConfigSectionKey =
+  | 'base'
+  | 'operationType'
+  | 'professionalProfile'
+  | 'professionalMode'
+  | 'professionalGuidance'
+  | 'sparkPersonality'
+  | 'publicBrand'
+  | 'visualStyle'
+  | 'serviceSchedule'
+  | 'catalog'
+  | 'services'
+  | 'emergency'
+  | 'cta'
+
+type AdminConfigSectionsState = Record<AdminConfigSectionKey, boolean>
+
+function createCollapsedAdminSections(): AdminConfigSectionsState {
+  return {
+    base: false,
+    operationType: false,
+    professionalProfile: false,
+    professionalMode: false,
+    professionalGuidance: false,
+    sparkPersonality: false,
+    publicBrand: false,
+    visualStyle: false,
+    serviceSchedule: false,
+    catalog: false,
+    services: false,
+    emergency: false,
+    cta: false,
+  }
+}
+
+function createAdminSectionsWithSingleOpen(section: AdminConfigSectionKey): AdminConfigSectionsState {
+  return {
+    ...createCollapsedAdminSections(),
+    [section]: true,
+  }
+}
+
 function parseCommaSeparatedList(value: string) {
   return value
     .split(',')
@@ -219,6 +283,26 @@ function parseCommaSeparatedList(value: string) {
 
 function formatCommaSeparatedList(values?: string[]) {
   return values?.join(', ') ?? ''
+}
+
+function hasText(value?: string | null) {
+  return Boolean(value?.trim())
+}
+
+function hasItems<T>(value?: T[] | null) {
+  return Boolean(value && value.length > 0)
+}
+
+function getSectionProgressStatus(completed: number, total: number) {
+  if (completed <= 0) {
+    return 'Pendente'
+  }
+
+  if (completed >= total) {
+    return 'Completo'
+  }
+
+  return 'Parcial'
 }
 
 interface ChannelResponseMetadata {
@@ -686,6 +770,10 @@ export default function App() {
   const [businessGoal, setBusinessGoal] = useState<BusinessGoalOption>(savedPersona?.businessGoal ?? 'volume')
   const [modes, setModes] = useState<SparkModes>(savedPersona?.modes ?? createDefaultModes())
   const [emergencyType, setEmergencyType] = useState<EmergencyTypeOption>(savedPersona?.emergencyType ?? 'technical')
+  const [emergencyMode, setEmergencyMode] = useState<EmergencyModeConfig>(
+    savedPersona?.emergencyMode ?? createDefaultEmergencyMode(savedPersona?.businessModel ?? (savedPersona?.brandType === 'professional' ? 'professional' : 'product')),
+  )
+  const [ctaConfig, setCtaConfig] = useState<CtaConfig>(savedPersona?.ctaConfig ?? createDefaultCtaConfig())
   const [contextMode, setContextMode] = useState<ContextMode>(initialContextMode)
   const [channelMode, setChannelMode] = useState<ChannelMode>(initialChannelMode)
   const [instagramUsername, setInstagramUsername] = useState(loadInstagramUsername())
@@ -700,6 +788,7 @@ export default function App() {
   const [configStatus, setConfigStatus] = useState('')
   const [linkCopyStatus, setLinkCopyStatus] = useState('')
   const [isEditingCentelha, setIsEditingCentelha] = useState(false)
+  const [openAdminSections, setOpenAdminSections] = useState<AdminConfigSectionsState>(() => createCollapsedAdminSections())
   const [currentTenant, setCurrentTenant] = useState<AuthTenant | null>(() => loadCurrentTenant())
   const [currentUser] = useState<AuthUser | null>(savedSession?.user ?? null)
   const contentHistoryStorageKey = useMemo(
@@ -919,6 +1008,8 @@ export default function App() {
     setBusinessGoal(persona.businessGoal ?? 'volume')
     setModes(persona.modes ?? createDefaultModes())
     setEmergencyType(persona.emergencyType ?? 'technical')
+    setEmergencyMode(persona.emergencyMode ?? createDefaultEmergencyMode(nextBusinessModel))
+    setCtaConfig(persona.ctaConfig ?? createDefaultCtaConfig())
   }, [])
 
   const currentPersona = useMemo<BrandPersona>(
@@ -935,6 +1026,8 @@ export default function App() {
       businessGoal,
       modes,
       emergencyType,
+      emergencyMode,
+      ctaConfig,
       serviceOffers: features.services ? serviceOffers : undefined,
       schedulingConfig: features.scheduling ? schedulingConfig : undefined,
       professionalData: brandType === 'professional' ? professionalData : undefined,
@@ -985,6 +1078,8 @@ export default function App() {
       instagram,
       logo,
       modes,
+      emergencyMode,
+      ctaConfig,
       openingHours,
       power,
       professionalData,
@@ -1004,6 +1099,8 @@ export default function App() {
       whatsapp,
       features,
       emergencyType,
+      emergencyMode,
+      ctaConfig,
     ],
   )
 
@@ -1018,6 +1115,24 @@ export default function App() {
     business_goal: currentPersona.businessGoal,
     modes: currentPersona.modes,
     emergency_type: currentPersona.emergencyType,
+    emergency_mode: currentPersona.emergencyMode
+      ? {
+          enabled: currentPersona.emergencyMode.enabled,
+          auto_start: currentPersona.emergencyMode.autoStart,
+          show_upload_early: currentPersona.emergencyMode.showUploadEarly,
+        }
+      : undefined,
+    cta_config: currentPersona.ctaConfig
+      ? {
+          whatsapp_enabled: currentPersona.ctaConfig.whatsappEnabled,
+          whatsapp_number: currentPersona.ctaConfig.whatsappNumber,
+          whatsapp_message_template: currentPersona.ctaConfig.whatsappMessageTemplate,
+          show_after_evidence: currentPersona.ctaConfig.showAfterEvidence,
+          show_on_completion: currentPersona.ctaConfig.showOnCompletion,
+          primary_text: currentPersona.ctaConfig.primaryText,
+          secondary_text: currentPersona.ctaConfig.secondaryText,
+        }
+      : undefined,
     service_offers: currentPersona.serviceOffers,
     scheduling_config: currentPersona.schedulingConfig,
     professional_data:
@@ -1370,10 +1485,114 @@ export default function App() {
 
   const handleEditCentelha = () => {
     setIsEditingCentelha(true)
+    setOpenAdminSections(createAdminSectionsWithSingleOpen('base'))
     window.requestAnimationFrame(() => {
       document.querySelector('.admin-config-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     })
   }
+
+  const handleAdminSectionToggle = (section: AdminConfigSectionKey, isOpen: boolean) => {
+    setOpenAdminSections((currentSections) => ({
+      ...currentSections,
+      [section]: isOpen,
+    }))
+  }
+
+  const focusAdminSection = (section: AdminConfigSectionKey) => {
+    setOpenAdminSections(createAdminSectionsWithSingleOpen(section))
+  }
+
+  const buildSectionProgress = (checks: boolean[]) => {
+    const total = checks.length
+    const completed = checks.filter(Boolean).length
+
+    return {
+      completed,
+      total,
+      status: getSectionProgressStatus(completed, total),
+      label: `${completed}/${total} preenchido`,
+    }
+  }
+
+  const baseSectionProgress = buildSectionProgress([
+    hasText(brandName),
+    hasText(logo),
+    hasText(businessDescription),
+    hasText(email) || hasText(instagram) || hasText(facebook) || hasText(tiktok) || hasText(site),
+    hasText(whatsapp),
+    hasText(address) || hasText(city) || hasText(state),
+    hasText(institutionalImage),
+  ])
+
+  const professionalProfileProgress = buildSectionProgress([
+    hasText(professionalData.presentation),
+    hasItems(professionalData.practiceAreas),
+    hasItems(professionalData.differentials),
+    hasText(professionalData.identity?.headline),
+    hasItems(professionalData.identity?.principles),
+  ])
+
+  const professionalGuidanceProgress = buildSectionProgress([
+    hasText(professionalData.guidance?.situationType),
+    hasText(professionalData.guidance?.initialResponse),
+    hasItems(professionalData.guidance?.initialQuestions),
+    hasItems(professionalData.guidance?.actionChecklist),
+    hasItems(professionalData.guidance?.dataCollection),
+    hasText(professionalData.guidance?.orientationLimits),
+    hasText(professionalData.guidance?.communicationTone),
+    hasText(professionalData.guidance?.closingMessage),
+  ])
+
+  const sparkPersonalityProgress = buildSectionProgress([
+    hasText(tone),
+    hasText(power),
+    hasText(voiceStyle),
+    hasText(actMode),
+    hasText(businessGoal),
+  ])
+
+  const operationTypeProgress = buildSectionProgress([hasText(businessModel)])
+  const publicBrandProgress = buildSectionProgress([Boolean(currentTenant?.name || brandName), Boolean(currentTenant?.slug)])
+  const visualStyleProgress = buildSectionProgress([hasText(themePrimaryColor), hasText(themeSecondaryColor)])
+  const serviceScheduleProgress = buildSectionProgress([
+    hasText(openingStart),
+    hasText(openingEnd),
+    hasText(serviceRegion),
+    hasText(businessHours),
+    hasText(brandHighlight),
+  ])
+  const catalogProgress = buildSectionProgress([catalogItems.length > 0])
+  const servicesProgress = buildSectionProgress([
+    hasText(serviceOffers[0]?.title) || hasText(serviceOffers[1]?.title),
+    hasText(schedulingConfig.title) || hasText(schedulingConfig.description),
+  ])
+  const emergencyProgress = buildSectionProgress([
+    emergencyMode.enabled,
+    hasText(emergencyType),
+    typeof emergencyMode.autoStart === 'boolean',
+    typeof emergencyMode.showUploadEarly === 'boolean',
+  ])
+  const ctaProgress = buildSectionProgress([
+    ctaConfig.whatsappEnabled,
+    hasText(ctaConfig.whatsappNumber),
+    hasText(ctaConfig.primaryText),
+    hasText(ctaConfig.secondaryText),
+    ctaConfig.showAfterEvidence,
+    ctaConfig.showOnCompletion,
+  ])
+
+  const renderAdminSectionTitle = (title: string, summary: string, isOpen: boolean, progress: { status: string; label: string }) => (
+    <>
+      <span className="admin-config-section-title-copy">
+        <span>{title}</span>
+        {!isOpen ? <span className="admin-config-section-summary">{summary}</span> : null}
+      </span>
+      <span className={`admin-config-section-badge admin-config-section-badge--${progress.status.toLowerCase()}`}>
+        <strong>{progress.status}</strong>
+        <span>{progress.label}</span>
+      </span>
+    </>
+  )
 
   const handleOpenInteractionPage = () => {
     navigateTo('/interaction')
@@ -1734,26 +1953,55 @@ export default function App() {
     setContentHistory([])
   }
 
-  const handleModeToggle = (mode: keyof SparkModes) => {
-    setModes((currentModes) => ({ ...currentModes, [mode]: !currentModes[mode] }))
-  }
-
   const handleBusinessModelChange = (nextBusinessModel: BusinessModelOption) => {
     setBusinessModel(nextBusinessModel)
     setBrandType(nextBusinessModel === 'professional' ? 'professional' : 'business')
     const defaults = createDefaultFeatures(nextBusinessModel)
+    const nextEmergencyMode = createDefaultEmergencyMode(nextBusinessModel)
     const nextFeatures = {
       products: defaults.products,
       services: defaults.services,
       scheduling: defaults.scheduling,
-      emergency: defaults.emergency,
+      emergency: nextEmergencyMode.enabled,
     }
     setFeatures(nextFeatures)
     setModes({
       sales: nextFeatures.products,
       service: nextFeatures.services || nextBusinessModel === 'professional',
       scheduling: nextFeatures.scheduling,
-      emergency: nextFeatures.emergency,
+      emergency: nextEmergencyMode.enabled,
+    })
+    setEmergencyMode(nextEmergencyMode)
+
+    if (nextBusinessModel === 'professional') {
+      focusAdminSection('professionalProfile')
+      return
+    }
+
+    if (nextBusinessModel === 'service') {
+      focusAdminSection('services')
+      return
+    }
+
+    focusAdminSection('catalog')
+  }
+
+  const handleEmergencyModeConfigChange = <K extends keyof EmergencyModeConfig>(field: K, value: EmergencyModeConfig[K]) => {
+    setEmergencyMode((currentMode) => {
+      const nextMode = { ...currentMode, [field]: value }
+
+      if (field === 'enabled') {
+        setFeatures((currentFeatures) => ({
+          ...currentFeatures,
+          emergency: value as boolean,
+        }))
+        setModes((currentModes) => ({
+          ...currentModes,
+          emergency: value as boolean,
+        }))
+      }
+
+      return nextMode
     })
   }
 
@@ -1792,6 +2040,13 @@ export default function App() {
 
   const handleProfessionalOperationModeChange = (nextMode: ProfessionalOperationMode) => {
     setProfessionalData((currentData) => ({ ...currentData, operationMode: nextMode }))
+
+    if (nextMode === 'guidance') {
+      focusAdminSection('professionalGuidance')
+      return
+    }
+
+    focusAdminSection('professionalProfile')
   }
 
   const handleApplyGuidancePlaybook = (playbookKey: ProfessionalGuidancePlaybookKey) => {
@@ -1888,9 +2143,10 @@ export default function App() {
             />
           </div>
 
-          <details className="admin-config-section" open>
-            <summary className="admin-config-section-title">Marca</summary>
+          <details className="admin-config-section" open={openAdminSections.base} onToggle={(event) => handleAdminSectionToggle('base', event.currentTarget.open)}>
+            <summary className="admin-config-section-title">{renderAdminSectionTitle('Base da marca', 'Nome, logo, descrição, contato e localização', openAdminSections.base, baseSectionProgress)}</summary>
             <div className="admin-config-section-body">
+            <p className="admin-config-section-intro">Quem é sua marca e como ela se apresenta.</p>
             <div className="admin-config-grid">
               <label className="persona-field">
                 <span className="persona-label">Nome da marca</span>
@@ -1925,13 +2181,84 @@ export default function App() {
               />
             </label>
 
-            <div className="persona-field admin-config-grid-span">
-              <span className="persona-label">Tipo de negócio</span>
+            <div className="admin-config-grid">
+              <label className="persona-field">
+                <span className="persona-label">WhatsApp da marca</span>
+                <HintBox
+                  compact
+                  icon="📲"
+                  title="Para onde a conversa vai depois"
+                  description="Quando o cliente estiver pronto para continuar, a marca pode direcionar para você pelo WhatsApp ou outro canal."
+                />
+                <input className="persona-input" value={whatsapp} onChange={(event) => setWhatsapp(sanitizeWhatsAppInput(event.target.value))} placeholder="Ex: +5531999999999" />
+                <span className="persona-field-hint">Use o número com código do país e DDD, sem espaços.</span>
+              </label>
+              <label className="persona-field">
+                <span className="persona-label">Email</span>
+                <input className="persona-input" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="contato@suaempresa.com" />
+              </label>
+              <label className="persona-field">
+                <span className="persona-label">Instagram</span>
+                <input className="persona-input" value={instagram} onChange={(event) => setInstagram(event.target.value)} placeholder="@suaempresa" />
+              </label>
+              <label className="persona-field">
+                <span className="persona-label">Facebook</span>
+                <input className="persona-input" value={facebook} onChange={(event) => setFacebook(event.target.value)} placeholder="/suaempresa" />
+              </label>
+              <label className="persona-field">
+                <span className="persona-label">TikTok</span>
+                <input className="persona-input" value={tiktok} onChange={(event) => setTiktok(event.target.value)} placeholder="@suaempresa" />
+              </label>
+              <label className="persona-field">
+                <span className="persona-label">Site</span>
+                <input className="persona-input" value={site} onChange={(event) => setSite(event.target.value)} placeholder="https://suaempresa.com" />
+              </label>
+            </div>
+
+            <div className="admin-config-grid">
+              <label className="persona-field">
+                <span className="persona-label">Endereço</span>
+                <input className="persona-input" value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Rua X, 123" />
+              </label>
+              <label className="persona-field">
+                <span className="persona-label">Cidade</span>
+                <input className="persona-input" value={city} onChange={(event) => setCity(event.target.value)} placeholder="Belo Horizonte" />
+              </label>
+              <label className="persona-field">
+                <span className="persona-label">Estado</span>
+                <input className="persona-input" value={state} onChange={(event) => setState(event.target.value)} placeholder="MG" />
+              </label>
+            </div>
+
+            <div className="admin-image-panel">
+              <div className="admin-image-preview-shell">
+                {institutionalImage ? <img src={institutionalImage} alt={`Imagem institucional de ${brandName}`} className="admin-image-preview" /> : <div className="admin-image-placeholder">Imagem institucional</div>}
+              </div>
+              <div className="admin-upload-stack">
+                <label className="persona-field admin-upload-field">
+                  <span className="persona-label">Foto institucional</span>
+                  <input className="persona-input" type="file" accept="image/*" onChange={handleInstitutionalImageChange} />
+                </label>
+                {institutionalImage ? (
+                  <button type="button" className="chat-header-button subtle admin-remove-button" onClick={handleRemoveInstitutionalImage}>
+                    Remover imagem
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            </div>
+          </details>
+
+          <details className="admin-config-section" open={openAdminSections.operationType} onToggle={(event) => handleAdminSectionToggle('operationType', event.currentTarget.open)}>
+            <summary className="admin-config-section-title">{renderAdminSectionTitle('Tipo de operação', 'Define se a marca atua com produtos, serviços ou perfil profissional', openAdminSections.operationType, operationTypeProgress)}</summary>
+            <div className="admin-config-section-body">
+              <p className="admin-config-section-intro">Como sua marca atua e qual trilha principal faz sentido para essa operação.</p>
               <HintBox
                 compact
                 icon="🧭"
-                title="Que estrutura essa operação precisa"
-                description="Escolha o modelo principal e ligue só os módulos necessários para essa marca."
+                title="Como sua marca atua"
+                description="Escolha o modelo principal desta operação. A interface e os fluxos abaixo se adaptam a essa decisão."
               />
               <div className="persona-style-grid">
                 {businessModelOptions.map((option) => {
@@ -1948,48 +2275,20 @@ export default function App() {
                 })}
               </div>
             </div>
+          </details>
 
-            {businessModel === 'professional' ? (
-              <>
-                <div className="persona-field admin-config-grid-span">
-                  <span className="persona-label">Perfil profissional</span>
-                  <HintBox
-                    compact
-                    icon="⚖️"
-                    title="Presença e autoridade"
-                    description="Apresente atuação, áreas e diferenciais de forma sóbria, clara e confiável."
-                  />
-                </div>
-
-                <div className="persona-field admin-config-grid-span">
-                  <span className="persona-label">Modo de atuação</span>
-                  <HintBox
-                    compact
-                    icon="🧭"
-                    title="Como esse profissional aparece"
-                    description="Escolha se a presença é mais institucional, orientada por conteúdo ou guiada por diretrizes de orientação inicial."
-                  />
-                  <div className="persona-style-grid">
-                    {professionalOperationModeOptions.map((option) => {
-                      const isSelected = (professionalData.operationMode ?? 'institutional') === option.value
-
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          className={`persona-style-card ${isSelected ? 'selected' : ''}`}
-                          onClick={() => handleProfessionalOperationModeChange(option.value)}
-                        >
-                          <strong>
-                            {option.emoji} {option.label}
-                          </strong>
-                          <span>{option.description}</span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-
+          {businessModel === 'professional' ? (
+          <details className="admin-config-section" open={openAdminSections.professionalProfile} onToggle={(event) => handleAdminSectionToggle('professionalProfile', event.currentTarget.open)}>
+            <summary className="admin-config-section-title">{renderAdminSectionTitle('Perfil profissional', 'Apresentação, áreas, diferenciais e princípios', openAdminSections.professionalProfile, professionalProfileProgress)}</summary>
+            <div className="admin-config-section-body">
+              <p className="admin-config-section-intro">Como esse profissional se apresenta, gera confiança e constrói presença.</p>
+              <HintBox
+                compact
+                icon="⚖️"
+                title="Presença e autoridade"
+                description="Apresente atuação, áreas e diferenciais de forma sóbria, clara e confiável."
+              />
+              <div className="admin-config-grid">
                 <label className="persona-field admin-config-grid-span">
                   <span className="persona-label">Apresentação</span>
                   <textarea
@@ -2054,157 +2353,6 @@ export default function App() {
                     placeholder="Ética, clareza, discrição"
                   />
                 </label>
-
-                {professionalData.operationMode === 'guidance' ? (
-                  <>
-                    <div className="persona-field admin-config-grid-span">
-                      <span className="persona-label">Diretrizes profissionais</span>
-                      <HintBox
-                        compact
-                        icon="🛡️"
-                        title="Orientação inicial com limite claro"
-                        description="Defina como a Centelha orienta, coleta dados e encerra a conversa sem prometer resultado nem substituir o profissional."
-                      />
-                    </div>
-
-                    <div className="persona-field admin-config-grid-span">
-                      <span className="persona-label">Playbooks prontos</span>
-                      <div className="persona-style-grid">
-                        <button type="button" className="persona-style-card" onClick={() => handleApplyGuidancePlaybook('acidente_transito')}>
-                          <strong>🚗 Acidente de trânsito</strong>
-                          <span>Primeiros passos, coleta de evidências e organização inicial do caso.</span>
-                        </button>
-                        <button type="button" className="persona-style-card" onClick={() => handleApplyGuidancePlaybook('consumidor')}>
-                          <strong>🧾 Problema do consumidor</strong>
-                          <span>Comprovantes, histórico e organização da situação antes da análise completa.</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    <label className="persona-field">
-                      <span className="persona-label">Tipo de situação</span>
-                      <input
-                        className="persona-input"
-                        value={professionalData.guidance?.situationType ?? ''}
-                        onChange={(event) =>
-                          setProfessionalData((currentData) => ({
-                            ...currentData,
-                            guidance: { ...(currentData.guidance ?? {}), situationType: event.target.value },
-                          }))
-                        }
-                        placeholder="Ex.: conflito contratual, urgência trabalhista, orientação regulatória"
-                      />
-                    </label>
-
-                    <label className="persona-field admin-config-grid-span">
-                      <span className="persona-label">Resposta inicial</span>
-                      <textarea
-                        className="persona-input persona-textarea"
-                        value={professionalData.guidance?.initialResponse ?? ''}
-                        onChange={(event) =>
-                          setProfessionalData((currentData) => ({
-                            ...currentData,
-                            guidance: { ...(currentData.guidance ?? {}), initialResponse: event.target.value },
-                          }))
-                        }
-                        placeholder="Ex.: Primeiro eu organizo os fatos essenciais, avalio urgência e te explico o próximo passo com clareza."
-                        rows={3}
-                      />
-                    </label>
-
-                    <label className="persona-field">
-                      <span className="persona-label">Perguntas iniciais</span>
-                      <input
-                        className="persona-input"
-                        value={formatCommaSeparatedList(professionalData.guidance?.initialQuestions)}
-                        onChange={(event) =>
-                          setProfessionalData((currentData) => ({
-                            ...currentData,
-                            guidance: { ...(currentData.guidance ?? {}), initialQuestions: parseCommaSeparatedList(event.target.value) },
-                          }))
-                        }
-                        placeholder="Ex.: Você está seguro?, Alguém se feriu?, Isso aconteceu agora?"
-                      />
-                    </label>
-
-                    <label className="persona-field">
-                      <span className="persona-label">Checklist de ação</span>
-                      <input
-                        className="persona-input"
-                        value={formatCommaSeparatedList(professionalData.guidance?.actionChecklist)}
-                        onChange={(event) =>
-                          setProfessionalData((currentData) => ({
-                            ...currentData,
-                            guidance: { ...(currentData.guidance ?? {}), actionChecklist: parseCommaSeparatedList(event.target.value) },
-                          }))
-                        }
-                        placeholder="Ex.: entender contexto, checar prazo, organizar próximos passos"
-                      />
-                    </label>
-
-                    <label className="persona-field">
-                      <span className="persona-label">Coleta de dados</span>
-                      <input
-                        className="persona-input"
-                        value={formatCommaSeparatedList(professionalData.guidance?.dataCollection)}
-                        onChange={(event) =>
-                          setProfessionalData((currentData) => ({
-                            ...currentData,
-                            guidance: { ...(currentData.guidance ?? {}), dataCollection: parseCommaSeparatedList(event.target.value) },
-                          }))
-                        }
-                        placeholder="Ex.: data, envolvidos, documentos, impacto, urgência"
-                      />
-                    </label>
-
-                    <label className="persona-field admin-config-grid-span">
-                      <span className="persona-label">Limites da orientação</span>
-                      <textarea
-                        className="persona-input persona-textarea"
-                        value={professionalData.guidance?.orientationLimits ?? ''}
-                        onChange={(event) =>
-                          setProfessionalData((currentData) => ({
-                            ...currentData,
-                            guidance: { ...(currentData.guidance ?? {}), orientationLimits: event.target.value },
-                          }))
-                        }
-                        placeholder="Ex.: Não emitir parecer definitivo, não prometer resultado e sempre encaminhar para análise profissional completa."
-                        rows={3}
-                      />
-                    </label>
-
-                    <label className="persona-field">
-                      <span className="persona-label">Tom de comunicação</span>
-                      <input
-                        className="persona-input"
-                        value={professionalData.guidance?.communicationTone ?? ''}
-                        onChange={(event) =>
-                          setProfessionalData((currentData) => ({
-                            ...currentData,
-                            guidance: { ...(currentData.guidance ?? {}), communicationTone: event.target.value },
-                          }))
-                        }
-                        placeholder="Ex.: sereno, técnico, cuidadoso, objetivo"
-                      />
-                    </label>
-
-                    <label className="persona-field admin-config-grid-span">
-                      <span className="persona-label">Encerramento</span>
-                      <textarea
-                        className="persona-input persona-textarea"
-                        value={professionalData.guidance?.closingMessage ?? ''}
-                        onChange={(event) =>
-                          setProfessionalData((currentData) => ({
-                            ...currentData,
-                            guidance: { ...(currentData.guidance ?? {}), closingMessage: event.target.value },
-                          }))
-                        }
-                        placeholder="Ex.: Com essas informações organizadas, um profissional poderá analisar melhor seu caso."
-                        rows={2}
-                      />
-                    </label>
-                  </>
-                ) : null}
 
                 {[0, 1].map((index) => (
                   <div key={`professional-case-${index}`} className="admin-config-grid admin-config-grid-span">
@@ -2278,149 +2426,294 @@ export default function App() {
                     </label>
                   </div>
                 ))}
-              </>
-            ) : null}
-
-            <div className="persona-field admin-config-grid-span">
-              <span className="persona-label">Personalidade</span>
-              <HintBox
-                compact
-                icon="💬"
-                title="Como sua marca fala"
-                description="Define a personalidade da sua marca ao conversar com clientes."
-              />
-              <div className="persona-chip-grid">
-                {toneOptions.map((option) => {
-                  const isSelected = tone === option.value
-
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      className={`persona-chip ${isSelected ? 'selected' : ''}`}
-                      onClick={() => setTone(option.value)}
-                    >
-                      <span>{option.label}</span>
-                      <strong>{option.emoji}</strong>
-                    </button>
-                  )
-                })}
               </div>
             </div>
+          </details>
+          ) : null}
 
-            <div className="persona-field admin-config-grid-span">
-              <span className="persona-label">Energia</span>
+          {businessModel === 'professional' ? (
+          <details className="admin-config-section" open={openAdminSections.professionalMode} onToggle={(event) => handleAdminSectionToggle('professionalMode', event.currentTarget.open)}>
+            <summary className="admin-config-section-title">{renderAdminSectionTitle('Modo de atuação', 'Escolhe como o profissional aparece e conduz o atendimento', openAdminSections.professionalMode, buildSectionProgress([hasText(professionalData.operationMode)]))}</summary>
+            <div className="admin-config-section-body">
+              <p className="admin-config-section-intro">Como esse profissional aparece e conduz a presença digital.</p>
               <HintBox
                 compact
-                icon="⚡"
-                title="Como sua marca impacta"
-                description="Define a energia principal da comunicação da marca."
-              />
-              <div className="persona-chip-grid">
-                {powerOptions.map((option) => {
-                  const isSelected = power === option.value
-
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      className={`persona-chip ${isSelected ? 'selected power' : 'power'}`}
-                      onClick={() => setPower(option.value)}
-                    >
-                      <span>{option.label}</span>
-                      <strong>{option.emoji}</strong>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-
-            <div className="persona-field admin-config-grid-span">
-              <span className="persona-label">Como eu me comunico</span>
-              <HintBox
-                compact
-                icon="🎙️"
-                title="Forma de se comunicar"
-                description="Ajusta como a marca responde: de forma mais suave, forte, equilibrada ou adaptativa."
+                icon="🧭"
+                title="Como esse profissional aparece"
+                description="Escolha se a presença é mais institucional, orientada por conteúdo ou guiada por diretrizes de orientação inicial."
               />
               <div className="persona-style-grid">
-                {voiceStyleOptions.map((option) => {
-                  const isSelected = voiceStyle === option.value
+                {professionalOperationModeOptions.map((option) => {
+                  const isSelected = (professionalData.operationMode ?? 'institutional') === option.value
 
                   return (
                     <button
                       key={option.value}
                       type="button"
                       className={`persona-style-card ${isSelected ? 'selected' : ''}`}
-                      onClick={() => setVoiceStyle(option.value)}
+                      onClick={() => handleProfessionalOperationModeChange(option.value)}
                     >
-                      <strong>{option.label}</strong>
+                      <strong>
+                        {option.emoji} {option.label}
+                      </strong>
                       <span>{option.description}</span>
                     </button>
                   )
                 })}
               </div>
-              {voiceStyle === 'irreverent' ? (
-                <div className="persona-voice-warning">
-                  Esse estilo usa humor e uma linguagem mais ousada. Ative apenas se isso fizer sentido para sua marca.
+            </div>
+          </details>
+          ) : null}
+
+          {businessModel === 'professional' && professionalData.operationMode === 'guidance' ? (
+          <details className="admin-config-section" open={openAdminSections.professionalGuidance} onToggle={(event) => handleAdminSectionToggle('professionalGuidance', event.currentTarget.open)}>
+            <summary className="admin-config-section-title">{renderAdminSectionTitle('Diretrizes profissionais', 'Playbooks, perguntas, limites e encerramento da orientação', openAdminSections.professionalGuidance, professionalGuidanceProgress)}</summary>
+            <div className="admin-config-section-body">
+              <p className="admin-config-section-intro">Como a orientação é conduzida, com limite claro e coleta organizada do caso.</p>
+              <HintBox
+                compact
+                icon="🛡️"
+                title="Orientação inicial com limite claro"
+                description="Defina como a Centelha orienta, coleta dados e encerra a conversa sem prometer resultado nem substituir o profissional."
+              />
+
+              <div className="persona-field admin-config-grid-span">
+                <span className="persona-label">Playbooks prontos</span>
+                <div className="persona-style-grid">
+                  <button type="button" className="persona-style-card" onClick={() => handleApplyGuidancePlaybook('acidente_transito')}>
+                    <strong>🚗 Acidente de trânsito</strong>
+                    <span>Primeiros passos, coleta de evidências e organização inicial do caso.</span>
+                  </button>
+                  <button type="button" className="persona-style-card" onClick={() => handleApplyGuidancePlaybook('consumidor')}>
+                    <strong>🧾 Problema do consumidor</strong>
+                    <span>Comprovantes, histórico e organização da situação antes da análise completa.</span>
+                  </button>
                 </div>
-              ) : null}
-            </div>
+              </div>
 
-            <div className="persona-field admin-config-grid-span">
-              <span className="persona-label">Como eu atuo com seus clientes</span>
-              <HintBox
-                compact
-                icon="🧠"
-                title="Como sua marca ajuda"
-                description="Define como a marca age durante a conversa: como vendedora, consultora, estilista, coach ou especialista."
-              />
-              <div className="persona-style-grid">
-                {actModeOptions.map((option) => {
-                  const isSelected = actMode === option.value
+              <div className="admin-config-grid">
+                <label className="persona-field">
+                  <span className="persona-label">Tipo de situação</span>
+                  <input
+                    className="persona-input"
+                    value={professionalData.guidance?.situationType ?? ''}
+                    onChange={(event) =>
+                      setProfessionalData((currentData) => ({
+                        ...currentData,
+                        guidance: { ...(currentData.guidance ?? {}), situationType: event.target.value },
+                      }))
+                    }
+                    placeholder="Ex.: conflito contratual, urgência trabalhista, orientação regulatória"
+                  />
+                </label>
 
-                  return (
-                    <button key={option.value} type="button" className={`persona-style-card ${isSelected ? 'selected' : ''}`} onClick={() => setActMode(option.value)}>
-                      <strong>
-                        {option.emoji} {option.label}
-                      </strong>
-                      <span>{option.description}</span>
-                    </button>
-                  )
-                })}
+                <label className="persona-field admin-config-grid-span">
+                  <span className="persona-label">Resposta inicial</span>
+                  <textarea
+                    className="persona-input persona-textarea"
+                    value={professionalData.guidance?.initialResponse ?? ''}
+                    onChange={(event) =>
+                      setProfessionalData((currentData) => ({
+                        ...currentData,
+                        guidance: { ...(currentData.guidance ?? {}), initialResponse: event.target.value },
+                      }))
+                    }
+                    placeholder="Ex.: Primeiro eu organizo os fatos essenciais, avalio urgência e te explico o próximo passo com clareza."
+                    rows={3}
+                  />
+                </label>
+
+                <label className="persona-field">
+                  <span className="persona-label">Perguntas iniciais</span>
+                  <input
+                    className="persona-input"
+                    value={formatCommaSeparatedList(professionalData.guidance?.initialQuestions)}
+                    onChange={(event) =>
+                      setProfessionalData((currentData) => ({
+                        ...currentData,
+                        guidance: { ...(currentData.guidance ?? {}), initialQuestions: parseCommaSeparatedList(event.target.value) },
+                      }))
+                    }
+                    placeholder="Ex.: Você está seguro?, Alguém se feriu?, Isso aconteceu agora?"
+                  />
+                </label>
+
+                <label className="persona-field">
+                  <span className="persona-label">Checklist de ação</span>
+                  <input
+                    className="persona-input"
+                    value={formatCommaSeparatedList(professionalData.guidance?.actionChecklist)}
+                    onChange={(event) =>
+                      setProfessionalData((currentData) => ({
+                        ...currentData,
+                        guidance: { ...(currentData.guidance ?? {}), actionChecklist: parseCommaSeparatedList(event.target.value) },
+                      }))
+                    }
+                    placeholder="Ex.: entender contexto, checar prazo, organizar próximos passos"
+                  />
+                </label>
+
+                <label className="persona-field">
+                  <span className="persona-label">Coleta de dados</span>
+                  <input
+                    className="persona-input"
+                    value={formatCommaSeparatedList(professionalData.guidance?.dataCollection)}
+                    onChange={(event) =>
+                      setProfessionalData((currentData) => ({
+                        ...currentData,
+                        guidance: { ...(currentData.guidance ?? {}), dataCollection: parseCommaSeparatedList(event.target.value) },
+                      }))
+                    }
+                    placeholder="Ex.: data, envolvidos, documentos, impacto, urgência"
+                  />
+                </label>
+
+                <label className="persona-field admin-config-grid-span">
+                  <span className="persona-label">Limites da orientação</span>
+                  <textarea
+                    className="persona-input persona-textarea"
+                    value={professionalData.guidance?.orientationLimits ?? ''}
+                    onChange={(event) =>
+                      setProfessionalData((currentData) => ({
+                        ...currentData,
+                        guidance: { ...(currentData.guidance ?? {}), orientationLimits: event.target.value },
+                      }))
+                    }
+                    placeholder="Ex.: Não emitir parecer definitivo, não prometer resultado e sempre encaminhar para análise profissional completa."
+                    rows={3}
+                  />
+                </label>
+
+                <label className="persona-field">
+                  <span className="persona-label">Tom de comunicação</span>
+                  <input
+                    className="persona-input"
+                    value={professionalData.guidance?.communicationTone ?? ''}
+                    onChange={(event) =>
+                      setProfessionalData((currentData) => ({
+                        ...currentData,
+                        guidance: { ...(currentData.guidance ?? {}), communicationTone: event.target.value },
+                      }))
+                    }
+                    placeholder="Ex.: sereno, técnico, cuidadoso, objetivo"
+                  />
+                </label>
+
+                <label className="persona-field admin-config-grid-span">
+                  <span className="persona-label">Encerramento</span>
+                  <textarea
+                    className="persona-input persona-textarea"
+                    value={professionalData.guidance?.closingMessage ?? ''}
+                    onChange={(event) =>
+                      setProfessionalData((currentData) => ({
+                        ...currentData,
+                        guidance: { ...(currentData.guidance ?? {}), closingMessage: event.target.value },
+                      }))
+                    }
+                    placeholder="Ex.: Com essas informações organizadas, um profissional poderá analisar melhor seu caso."
+                    rows={2}
+                  />
+                </label>
               </div>
             </div>
+          </details>
+          ) : null}
 
-            <div className="persona-field admin-config-grid-span">
-              <span className="persona-label">Objetivo do negócio agora</span>
-              <HintBox
-                compact
-                icon="🎯"
-                title="Foco principal agora"
-                description="Ajuda a IA a entender o que sua marca quer priorizar: vender mais, aumentar ticket, girar estoque ou destacar novidades."
-              />
-              <div className="persona-style-grid">
-                {businessGoalOptions.map((option) => {
-                  const isSelected = businessGoal === option.value
-
-                  return (
-                    <button key={option.value} type="button" className={`persona-style-card ${isSelected ? 'selected' : ''}`} onClick={() => setBusinessGoal(option.value)}>
-                      <strong>
-                        {option.emoji} {option.label}
-                      </strong>
-                      <span>{option.description}</span>
-                    </button>
-                  )
-                })}
+          <details className="admin-config-section" open={openAdminSections.sparkPersonality} onToggle={(event) => handleAdminSectionToggle('sparkPersonality', event.currentTarget.open)}>
+            <summary className="admin-config-section-title">{renderAdminSectionTitle('Personalidade da Centelha', 'Tom, energia, estilo de resposta e objetivo atual', openAdminSections.sparkPersonality, sparkPersonalityProgress)}</summary>
+            <div className="admin-config-section-body">
+              <p className="admin-config-section-intro">Como a Centelha fala, conduz e responde ao contexto da marca.</p>
+              <div className="persona-field admin-config-grid-span">
+                <span className="persona-label">Personalidade</span>
+                <HintBox compact icon="💬" title="Como sua marca fala" description="Define a personalidade da sua marca ao conversar com clientes." />
+                <div className="persona-chip-grid">
+                  {toneOptions.map((option) => {
+                    const isSelected = tone === option.value
+                    return (
+                      <button key={option.value} type="button" className={`persona-chip ${isSelected ? 'selected' : ''}`} onClick={() => setTone(option.value)}>
+                        <span>{option.label}</span>
+                        <strong>{option.emoji}</strong>
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
-            </div>
 
+              <div className="persona-field admin-config-grid-span">
+                <span className="persona-label">Energia</span>
+                <HintBox compact icon="⚡" title="Como sua marca impacta" description="Define a energia principal da comunicação da marca." />
+                <div className="persona-chip-grid">
+                  {powerOptions.map((option) => {
+                    const isSelected = power === option.value
+                    return (
+                      <button key={option.value} type="button" className={`persona-chip ${isSelected ? 'selected power' : 'power'}`} onClick={() => setPower(option.value)}>
+                        <span>{option.label}</span>
+                        <strong>{option.emoji}</strong>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="persona-field admin-config-grid-span">
+                <span className="persona-label">Como eu me comunico</span>
+                <HintBox compact icon="🎙️" title="Forma de se comunicar" description="Ajusta como a marca responde: de forma mais suave, forte, equilibrada ou adaptativa." />
+                <div className="persona-style-grid">
+                  {voiceStyleOptions.map((option) => {
+                    const isSelected = voiceStyle === option.value
+                    return (
+                      <button key={option.value} type="button" className={`persona-style-card ${isSelected ? 'selected' : ''}`} onClick={() => setVoiceStyle(option.value)}>
+                        <strong>{option.label}</strong>
+                        <span>{option.description}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+                {voiceStyle === 'irreverent' ? <div className="persona-voice-warning">Esse estilo usa humor e uma linguagem mais ousada. Ative apenas se isso fizer sentido para sua marca.</div> : null}
+              </div>
+
+              <div className="persona-field admin-config-grid-span">
+                <span className="persona-label">Como eu atuo com seus clientes</span>
+                <HintBox compact icon="🧠" title="Como sua marca ajuda" description="Define como a marca age durante a conversa: como vendedora, consultora, estilista, coach ou especialista." />
+                <div className="persona-style-grid">
+                  {actModeOptions.map((option) => {
+                    const isSelected = actMode === option.value
+                    return (
+                      <button key={option.value} type="button" className={`persona-style-card ${isSelected ? 'selected' : ''}`} onClick={() => setActMode(option.value)}>
+                        <strong>
+                          {option.emoji} {option.label}
+                        </strong>
+                        <span>{option.description}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+
+              <div className="persona-field admin-config-grid-span">
+                <span className="persona-label">Objetivo do negócio agora</span>
+                <HintBox compact icon="🎯" title="Foco principal agora" description="Ajuda a IA a entender o que sua marca quer priorizar: vender mais, aumentar ticket, girar estoque ou destacar novidades." />
+                <div className="persona-style-grid">
+                  {businessGoalOptions.map((option) => {
+                    const isSelected = businessGoal === option.value
+                    return (
+                      <button key={option.value} type="button" className={`persona-style-card ${isSelected ? 'selected' : ''}`} onClick={() => setBusinessGoal(option.value)}>
+                        <strong>
+                          {option.emoji} {option.label}
+                        </strong>
+                        <span>{option.description}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
           </details>
 
-          <details className="admin-config-section" open>
-            <summary className="admin-config-section-title">Marca pública</summary>
+          <details className="admin-config-section" open={openAdminSections.publicBrand} onToggle={(event) => handleAdminSectionToggle('publicBrand', event.currentTarget.open)}>
+            <summary className="admin-config-section-title">{renderAdminSectionTitle('Marca pública', 'Como a página aparece para o público', openAdminSections.publicBrand, publicBrandProgress)}</summary>
             <div className="admin-config-section-body">
+            <p className="admin-config-section-intro">Como a marca aparece para o público e qual link está pronto para compartilhamento.</p>
             <div className="admin-public-link-card">
               <div className="admin-public-link-copy">
                 <span className="persona-label">Tenant atual</span>
@@ -2442,9 +2735,10 @@ export default function App() {
             </div>
           </details>
 
-          <details className="admin-config-section" open>
-            <summary className="admin-config-section-title">Estilo visual da página</summary>
+          <details className="admin-config-section" open={openAdminSections.visualStyle} onToggle={(event) => handleAdminSectionToggle('visualStyle', event.currentTarget.open)}>
+            <summary className="admin-config-section-title">{renderAdminSectionTitle('Estilo visual da página', 'Cores, aparência e identidade visual', openAdminSections.visualStyle, visualStyleProgress)}</summary>
             <div className="admin-config-section-body">
+              <p className="admin-config-section-intro">Como a página aparece visualmente e o que ganha destaque para o cliente.</p>
               <div className="admin-config-grid">
                 <label className="persona-field">
                   <span className="persona-label">Cor principal</span>
@@ -2494,66 +2788,11 @@ export default function App() {
             </div>
           </details>
 
-          <details className="admin-config-section" open>
-            <summary className="admin-config-section-title">Marca e contato</summary>
-            <div className="admin-config-section-body">
-            <div className="admin-config-grid">
-              <label className="persona-field">
-                <span className="persona-label">WhatsApp da marca</span>
-                <HintBox
-                  compact
-                  icon="📲"
-                  title="Para onde a conversa vai depois"
-                  description="Quando o cliente estiver pronto para continuar, a marca pode direcionar para você pelo WhatsApp ou outro canal."
-                />
-                <input className="persona-input" value={whatsapp} onChange={(event) => setWhatsapp(sanitizeWhatsAppInput(event.target.value))} placeholder="Ex: +5531999999999" />
-                <span className="persona-field-hint">Use o número com código do país e DDD, sem espaços.</span>
-              </label>
-              <label className="persona-field">
-                <span className="persona-label">Email</span>
-                <input className="persona-input" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="contato@suaempresa.com" />
-              </label>
-              <label className="persona-field">
-                <span className="persona-label">Instagram</span>
-                <input className="persona-input" value={instagram} onChange={(event) => setInstagram(event.target.value)} placeholder="@suaempresa" />
-              </label>
-              <label className="persona-field">
-                <span className="persona-label">Facebook</span>
-                <input className="persona-input" value={facebook} onChange={(event) => setFacebook(event.target.value)} placeholder="/suaempresa" />
-              </label>
-              <label className="persona-field">
-                <span className="persona-label">TikTok</span>
-                <input className="persona-input" value={tiktok} onChange={(event) => setTiktok(event.target.value)} placeholder="@suaempresa" />
-              </label>
-              <label className="persona-field">
-                <span className="persona-label">Site</span>
-                <input className="persona-input" value={site} onChange={(event) => setSite(event.target.value)} placeholder="https://suaempresa.com" />
-              </label>
-            </div>
-
-            <div className="admin-image-panel">
-              <div className="admin-image-preview-shell">
-                {institutionalImage ? <img src={institutionalImage} alt={`Imagem institucional de ${brandName}`} className="admin-image-preview" /> : <div className="admin-image-placeholder">Imagem institucional</div>}
-              </div>
-              <div className="admin-upload-stack">
-                <label className="persona-field admin-upload-field">
-                  <span className="persona-label">Foto institucional</span>
-                  <input className="persona-input" type="file" accept="image/*" onChange={handleInstitutionalImageChange} />
-                </label>
-                {institutionalImage ? (
-                  <button type="button" className="chat-header-button subtle admin-remove-button" onClick={handleRemoveInstitutionalImage}>
-                    Remover imagem
-                  </button>
-                ) : null}
-              </div>
-            </div>
-            </div>
-          </details>
-
           {businessModel === 'service' ? (
-          <details className="admin-config-section" open>
-            <summary className="admin-config-section-title">Agenda e disponibilidade</summary>
+          <details className="admin-config-section" open={openAdminSections.serviceSchedule} onToggle={(event) => handleAdminSectionToggle('serviceSchedule', event.currentTarget.open)}>
+            <summary className="admin-config-section-title">{renderAdminSectionTitle('Agenda e disponibilidade', 'Horários, região, atendimento e disponibilidade da operação', openAdminSections.serviceSchedule, serviceScheduleProgress)}</summary>
             <div className="admin-config-section-body">
+            <p className="admin-config-section-intro">Quando e como essa operação atende, agenda ou responde por região.</p>
             <div className="admin-config-grid">
               <label className="persona-field">
                 <span className="persona-label">Abertura</span>
@@ -2594,32 +2833,11 @@ export default function App() {
           </details>
           ) : null}
 
-          {(businessModel === 'service' || businessModel === 'professional') ? (
-          <details className="admin-config-section" open>
-            <summary className="admin-config-section-title">Localização</summary>
-            <div className="admin-config-section-body">
-            <div className="admin-config-grid">
-              <label className="persona-field">
-                <span className="persona-label">Endereço</span>
-                <input className="persona-input" value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Rua X, 123" />
-              </label>
-              <label className="persona-field">
-                <span className="persona-label">Cidade</span>
-                <input className="persona-input" value={city} onChange={(event) => setCity(event.target.value)} placeholder="Belo Horizonte" />
-              </label>
-              <label className="persona-field">
-                <span className="persona-label">Estado</span>
-                <input className="persona-input" value={state} onChange={(event) => setState(event.target.value)} placeholder="MG" />
-              </label>
-            </div>
-            </div>
-          </details>
-          ) : null}
-
           {businessModel === 'product' ? (
-          <details className="admin-config-section" open>
-            <summary className="admin-config-section-title">Catálogo</summary>
+          <details className="admin-config-section" open={openAdminSections.catalog} onToggle={(event) => handleAdminSectionToggle('catalog', event.currentTarget.open)}>
+            <summary className="admin-config-section-title">{renderAdminSectionTitle('Catálogo', 'Produtos, imagens, preços, destaque e disponibilidade', openAdminSections.catalog, catalogProgress)}</summary>
             <div className="admin-config-section-body">
+            <p className="admin-config-section-intro">Quais produtos entram no fluxo comercial e como eles aparecem na experiência pública.</p>
             <div className="admin-config-grid">
               <label className="persona-field">
                 <span className="persona-label">Nome do item</span>
@@ -2771,9 +2989,10 @@ export default function App() {
           ) : null}
 
           {businessModel === 'service' ? (
-          <details className="admin-config-section" open>
-            <summary className="admin-config-section-title">Serviços</summary>
+          <details className="admin-config-section" open={openAdminSections.services} onToggle={(event) => handleAdminSectionToggle('services', event.currentTarget.open)}>
+            <summary className="admin-config-section-title">{renderAdminSectionTitle('Serviços', 'Ofertas, explicações e condução do próximo passo', openAdminSections.services, servicesProgress)}</summary>
             <div className="admin-config-section-body">
+              <p className="admin-config-section-intro">Como a operação de serviços se apresenta, explica a oferta e conduz o próximo passo.</p>
               <HintBox
                 compact
                 icon="🧰"
@@ -2848,22 +3067,55 @@ export default function App() {
           ) : null}
 
           {businessModel === 'professional' ? (
-          <details className="admin-config-section" open>
-            <summary className="admin-config-section-title">Atendimento crítico</summary>
+          <details className="admin-config-section admin-config-section--emergency" open={openAdminSections.emergency} onToggle={(event) => handleAdminSectionToggle('emergency', event.currentTarget.open)}>
+            <summary className="admin-config-section-title">{renderAdminSectionTitle('Modo de Atendimento Emergencial', 'Fluxo guiado, dossiê, upload de evidências e resposta crítica', openAdminSections.emergency, emergencyProgress)}</summary>
             <div className="admin-config-section-body">
+              <p className="admin-config-section-intro">Como a Centelha conduz casos críticos com coleta, dossiê e resposta organizada.</p>
               <HintBox
                 compact
                 icon="🚨"
-                title="Emergência dentro do modo profissional"
-                description="Ative a triagem guiada sem transformar essa marca em uma operação comercial agressiva."
+                title="Triagem guiada para casos críticos"
+                description="Ative este modo para conduzir atendimentos críticos com coleta de informações e organização de dossiê."
               />
-              <div className="persona-toggle-row">
-                <button type="button" className={`persona-toggle ${modes.emergency ? 'selected' : ''}`} onClick={() => handleModeToggle('emergency')}>
-                  Fluxo de emergência ativo
-                </button>
+              <div className="admin-config-grid">
+                <div className="persona-field admin-checkbox-field">
+                  <span className="persona-label">Emergência ativa</span>
+                  <div className="persona-toggle-row">
+                    <button type="button" className={`persona-toggle ${emergencyMode.enabled ? 'selected' : ''}`} onClick={() => handleEmergencyModeConfigChange('enabled', true)}>
+                      Ativar
+                    </button>
+                    <button type="button" className={`persona-toggle subtle ${!emergencyMode.enabled ? 'selected' : ''}`} onClick={() => handleEmergencyModeConfigChange('enabled', false)}>
+                      Desativar
+                    </button>
+                  </div>
+                </div>
+
+                <div className="persona-field admin-checkbox-field">
+                  <span className="persona-label">Início automático</span>
+                  <div className="persona-toggle-row">
+                    <button type="button" className={`persona-toggle ${emergencyMode.autoStart ? 'selected' : ''}`} onClick={() => handleEmergencyModeConfigChange('autoStart', true)}>
+                      Sim
+                    </button>
+                    <button type="button" className={`persona-toggle subtle ${!emergencyMode.autoStart ? 'selected' : ''}`} onClick={() => handleEmergencyModeConfigChange('autoStart', false)}>
+                      Não
+                    </button>
+                  </div>
+                </div>
+
+                <div className="persona-field admin-checkbox-field">
+                  <span className="persona-label">Upload cedo no fluxo</span>
+                  <div className="persona-toggle-row">
+                    <button type="button" className={`persona-toggle ${emergencyMode.showUploadEarly ? 'selected' : ''}`} onClick={() => handleEmergencyModeConfigChange('showUploadEarly', true)}>
+                      Mostrar cedo
+                    </button>
+                    <button type="button" className={`persona-toggle subtle ${!emergencyMode.showUploadEarly ? 'selected' : ''}`} onClick={() => handleEmergencyModeConfigChange('showUploadEarly', false)}>
+                      Mostrar depois
+                    </button>
+                  </div>
+                </div>
               </div>
-              {modes.emergency ? (
-                <div className="persona-style-grid">
+              {emergencyMode.enabled ? (
+                <div className="persona-style-grid admin-config-emergency-grid">
                   {emergencyTypeOptions.map((option) => {
                     const isSelected = emergencyType === option.value
 
@@ -2881,6 +3133,98 @@ export default function App() {
             </div>
           </details>
           ) : null}
+
+          <details className="admin-config-section" open={openAdminSections.cta} onToggle={(event) => handleAdminSectionToggle('cta', event.currentTarget.open)}>
+            <summary className="admin-config-section-title">{renderAdminSectionTitle('Chamadas para ação (CTA)', 'WhatsApp, textos do botão e gatilhos de conversão', openAdminSections.cta, ctaProgress)}</summary>
+            <div className="admin-config-section-body">
+              <p className="admin-config-section-intro">Quando a Centelha convida o usuário a seguir para o próximo passo e como esse convite aparece.</p>
+              <HintBox
+                compact
+                icon="📲"
+                title="Conduza o próximo passo"
+                description="Personalize quando e como a Centelha oferece o encaminhamento para WhatsApp durante a orientação e ao concluir o caso."
+              />
+              <div className="admin-config-grid">
+                <div className="persona-field admin-checkbox-field">
+                  <span className="persona-label">Ativar envio para WhatsApp</span>
+                  <div className="persona-toggle-row">
+                    <button type="button" className={`persona-toggle ${ctaConfig.whatsappEnabled ? 'selected' : ''}`} onClick={() => setCtaConfig((current) => ({ ...current, whatsappEnabled: true }))}>
+                      Ativar
+                    </button>
+                    <button type="button" className={`persona-toggle subtle ${!ctaConfig.whatsappEnabled ? 'selected' : ''}`} onClick={() => setCtaConfig((current) => ({ ...current, whatsappEnabled: false }))}>
+                      Desativar
+                    </button>
+                  </div>
+                </div>
+
+                <label className="persona-field">
+                  <span className="persona-label">Número do WhatsApp</span>
+                  <input
+                    className="persona-input"
+                    value={ctaConfig.whatsappNumber ?? ''}
+                    onChange={(event) => setCtaConfig((current) => ({ ...current, whatsappNumber: sanitizeWhatsAppInput(event.target.value) }))}
+                    placeholder="Ex: +5531999999999"
+                  />
+                </label>
+
+                <label className="persona-field">
+                  <span className="persona-label">Texto principal do botão</span>
+                  <input
+                    className="persona-input"
+                    value={ctaConfig.primaryText ?? ''}
+                    onChange={(event) => setCtaConfig((current) => ({ ...current, primaryText: event.target.value }))}
+                    placeholder="Encaminhar para profissional"
+                  />
+                </label>
+
+                <label className="persona-field">
+                  <span className="persona-label">Texto secundário</span>
+                  <input
+                    className="persona-input"
+                    value={ctaConfig.secondaryText ?? ''}
+                    onChange={(event) => setCtaConfig((current) => ({ ...current, secondaryText: event.target.value }))}
+                    placeholder="Leve este caso organizado para análise profissional."
+                  />
+                </label>
+
+                <div className="persona-field admin-checkbox-field">
+                  <span className="persona-label">Mostrar após envio de evidência</span>
+                  <div className="persona-toggle-row">
+                    <button type="button" className={`persona-toggle ${ctaConfig.showAfterEvidence ? 'selected' : ''}`} onClick={() => setCtaConfig((current) => ({ ...current, showAfterEvidence: true }))}>
+                      Sim
+                    </button>
+                    <button type="button" className={`persona-toggle subtle ${!ctaConfig.showAfterEvidence ? 'selected' : ''}`} onClick={() => setCtaConfig((current) => ({ ...current, showAfterEvidence: false }))}>
+                      Não
+                    </button>
+                  </div>
+                </div>
+
+                <div className="persona-field admin-checkbox-field">
+                  <span className="persona-label">Mostrar ao concluir caso</span>
+                  <div className="persona-toggle-row">
+                    <button type="button" className={`persona-toggle ${ctaConfig.showOnCompletion ? 'selected' : ''}`} onClick={() => setCtaConfig((current) => ({ ...current, showOnCompletion: true }))}>
+                      Sim
+                    </button>
+                    <button type="button" className={`persona-toggle subtle ${!ctaConfig.showOnCompletion ? 'selected' : ''}`} onClick={() => setCtaConfig((current) => ({ ...current, showOnCompletion: false }))}>
+                      Não
+                    </button>
+                  </div>
+                </div>
+
+                <label className="persona-field admin-config-grid-span">
+                  <span className="persona-label">Template da mensagem</span>
+                  <textarea
+                    className="persona-input persona-textarea"
+                    value={ctaConfig.whatsappMessageTemplate ?? ''}
+                    onChange={(event) => setCtaConfig((current) => ({ ...current, whatsappMessageTemplate: event.target.value }))}
+                    placeholder={'Olá, organizei meu caso pelo BrandSoul e gostaria de encaminhar para análise.\n\nTipo de situação: {tipo}\nResumo: {resumo}\nImpacto: {impacto}\nEvidências: {evidencias}'}
+                    rows={5}
+                  />
+                  <span className="persona-field-hint">Placeholders disponíveis: {'{tipo}'}, {'{resumo}'}, {'{impacto}'}, {'{evidencias}'}</span>
+                </label>
+              </div>
+            </div>
+          </details>
 
           <div className="admin-config-actions admin-config-actions--save">
             <button type="button" className="persona-submit" onClick={handleSaveBrandConfiguration}>
