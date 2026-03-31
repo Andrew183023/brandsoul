@@ -43,6 +43,8 @@ class ChannelMessage(BaseModel):
     user_id: str = Field(..., min_length=1, examples=["local-user"])
     brand_name: str = Field(..., min_length=1, examples=["BrandSoul"])
     tenant_slug: str | None = Field(default=None, min_length=1, examples=["vista-verde"])
+    mode: Literal["sales", "service", "scheduling", "emergency"] | str | None = "service"
+    guidance_consent: bool | None = None
     message: str = Field(
         ...,
         min_length=0,

@@ -76,9 +76,17 @@ def initialize_database(connection: sqlite3.Connection, database_key: str) -> No
             logo TEXT,
             tone TEXT NOT NULL,
             power TEXT NOT NULL,
+            business_model TEXT NOT NULL DEFAULT 'product',
+            brand_type TEXT NOT NULL DEFAULT 'business',
+            features_json TEXT,
             voice_style TEXT NOT NULL,
             act_mode TEXT NOT NULL,
             business_goal TEXT NOT NULL,
+            modes_json TEXT,
+            emergency_type TEXT,
+            service_offers_json TEXT,
+            scheduling_config_json TEXT,
+            professional_data_json TEXT,
             business_description TEXT,
             institutional_image TEXT,
             theme_json TEXT,
@@ -140,8 +148,35 @@ def initialize_database(connection: sqlite3.Connection, database_key: str) -> No
         ON password_reset_tokens(user_id);
         """
     )
+    ensure_table_columns(
+        connection,
+        "sparks",
+        {
+            "business_model": "TEXT NOT NULL DEFAULT 'product'",
+            "brand_type": "TEXT NOT NULL DEFAULT 'business'",
+            "features_json": "TEXT",
+            "modes_json": "TEXT",
+            "emergency_type": "TEXT",
+            "service_offers_json": "TEXT",
+            "scheduling_config_json": "TEXT",
+            "professional_data_json": "TEXT",
+        },
+    )
     connection.commit()
     _initialized_paths.add(database_key)
+
+
+def ensure_table_columns(connection: sqlite3.Connection, table_name: str, columns: dict[str, str]) -> None:
+    existing_columns = {
+        row["name"]
+        for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    }
+
+    for column_name, column_definition in columns.items():
+        if column_name in existing_columns:
+            continue
+
+        connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}")
 
 
 def row_to_dict(row: sqlite3.Row | None) -> dict | None:
@@ -355,8 +390,8 @@ def upsert_spark(*, tenant_id: int, spark_payload: dict) -> dict:
             connection.execute(
                 """
                 UPDATE sparks
-                SET brand_name = ?, logo = ?, tone = ?, power = ?, voice_style = ?, act_mode = ?, business_goal = ?,
-                    business_description = ?, institutional_image = ?, theme_json = ?, page_sections_json = ?,
+                SET brand_name = ?, logo = ?, tone = ?, power = ?, business_model = ?, brand_type = ?, features_json = ?, voice_style = ?, act_mode = ?, business_goal = ?,
+                    modes_json = ?, emergency_type = ?, service_offers_json = ?, scheduling_config_json = ?, professional_data_json = ?, business_description = ?, institutional_image = ?, theme_json = ?, page_sections_json = ?,
                     carousel_images_json = ?, opening_hours_json = ?, address = ?, city = ?, state = ?,
                     delivery_available = ?, business_hours = ?, service_region = ?, brand_highlight = ?,
                     whatsapp = ?, email = ?, instagram = ?, facebook = ?, tiktok = ?, site = ?, contact_info = ?,
@@ -368,9 +403,17 @@ def upsert_spark(*, tenant_id: int, spark_payload: dict) -> dict:
                     spark_payload.get("logo"),
                     spark_payload["tone"],
                     spark_payload["power"],
+                    spark_payload.get("business_model", "product"),
+                    spark_payload.get("brand_type", "business"),
+                    spark_payload.get("features_json"),
                     spark_payload["voice_style"],
                     spark_payload["act_mode"],
                     spark_payload["business_goal"],
+                    spark_payload.get("modes_json"),
+                    spark_payload.get("emergency_type"),
+                    spark_payload.get("service_offers_json"),
+                    spark_payload.get("scheduling_config_json"),
+                    spark_payload.get("professional_data_json"),
                     spark_payload.get("business_description"),
                     spark_payload.get("institutional_image"),
                     spark_payload.get("theme_json"),
@@ -399,13 +442,13 @@ def upsert_spark(*, tenant_id: int, spark_payload: dict) -> dict:
             connection.execute(
                 """
                 INSERT INTO sparks (
-                    tenant_id, brand_name, logo, tone, power, voice_style, act_mode, business_goal,
-                    business_description, institutional_image, theme_json, page_sections_json,
+                    tenant_id, brand_name, logo, tone, power, business_model, brand_type, features_json, voice_style, act_mode, business_goal,
+                    modes_json, emergency_type, service_offers_json, scheduling_config_json, professional_data_json, business_description, institutional_image, theme_json, page_sections_json,
                     carousel_images_json, opening_hours_json, address, city, state, delivery_available,
                     business_hours, service_region, brand_highlight, whatsapp, email, instagram,
                     facebook, tiktok, site, contact_info, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     tenant_id,
@@ -413,9 +456,17 @@ def upsert_spark(*, tenant_id: int, spark_payload: dict) -> dict:
                     spark_payload.get("logo"),
                     spark_payload["tone"],
                     spark_payload["power"],
+                    spark_payload.get("business_model", "product"),
+                    spark_payload.get("brand_type", "business"),
+                    spark_payload.get("features_json"),
                     spark_payload["voice_style"],
                     spark_payload["act_mode"],
                     spark_payload["business_goal"],
+                    spark_payload.get("modes_json"),
+                    spark_payload.get("emergency_type"),
+                    spark_payload.get("service_offers_json"),
+                    spark_payload.get("scheduling_config_json"),
+                    spark_payload.get("professional_data_json"),
                     spark_payload.get("business_description"),
                     spark_payload.get("institutional_image"),
                     spark_payload.get("theme_json"),
