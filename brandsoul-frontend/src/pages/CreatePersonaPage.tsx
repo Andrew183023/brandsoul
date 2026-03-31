@@ -103,9 +103,14 @@ export default function CreatePersonaPage() {
       logo: savedPersona?.logo,
       tone,
       power,
+      businessModel: savedPersona?.businessModel,
+      brandType: savedPersona?.brandType,
+      features: savedPersona?.features,
       voiceStyle,
       actMode,
       businessGoal,
+      modes: savedPersona?.modes,
+      emergencyType: savedPersona?.emergencyType,
       businessDescription: businessDescription.trim() || undefined,
       institutionalImage: savedPersona?.institutionalImage,
       theme: savedPersona?.theme,
@@ -126,6 +131,9 @@ export default function CreatePersonaPage() {
       tiktok: savedPersona?.tiktok,
       site: savedPersona?.site,
       contactInfo: savedPersona?.contactInfo,
+      serviceOffers: savedPersona?.serviceOffers,
+      schedulingConfig: savedPersona?.schedulingConfig,
+      professionalData: savedPersona?.professionalData,
     })
 
     window.setTimeout(() => {

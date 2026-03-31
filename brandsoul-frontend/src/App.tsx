@@ -27,15 +27,29 @@ import {
 import { inferInteractionProfilePreview, type BusinessProfile } from './lib/interactionProfilePreview'
 import {
   actModeOptions,
+  businessModelOptions,
   type BrandPersona,
+  type BrandTypeOption,
+  type BrandFeatures,
+  type BusinessModelOption,
+  professionalGuidancePlaybooks,
+  type ProfessionalGuidancePlaybookKey,
+  professionalOperationModeOptions,
   businessGoalOptions,
+  emergencyTypeOptions,
   loadBrandPersona,
   navigateTo,
   powerOptions,
   saveBrandPersona,
   type ActModeOption,
   type BusinessGoalOption,
+  type EmergencyTypeOption,
   type PowerOption,
+  type ProfessionalPageData,
+  type ProfessionalOperationMode,
+  type SchedulingConfig,
+  type ServiceOffer,
+  type SparkModes,
   type ToneOption,
   toneOptions,
   type VoiceStyleOption,
@@ -112,6 +126,99 @@ function createEmptyCatalogDraft(): CatalogDraft {
     isNewArrival: false,
     complements: '',
   }
+}
+
+function createDefaultModes(): SparkModes {
+  return {
+    sales: true,
+    service: true,
+    scheduling: false,
+    emergency: false,
+  }
+}
+
+function createDefaultFeatures(businessModel: BusinessModelOption): BrandFeatures {
+  if (businessModel === 'service') {
+    return {
+      products: false,
+      services: true,
+      scheduling: true,
+      emergency: false,
+    }
+  }
+
+  if (businessModel === 'professional') {
+    return {
+      products: false,
+      services: true,
+      scheduling: false,
+      emergency: true,
+    }
+  }
+
+  return {
+    products: true,
+    services: false,
+    scheduling: false,
+    emergency: false,
+  }
+}
+
+function createEmptyServiceOffers(): ServiceOffer[] {
+  return [
+    { title: '', summary: '', label: '' },
+    { title: '', summary: '', label: '' },
+  ]
+}
+
+function createEmptySchedulingConfig(): SchedulingConfig {
+  return {
+    title: '',
+    description: '',
+  }
+}
+
+function createEmptyProfessionalData(): ProfessionalPageData {
+  return {
+    operationMode: 'institutional',
+    presentation: '',
+    practiceAreas: [],
+    differentials: [],
+    cases: [
+      { caseType: '', context: '', approach: '', learning: '' },
+      { caseType: '', context: '', approach: '', learning: '' },
+    ],
+    contents: [
+      { title: '', summary: '', stance: '' },
+      { title: '', summary: '', stance: '' },
+    ],
+    identity: {
+      headline: '',
+      principles: [],
+    },
+    guidance: {
+      situationType: '',
+      initialResponse: '',
+      initialQuestions: [],
+      actionChecklist: [],
+      dataCollection: [],
+      orientationLimits: '',
+      communicationTone: '',
+      closingMessage: '',
+      playbooks: professionalGuidancePlaybooks,
+    },
+  }
+}
+
+function parseCommaSeparatedList(value: string) {
+  return value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function formatCommaSeparatedList(values?: string[]) {
+  return values?.join(', ') ?? ''
 }
 
 interface ChannelResponseMetadata {
@@ -541,6 +648,16 @@ export default function App() {
   const [logo, setLogo] = useState(savedPersona?.logo ?? '')
   const [businessDescription, setBusinessDescription] = useState(savedPersona?.businessDescription ?? '')
   const [institutionalImage, setInstitutionalImage] = useState(savedPersona?.institutionalImage ?? '')
+  const [businessModel, setBusinessModel] = useState<BusinessModelOption>(
+    savedPersona?.businessModel ?? (savedPersona?.brandType === 'professional' ? 'professional' : 'product'),
+  )
+  const [brandType, setBrandType] = useState<BrandTypeOption>(savedPersona?.brandType ?? 'business')
+  const [features, setFeatures] = useState<BrandFeatures>(
+    savedPersona?.features ?? createDefaultFeatures(savedPersona?.businessModel ?? (savedPersona?.brandType === 'professional' ? 'professional' : 'product')),
+  )
+  const [serviceOffers, setServiceOffers] = useState<ServiceOffer[]>(savedPersona?.serviceOffers ?? createEmptyServiceOffers())
+  const [schedulingConfig, setSchedulingConfig] = useState<SchedulingConfig>(savedPersona?.schedulingConfig ?? createEmptySchedulingConfig())
+  const [professionalData, setProfessionalData] = useState<ProfessionalPageData>(savedPersona?.professionalData ?? createEmptyProfessionalData())
   const [themePrimaryColor, setThemePrimaryColor] = useState(savedPersona?.theme?.primaryColor ?? '#ff9460')
   const [themeSecondaryColor, setThemeSecondaryColor] = useState(savedPersona?.theme?.secondaryColor ?? '#ff5e43')
   const [showCarousel, setShowCarousel] = useState(savedPersona?.pageSections?.showCarousel === true)
@@ -567,6 +684,8 @@ export default function App() {
   const [voiceStyle, setVoiceStyle] = useState<VoiceStyleOption>(savedPersona?.voiceStyle ?? 'balanced')
   const [actMode, setActMode] = useState<ActModeOption>(savedPersona?.actMode ?? 'seller')
   const [businessGoal, setBusinessGoal] = useState<BusinessGoalOption>(savedPersona?.businessGoal ?? 'volume')
+  const [modes, setModes] = useState<SparkModes>(savedPersona?.modes ?? createDefaultModes())
+  const [emergencyType, setEmergencyType] = useState<EmergencyTypeOption>(savedPersona?.emergencyType ?? 'technical')
   const [contextMode, setContextMode] = useState<ContextMode>(initialContextMode)
   const [channelMode, setChannelMode] = useState<ChannelMode>(initialChannelMode)
   const [instagramUsername, setInstagramUsername] = useState(loadInstagramUsername())
@@ -575,7 +694,7 @@ export default function App() {
   const [businessProfile, setBusinessProfile] = useState<BusinessProfile | undefined>(undefined)
   const [messages, setMessages] = useState<Message[]>(initialSavedMessages)
   const [dismissedSuggestionTexts, setDismissedSuggestionTexts] = useState<string[]>([])
-  const [catalogItems, setCatalogItems] = useState<CatalogItem[]>(() => loadCatalogItems())
+  const [catalogItems, setCatalogItems] = useState<CatalogItem[]>([])
   const [catalogDraft, setCatalogDraft] = useState<CatalogDraft>(createEmptyCatalogDraft())
   const [editingCatalogId, setEditingCatalogId] = useState<string | null>(null)
   const [configStatus, setConfigStatus] = useState('')
@@ -760,12 +879,18 @@ export default function App() {
     }
   }, [catalogItems, showNewArrivals, showPromotions])
   const shouldShowLearningSignal = useMemo(() => hasMeaningfulSparkMemory(sparkMemory), [sparkMemory])
-
   const applyPersonaState = useCallback((persona: BrandPersona) => {
     setBrandName(persona.brandName)
     setLogo(persona.logo ?? '')
     setBusinessDescription(persona.businessDescription ?? '')
     setInstitutionalImage(persona.institutionalImage ?? '')
+    const nextBusinessModel = persona.businessModel ?? (persona.brandType === 'professional' ? 'professional' : 'product')
+    setBusinessModel(nextBusinessModel)
+    setBrandType(persona.brandType ?? 'business')
+    setFeatures(persona.features ?? createDefaultFeatures(nextBusinessModel))
+    setServiceOffers(persona.serviceOffers ?? createEmptyServiceOffers())
+    setSchedulingConfig(persona.schedulingConfig ?? createEmptySchedulingConfig())
+    setProfessionalData(persona.professionalData ?? createEmptyProfessionalData())
     setThemePrimaryColor(persona.theme?.primaryColor ?? '#ff9460')
     setThemeSecondaryColor(persona.theme?.secondaryColor ?? '#ff5e43')
     setShowCarousel(persona.pageSections?.showCarousel === true)
@@ -792,6 +917,8 @@ export default function App() {
     setVoiceStyle(persona.voiceStyle ?? 'balanced')
     setActMode(persona.actMode ?? 'seller')
     setBusinessGoal(persona.businessGoal ?? 'volume')
+    setModes(persona.modes ?? createDefaultModes())
+    setEmergencyType(persona.emergencyType ?? 'technical')
   }, [])
 
   const currentPersona = useMemo<BrandPersona>(
@@ -800,9 +927,17 @@ export default function App() {
       logo: logo || undefined,
       tone,
       power,
+      businessModel,
+      brandType,
+      features,
       voiceStyle,
       actMode,
       businessGoal,
+      modes,
+      emergencyType,
+      serviceOffers: features.services ? serviceOffers : undefined,
+      schedulingConfig: features.scheduling ? schedulingConfig : undefined,
+      professionalData: brandType === 'professional' ? professionalData : undefined,
       businessDescription: businessDescription.trim() || undefined,
       institutionalImage: institutionalImage || undefined,
       theme: {
@@ -834,6 +969,8 @@ export default function App() {
     [
       actMode,
       address,
+      businessModel,
+      brandType,
       brandHighlight,
       brandName,
       businessDescription,
@@ -847,9 +984,13 @@ export default function App() {
       institutionalImage,
       instagram,
       logo,
+      modes,
       openingHours,
       power,
+      professionalData,
+      schedulingConfig,
       serviceRegion,
+      serviceOffers,
       showCarousel,
       showNewArrivals,
       showPromotions,
@@ -861,15 +1002,54 @@ export default function App() {
       tone,
       voiceStyle,
       whatsapp,
+      features,
+      emergencyType,
     ],
   )
 
   const buildPersonaPayload = () => ({
     tone: currentPersona.tone,
     power: currentPersona.power,
+    business_model: currentPersona.businessModel,
+    brand_type: currentPersona.brandType,
+    features: currentPersona.features,
     voice_style: currentPersona.voiceStyle,
     act_mode: currentPersona.actMode,
     business_goal: currentPersona.businessGoal,
+    modes: currentPersona.modes,
+    emergency_type: currentPersona.emergencyType,
+    service_offers: currentPersona.serviceOffers,
+    scheduling_config: currentPersona.schedulingConfig,
+    professional_data:
+      currentPersona.brandType === 'professional'
+        ? {
+            operation_mode: currentPersona.professionalData?.operationMode,
+            presentation: currentPersona.professionalData?.presentation,
+            practice_areas: currentPersona.professionalData?.practiceAreas,
+            differentials: currentPersona.professionalData?.differentials,
+            cases: currentPersona.professionalData?.cases?.map((item) => ({
+              case_type: item.caseType,
+              context: item.context,
+              approach: item.approach,
+              learning: item.learning,
+            })),
+            contents: currentPersona.professionalData?.contents,
+            identity: currentPersona.professionalData?.identity,
+            guidance: currentPersona.professionalData?.guidance
+              ? {
+                  situation_type: currentPersona.professionalData.guidance.situationType,
+                  initial_response: currentPersona.professionalData.guidance.initialResponse,
+                  initial_questions: currentPersona.professionalData.guidance.initialQuestions,
+                  action_checklist: currentPersona.professionalData.guidance.actionChecklist,
+                  data_collection: currentPersona.professionalData.guidance.dataCollection,
+                  orientation_limits: currentPersona.professionalData.guidance.orientationLimits,
+                  communication_tone: currentPersona.professionalData.guidance.communicationTone,
+                  closing_message: currentPersona.professionalData.guidance.closingMessage,
+                  playbooks: currentPersona.professionalData.guidance.playbooks,
+                }
+              : undefined,
+          }
+        : undefined,
     business_description: currentPersona.businessDescription,
     opening_hours: currentPersona.openingHours,
     address: currentPersona.address,
@@ -1035,7 +1215,6 @@ export default function App() {
     if (savedPersona) {
       applyPersonaState(savedPersona)
     }
-    setCatalogItems(loadCatalogItems())
 
     void (async () => {
       try {
@@ -1055,10 +1234,12 @@ export default function App() {
         if (!isMounted) {
           return
         }
-        saveCatalogItems(backendCatalog)
         setCatalogItems(backendCatalog)
       } catch (error) {
         console.error(error)
+        if (isMounted) {
+          setCatalogItems(loadCatalogItems())
+        }
       }
     })()
 
@@ -1440,7 +1621,6 @@ export default function App() {
 
   const handleSaveBrandConfiguration = async () => {
     saveBrandPersona(currentPersona)
-    saveCatalogItems(catalogItems)
 
     try {
       await saveSpark(currentPersona)
@@ -1554,6 +1734,88 @@ export default function App() {
     setContentHistory([])
   }
 
+  const handleModeToggle = (mode: keyof SparkModes) => {
+    setModes((currentModes) => ({ ...currentModes, [mode]: !currentModes[mode] }))
+  }
+
+  const handleBusinessModelChange = (nextBusinessModel: BusinessModelOption) => {
+    setBusinessModel(nextBusinessModel)
+    setBrandType(nextBusinessModel === 'professional' ? 'professional' : 'business')
+    const defaults = createDefaultFeatures(nextBusinessModel)
+    const nextFeatures = {
+      products: defaults.products,
+      services: defaults.services,
+      scheduling: defaults.scheduling,
+      emergency: defaults.emergency,
+    }
+    setFeatures(nextFeatures)
+    setModes({
+      sales: nextFeatures.products,
+      service: nextFeatures.services || nextBusinessModel === 'professional',
+      scheduling: nextFeatures.scheduling,
+      emergency: nextFeatures.emergency,
+    })
+  }
+
+  const handleServiceOfferChange = (index: number, field: 'title' | 'summary' | 'label', value: string) => {
+    setServiceOffers((currentOffers) => {
+      const nextOffers = [...currentOffers]
+      while (nextOffers.length <= index) {
+        nextOffers.push({ title: '', summary: '', label: '' })
+      }
+      nextOffers[index] = { ...nextOffers[index], [field]: value }
+      return nextOffers
+    })
+  }
+
+  const handleProfessionalCaseChange = (index: number, field: 'caseType' | 'context' | 'approach' | 'learning', value: string) => {
+    setProfessionalData((currentData) => {
+      const nextCases = [...(currentData.cases ?? [])]
+      while (nextCases.length <= index) {
+        nextCases.push({ caseType: '', context: '', approach: '', learning: '' })
+      }
+      nextCases[index] = { ...nextCases[index], [field]: value }
+      return { ...currentData, cases: nextCases }
+    })
+  }
+
+  const handleProfessionalContentChange = (index: number, field: 'title' | 'summary' | 'stance', value: string) => {
+    setProfessionalData((currentData) => {
+      const nextContents = [...(currentData.contents ?? [])]
+      while (nextContents.length <= index) {
+        nextContents.push({ title: '', summary: '', stance: '' })
+      }
+      nextContents[index] = { ...nextContents[index], [field]: value }
+      return { ...currentData, contents: nextContents }
+    })
+  }
+
+  const handleProfessionalOperationModeChange = (nextMode: ProfessionalOperationMode) => {
+    setProfessionalData((currentData) => ({ ...currentData, operationMode: nextMode }))
+  }
+
+  const handleApplyGuidancePlaybook = (playbookKey: ProfessionalGuidancePlaybookKey) => {
+    const playbook = professionalGuidancePlaybooks[playbookKey]
+    setProfessionalData((currentData) => ({
+      ...currentData,
+      operationMode: 'guidance',
+      guidance: {
+        ...(currentData.guidance ?? {}),
+        situationType: playbook.situationType,
+        initialResponse: playbook.initialResponse,
+        initialQuestions: playbook.initialQuestions,
+        actionChecklist: playbook.actionChecklist,
+        dataCollection: playbook.dataCollection,
+        orientationLimits: playbook.orientationLimits,
+        closingMessage: playbook.closingMessage,
+        playbooks: {
+          ...(currentData.guidance?.playbooks ?? professionalGuidancePlaybooks),
+          [playbookKey]: playbook,
+        },
+      },
+    }))
+  }
+
   return (
     <main className={`app-shell ${contextMode === 'admin' ? 'app-shell-admin' : ''}`}>
       <section className="identity-panel">
@@ -1616,13 +1878,13 @@ export default function App() {
         <section className="admin-config-panel" aria-label="Configuração da marca">
           <div className="admin-config-header">
             <span className="eyebrow">Editar Centelha</span>
-            <h2>Marca, página e catálogo</h2>
-            <p>Os ajustes mais profundos continuam aqui, sem pesar o fluxo principal do admin.</p>
+            <h2>Tipo de operação da marca</h2>
+            <p>Escolha como a marca atua e eu ajusto o restante da configuração em um fluxo mais claro e contínuo.</p>
             <HintBox
               compact
               icon="✨"
               title="O que você ajusta aqui?"
-              description="Essas configurações moldam como a marca aparece, conversa e conduz o cliente até o próximo passo."
+              description="Essas configurações moldam como a marca aparece, conversa e conduz o cliente sem misturar produto, serviço e atuação profissional."
             />
           </div>
 
@@ -1662,6 +1924,362 @@ export default function App() {
                 rows={3}
               />
             </label>
+
+            <div className="persona-field admin-config-grid-span">
+              <span className="persona-label">Tipo de negócio</span>
+              <HintBox
+                compact
+                icon="🧭"
+                title="Que estrutura essa operação precisa"
+                description="Escolha o modelo principal e ligue só os módulos necessários para essa marca."
+              />
+              <div className="persona-style-grid">
+                {businessModelOptions.map((option) => {
+                  const isSelected = businessModel === option.value
+
+                  return (
+                    <button key={option.value} type="button" className={`persona-style-card ${isSelected ? 'selected' : ''}`} onClick={() => handleBusinessModelChange(option.value)}>
+                      <strong>
+                        {option.emoji} {option.label}
+                      </strong>
+                      <span>{option.description}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {businessModel === 'professional' ? (
+              <>
+                <div className="persona-field admin-config-grid-span">
+                  <span className="persona-label">Perfil profissional</span>
+                  <HintBox
+                    compact
+                    icon="⚖️"
+                    title="Presença e autoridade"
+                    description="Apresente atuação, áreas e diferenciais de forma sóbria, clara e confiável."
+                  />
+                </div>
+
+                <div className="persona-field admin-config-grid-span">
+                  <span className="persona-label">Modo de atuação</span>
+                  <HintBox
+                    compact
+                    icon="🧭"
+                    title="Como esse profissional aparece"
+                    description="Escolha se a presença é mais institucional, orientada por conteúdo ou guiada por diretrizes de orientação inicial."
+                  />
+                  <div className="persona-style-grid">
+                    {professionalOperationModeOptions.map((option) => {
+                      const isSelected = (professionalData.operationMode ?? 'institutional') === option.value
+
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={`persona-style-card ${isSelected ? 'selected' : ''}`}
+                          onClick={() => handleProfessionalOperationModeChange(option.value)}
+                        >
+                          <strong>
+                            {option.emoji} {option.label}
+                          </strong>
+                          <span>{option.description}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <label className="persona-field admin-config-grid-span">
+                  <span className="persona-label">Apresentação</span>
+                  <textarea
+                    className="persona-input persona-textarea"
+                    value={professionalData.presentation ?? ''}
+                    onChange={(event) => setProfessionalData((currentData) => ({ ...currentData, presentation: event.target.value }))}
+                    placeholder="Ex.: Atuação jurídica estratégica com foco em prevenção, clareza e resposta técnica."
+                    rows={3}
+                  />
+                </label>
+
+                <label className="persona-field">
+                  <span className="persona-label">Áreas de atuação</span>
+                  <input
+                    className="persona-input"
+                    value={formatCommaSeparatedList(professionalData.practiceAreas)}
+                    onChange={(event) =>
+                      setProfessionalData((currentData) => ({ ...currentData, practiceAreas: parseCommaSeparatedList(event.target.value) }))
+                    }
+                    placeholder="Empresarial, trabalhista, contratos"
+                  />
+                </label>
+
+                <label className="persona-field">
+                  <span className="persona-label">Diferenciais</span>
+                  <input
+                    className="persona-input"
+                    value={formatCommaSeparatedList(professionalData.differentials)}
+                    onChange={(event) =>
+                      setProfessionalData((currentData) => ({ ...currentData, differentials: parseCommaSeparatedList(event.target.value) }))
+                    }
+                    placeholder="Resposta ágil, análise cuidadosa, atuação estratégica"
+                  />
+                </label>
+
+                <label className="persona-field admin-config-grid-span">
+                  <span className="persona-label">Frase de identidade</span>
+                  <input
+                    className="persona-input"
+                    value={professionalData.identity?.headline ?? ''}
+                    onChange={(event) =>
+                      setProfessionalData((currentData) => ({
+                        ...currentData,
+                        identity: { ...(currentData.identity ?? {}), headline: event.target.value },
+                      }))
+                    }
+                    placeholder="Ex.: Clareza técnica, presença serena e atuação responsável."
+                  />
+                </label>
+
+                <label className="persona-field admin-config-grid-span">
+                  <span className="persona-label">Princípios</span>
+                  <input
+                    className="persona-input"
+                    value={formatCommaSeparatedList(professionalData.identity?.principles)}
+                    onChange={(event) =>
+                      setProfessionalData((currentData) => ({
+                        ...currentData,
+                        identity: { ...(currentData.identity ?? {}), principles: parseCommaSeparatedList(event.target.value) },
+                      }))
+                    }
+                    placeholder="Ética, clareza, discrição"
+                  />
+                </label>
+
+                {professionalData.operationMode === 'guidance' ? (
+                  <>
+                    <div className="persona-field admin-config-grid-span">
+                      <span className="persona-label">Diretrizes profissionais</span>
+                      <HintBox
+                        compact
+                        icon="🛡️"
+                        title="Orientação inicial com limite claro"
+                        description="Defina como a Centelha orienta, coleta dados e encerra a conversa sem prometer resultado nem substituir o profissional."
+                      />
+                    </div>
+
+                    <div className="persona-field admin-config-grid-span">
+                      <span className="persona-label">Playbooks prontos</span>
+                      <div className="persona-style-grid">
+                        <button type="button" className="persona-style-card" onClick={() => handleApplyGuidancePlaybook('acidente_transito')}>
+                          <strong>🚗 Acidente de trânsito</strong>
+                          <span>Primeiros passos, coleta de evidências e organização inicial do caso.</span>
+                        </button>
+                        <button type="button" className="persona-style-card" onClick={() => handleApplyGuidancePlaybook('consumidor')}>
+                          <strong>🧾 Problema do consumidor</strong>
+                          <span>Comprovantes, histórico e organização da situação antes da análise completa.</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <label className="persona-field">
+                      <span className="persona-label">Tipo de situação</span>
+                      <input
+                        className="persona-input"
+                        value={professionalData.guidance?.situationType ?? ''}
+                        onChange={(event) =>
+                          setProfessionalData((currentData) => ({
+                            ...currentData,
+                            guidance: { ...(currentData.guidance ?? {}), situationType: event.target.value },
+                          }))
+                        }
+                        placeholder="Ex.: conflito contratual, urgência trabalhista, orientação regulatória"
+                      />
+                    </label>
+
+                    <label className="persona-field admin-config-grid-span">
+                      <span className="persona-label">Resposta inicial</span>
+                      <textarea
+                        className="persona-input persona-textarea"
+                        value={professionalData.guidance?.initialResponse ?? ''}
+                        onChange={(event) =>
+                          setProfessionalData((currentData) => ({
+                            ...currentData,
+                            guidance: { ...(currentData.guidance ?? {}), initialResponse: event.target.value },
+                          }))
+                        }
+                        placeholder="Ex.: Primeiro eu organizo os fatos essenciais, avalio urgência e te explico o próximo passo com clareza."
+                        rows={3}
+                      />
+                    </label>
+
+                    <label className="persona-field">
+                      <span className="persona-label">Perguntas iniciais</span>
+                      <input
+                        className="persona-input"
+                        value={formatCommaSeparatedList(professionalData.guidance?.initialQuestions)}
+                        onChange={(event) =>
+                          setProfessionalData((currentData) => ({
+                            ...currentData,
+                            guidance: { ...(currentData.guidance ?? {}), initialQuestions: parseCommaSeparatedList(event.target.value) },
+                          }))
+                        }
+                        placeholder="Ex.: Você está seguro?, Alguém se feriu?, Isso aconteceu agora?"
+                      />
+                    </label>
+
+                    <label className="persona-field">
+                      <span className="persona-label">Checklist de ação</span>
+                      <input
+                        className="persona-input"
+                        value={formatCommaSeparatedList(professionalData.guidance?.actionChecklist)}
+                        onChange={(event) =>
+                          setProfessionalData((currentData) => ({
+                            ...currentData,
+                            guidance: { ...(currentData.guidance ?? {}), actionChecklist: parseCommaSeparatedList(event.target.value) },
+                          }))
+                        }
+                        placeholder="Ex.: entender contexto, checar prazo, organizar próximos passos"
+                      />
+                    </label>
+
+                    <label className="persona-field">
+                      <span className="persona-label">Coleta de dados</span>
+                      <input
+                        className="persona-input"
+                        value={formatCommaSeparatedList(professionalData.guidance?.dataCollection)}
+                        onChange={(event) =>
+                          setProfessionalData((currentData) => ({
+                            ...currentData,
+                            guidance: { ...(currentData.guidance ?? {}), dataCollection: parseCommaSeparatedList(event.target.value) },
+                          }))
+                        }
+                        placeholder="Ex.: data, envolvidos, documentos, impacto, urgência"
+                      />
+                    </label>
+
+                    <label className="persona-field admin-config-grid-span">
+                      <span className="persona-label">Limites da orientação</span>
+                      <textarea
+                        className="persona-input persona-textarea"
+                        value={professionalData.guidance?.orientationLimits ?? ''}
+                        onChange={(event) =>
+                          setProfessionalData((currentData) => ({
+                            ...currentData,
+                            guidance: { ...(currentData.guidance ?? {}), orientationLimits: event.target.value },
+                          }))
+                        }
+                        placeholder="Ex.: Não emitir parecer definitivo, não prometer resultado e sempre encaminhar para análise profissional completa."
+                        rows={3}
+                      />
+                    </label>
+
+                    <label className="persona-field">
+                      <span className="persona-label">Tom de comunicação</span>
+                      <input
+                        className="persona-input"
+                        value={professionalData.guidance?.communicationTone ?? ''}
+                        onChange={(event) =>
+                          setProfessionalData((currentData) => ({
+                            ...currentData,
+                            guidance: { ...(currentData.guidance ?? {}), communicationTone: event.target.value },
+                          }))
+                        }
+                        placeholder="Ex.: sereno, técnico, cuidadoso, objetivo"
+                      />
+                    </label>
+
+                    <label className="persona-field admin-config-grid-span">
+                      <span className="persona-label">Encerramento</span>
+                      <textarea
+                        className="persona-input persona-textarea"
+                        value={professionalData.guidance?.closingMessage ?? ''}
+                        onChange={(event) =>
+                          setProfessionalData((currentData) => ({
+                            ...currentData,
+                            guidance: { ...(currentData.guidance ?? {}), closingMessage: event.target.value },
+                          }))
+                        }
+                        placeholder="Ex.: Com essas informações organizadas, um profissional poderá analisar melhor seu caso."
+                        rows={2}
+                      />
+                    </label>
+                  </>
+                ) : null}
+
+                {[0, 1].map((index) => (
+                  <div key={`professional-case-${index}`} className="admin-config-grid admin-config-grid-span">
+                    <label className="persona-field">
+                      <span className="persona-label">Tipo de caso</span>
+                      <input
+                        className="persona-input"
+                        value={professionalData.cases?.[index]?.caseType ?? ''}
+                        onChange={(event) => handleProfessionalCaseChange(index, 'caseType', event.target.value)}
+                        placeholder="Ex.: Contrato, crise, urgência regulatória"
+                      />
+                    </label>
+                    <label className="persona-field">
+                      <span className="persona-label">Contexto</span>
+                      <input
+                        className="persona-input"
+                        value={professionalData.cases?.[index]?.context ?? ''}
+                        onChange={(event) => handleProfessionalCaseChange(index, 'context', event.target.value)}
+                        placeholder="Em que cenário esse caso aparece"
+                      />
+                    </label>
+                    <label className="persona-field">
+                      <span className="persona-label">Abordagem</span>
+                      <input
+                        className="persona-input"
+                        value={professionalData.cases?.[index]?.approach ?? ''}
+                        onChange={(event) => handleProfessionalCaseChange(index, 'approach', event.target.value)}
+                        placeholder="Como a atuação é conduzida"
+                      />
+                    </label>
+                    <label className="persona-field">
+                      <span className="persona-label">Aprendizado</span>
+                      <input
+                        className="persona-input"
+                        value={professionalData.cases?.[index]?.learning ?? ''}
+                        onChange={(event) => handleProfessionalCaseChange(index, 'learning', event.target.value)}
+                        placeholder="Que leitura isso deixa"
+                      />
+                    </label>
+                  </div>
+                ))}
+
+                {[0, 1].map((index) => (
+                  <div key={`professional-content-${index}`} className="admin-config-grid admin-config-grid-span">
+                    <label className="persona-field">
+                      <span className="persona-label">Título do conteúdo</span>
+                      <input
+                        className="persona-input"
+                        value={professionalData.contents?.[index]?.title ?? ''}
+                        onChange={(event) => handleProfessionalContentChange(index, 'title', event.target.value)}
+                        placeholder="Ex.: O que fazer nas primeiras horas de um conflito contratual"
+                      />
+                    </label>
+                    <label className="persona-field">
+                      <span className="persona-label">Resumo</span>
+                      <input
+                        className="persona-input"
+                        value={professionalData.contents?.[index]?.summary ?? ''}
+                        onChange={(event) => handleProfessionalContentChange(index, 'summary', event.target.value)}
+                        placeholder="Resumo curto e informativo"
+                      />
+                    </label>
+                    <label className="persona-field admin-config-grid-span">
+                      <span className="persona-label">Posicionamento</span>
+                      <input
+                        className="persona-input"
+                        value={professionalData.contents?.[index]?.stance ?? ''}
+                        onChange={(event) => handleProfessionalContentChange(index, 'stance', event.target.value)}
+                        placeholder="Ex.: Visão técnica, preventiva e clara sobre esse tema"
+                      />
+                    </label>
+                  </div>
+                ))}
+              </>
+            ) : null}
 
             <div className="persona-field admin-config-grid-span">
               <span className="persona-label">Personalidade</span>
@@ -1796,10 +2414,11 @@ export default function App() {
                 })}
               </div>
             </div>
+
             </div>
           </details>
 
-          <details className="admin-config-section">
+          <details className="admin-config-section" open>
             <summary className="admin-config-section-title">Marca pública</summary>
             <div className="admin-config-section-body">
             <div className="admin-public-link-card">
@@ -1823,7 +2442,7 @@ export default function App() {
             </div>
           </details>
 
-          <details className="admin-config-section">
+          <details className="admin-config-section" open>
             <summary className="admin-config-section-title">Estilo visual da página</summary>
             <div className="admin-config-section-body">
               <div className="admin-config-grid">
@@ -1875,7 +2494,7 @@ export default function App() {
             </div>
           </details>
 
-          <details className="admin-config-section">
+          <details className="admin-config-section" open>
             <summary className="admin-config-section-title">Marca e contato</summary>
             <div className="admin-config-section-body">
             <div className="admin-config-grid">
@@ -1931,8 +2550,9 @@ export default function App() {
             </div>
           </details>
 
-          <details className="admin-config-section">
-            <summary className="admin-config-section-title">Ações do dia</summary>
+          {businessModel === 'service' ? (
+          <details className="admin-config-section" open>
+            <summary className="admin-config-section-title">Agenda e disponibilidade</summary>
             <div className="admin-config-section-body">
             <div className="admin-config-grid">
               <label className="persona-field">
@@ -1972,8 +2592,10 @@ export default function App() {
             </div>
             </div>
           </details>
+          ) : null}
 
-          <details className="admin-config-section">
+          {(businessModel === 'service' || businessModel === 'professional') ? (
+          <details className="admin-config-section" open>
             <summary className="admin-config-section-title">Localização</summary>
             <div className="admin-config-section-body">
             <div className="admin-config-grid">
@@ -1992,8 +2614,10 @@ export default function App() {
             </div>
             </div>
           </details>
+          ) : null}
 
-          <details className="admin-config-section">
+          {businessModel === 'product' ? (
+          <details className="admin-config-section" open>
             <summary className="admin-config-section-title">Catálogo</summary>
             <div className="admin-config-section-body">
             <div className="admin-config-grid">
@@ -2144,6 +2768,119 @@ export default function App() {
             ) : null}
             </div>
           </details>
+          ) : null}
+
+          {businessModel === 'service' ? (
+          <details className="admin-config-section" open>
+            <summary className="admin-config-section-title">Serviços</summary>
+            <div className="admin-config-section-body">
+              <HintBox
+                compact
+                icon="🧰"
+                title="Como essa operação atende"
+                description="Descreva os serviços aqui. Se a marca também agenda, a explicação da agenda aparece logo abaixo, no mesmo fluxo."
+              />
+              {[0, 1].map((index) => (
+                <div key={`service-offer-${index}`} className="admin-config-grid admin-config-grid-span">
+                  <label className="persona-field">
+                    <span className="persona-label">Nome do serviço</span>
+                    <input
+                      className="persona-input"
+                      value={serviceOffers[index]?.title ?? ''}
+                      onChange={(event) => handleServiceOfferChange(index, 'title', event.target.value)}
+                      placeholder="Ex.: Consultoria inicial"
+                    />
+                  </label>
+                  <label className="persona-field">
+                    <span className="persona-label">Resumo</span>
+                    <input
+                      className="persona-input"
+                      value={serviceOffers[index]?.summary ?? ''}
+                      onChange={(event) => handleServiceOfferChange(index, 'summary', event.target.value)}
+                      placeholder="O que esse serviço resolve e como ele é conduzido"
+                    />
+                  </label>
+                  <label className="persona-field">
+                    <span className="persona-label">Label</span>
+                    <input
+                      className="persona-input"
+                      value={serviceOffers[index]?.label ?? ''}
+                      onChange={(event) => handleServiceOfferChange(index, 'label', event.target.value)}
+                      placeholder="Em destaque"
+                    />
+                  </label>
+                </div>
+              ))}
+
+              {businessModel === 'service' ? (
+                <div className="admin-inline-subsection">
+                  <HintBox
+                    compact
+                    icon="📅"
+                    title="Agenda dentro de serviços"
+                    description="Explique como o agendamento funciona sem abrir um fluxo separado."
+                  />
+                  <div className="admin-config-grid">
+                    <label className="persona-field">
+                      <span className="persona-label">Título da agenda</span>
+                      <input
+                        className="persona-input"
+                        value={schedulingConfig.title ?? ''}
+                        onChange={(event) => setSchedulingConfig((currentConfig) => ({ ...currentConfig, title: event.target.value }))}
+                        placeholder="Ex.: Vamos organizar seu atendimento"
+                      />
+                    </label>
+                    <label className="persona-field admin-config-grid-span">
+                      <span className="persona-label">Descrição da agenda</span>
+                      <textarea
+                        className="persona-input persona-textarea"
+                        value={schedulingConfig.description ?? ''}
+                        onChange={(event) => setSchedulingConfig((currentConfig) => ({ ...currentConfig, description: event.target.value }))}
+                        placeholder="Explique como funciona o agendamento, quais informações você precisa e como conduz o próximo passo."
+                        rows={3}
+                      />
+                    </label>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </details>
+          ) : null}
+
+          {businessModel === 'professional' ? (
+          <details className="admin-config-section" open>
+            <summary className="admin-config-section-title">Atendimento crítico</summary>
+            <div className="admin-config-section-body">
+              <HintBox
+                compact
+                icon="🚨"
+                title="Emergência dentro do modo profissional"
+                description="Ative a triagem guiada sem transformar essa marca em uma operação comercial agressiva."
+              />
+              <div className="persona-toggle-row">
+                <button type="button" className={`persona-toggle ${modes.emergency ? 'selected' : ''}`} onClick={() => handleModeToggle('emergency')}>
+                  Fluxo de emergência ativo
+                </button>
+              </div>
+              {modes.emergency ? (
+                <div className="persona-style-grid">
+                  {emergencyTypeOptions.map((option) => {
+                    const isSelected = emergencyType === option.value
+
+                    return (
+                      <button key={option.value} type="button" className={`persona-style-card ${isSelected ? 'selected' : ''}`} onClick={() => setEmergencyType(option.value)}>
+                        <strong>
+                          {option.emoji} {option.label}
+                        </strong>
+                        <span>{option.description}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              ) : null}
+            </div>
+          </details>
+          ) : null}
 
           <div className="admin-config-actions admin-config-actions--save">
             <button type="button" className="persona-submit" onClick={handleSaveBrandConfiguration}>

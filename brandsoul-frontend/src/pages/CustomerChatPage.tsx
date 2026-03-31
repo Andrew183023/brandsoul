@@ -13,8 +13,8 @@ import { buildApiUrl } from '../lib/api'
 import { getBusinessStatus } from '../lib/businessStatus'
 import { buildCatalogSummary, CATALOG_STORAGE_KEY, loadCatalogItems } from '../lib/catalog'
 import { fetchPublicBrand } from '../lib/publicBrandApi'
-import { loadBrandPersona, PERSONA_STORAGE_KEY, type BrandPersona } from '../lib/persona'
-import { buildWhatsAppMessage, buildWhatsAppUrl, normalizeWhatsAppNumber } from '../lib/whatsapp'
+import { loadBrandPersona, PERSONA_STORAGE_KEY, type BrandFeatures, type BrandPersona, type BusinessModelOption, type SparkModes } from '../lib/persona'
+import { buildWhatsAppMessage, buildWhatsAppUrl, formatSummaryForWhatsApp, normalizeWhatsAppNumber } from '../lib/whatsapp'
 import {
   buildSparkMemorySummary,
   getSparkMemoryStorageKey,
@@ -29,9 +29,17 @@ import type { CatalogItem } from '../types/catalog'
 import '../App.css'
 
 type SparkState = 'idle' | 'thinking' | 'speaking'
+type CustomerMode = 'sales' | 'service' | 'scheduling' | 'emergency'
 
 interface ChannelResponseMetadata {
   detected_intent?: string
+  flow_closed?: boolean
+  case_summary?: {
+    tipo?: string
+    dados?: string[]
+    evidencias?: string[]
+    passos?: string[]
+  }
 }
 
 interface ChannelMessageResponse {
@@ -52,13 +60,20 @@ interface PageHighlightsSummary {
   has_new_arrivals: boolean
 }
 
+interface CaseSummary {
+  tipo?: string
+  dados?: string[]
+  evidencias?: string[]
+  passos?: string[]
+}
+
 const USER_ID_STORAGE_KEY = 'brandsoul_user_id'
 const BOOTSTRAP_LOCK_KEY = 'brandsoul_bootstrap_lock'
 const BOOTSTRAP_LOCK_MAX_AGE = 8000
 const BOOTSTRAP_ERROR_MESSAGE = 'Tive um ruído aqui agora. Me chama de novo que eu volto.'
 
-function getCustomerMessageStorageKey(brandSlug?: string) {
-  return brandSlug ? `brandsoul_messages:customer:web:${brandSlug}` : 'brandsoul_messages:customer:web'
+function getCustomerMessageStorageKey(brandSlug?: string, mode: CustomerMode = 'service') {
+  return brandSlug ? `brandsoul_messages:customer:web:${brandSlug}:${mode}` : `brandsoul_messages:customer:web:${mode}`
 }
 
 function loadMessages(storageKey: string): Message[] {
@@ -112,6 +127,14 @@ function releaseBootstrapLock() {
 }
 
 function buildCustomerHeadline(persona: BrandPersona) {
+  if (resolveBusinessModel(persona) === 'professional') {
+    return 'Presença profissional, orientação inicial e resposta com clareza.'
+  }
+
+  if (resolveBusinessModel(persona) === 'service') {
+    return 'Atendimento claro, contexto rápido e próximos passos bem guiados.'
+  }
+
   if (persona.tone === 'ousado') {
     return 'Agora você está falando comigo.'
   }
@@ -128,6 +151,14 @@ function buildCustomerHeadline(persona: BrandPersona) {
 }
 
 function buildCustomerSubtext(persona: BrandPersona) {
+  if (resolveBusinessModel(persona) === 'professional') {
+    return 'Eu organizo o primeiro entendimento do caso, explico cenários e te ajudo a dar o próximo passo com mais segurança.'
+  }
+
+  if (resolveBusinessModel(persona) === 'service') {
+    return 'Posso entender sua demanda, explicar como funciona e organizar atendimento, disponibilidade ou próximos passos.'
+  }
+
   if (persona.deliveryAvailable) {
     return 'Posso te ajudar com pedidos, dúvidas ou o que você precisar.'
   }
@@ -176,6 +207,14 @@ function buildBrandCategory(persona: BrandPersona) {
 }
 
 function buildCatalogIntro(persona: BrandPersona) {
+  if (resolveBusinessModel(persona) === 'professional') {
+    return 'Aqui o foco está em atuação, conteúdo e orientação inicial.'
+  }
+
+  if (resolveBusinessModel(persona) === 'service') {
+    return 'Aqui você encontra os serviços ativos e pode falar comigo para entender o melhor caminho.'
+  }
+
   if (persona.tone === 'ousado') {
     return 'Posso te mostrar o que faz mais sentido sem enrolar.'
   }
@@ -191,13 +230,153 @@ function buildItemMessage(item: CatalogItem) {
   return `Quero saber mais sobre ${item.name}`
 }
 
+function createDefaultModes(): SparkModes {
+  return {
+    sales: true,
+    service: true,
+    scheduling: false,
+    emergency: false,
+  }
+}
+
+function resolveBusinessModel(persona: BrandPersona | null): BusinessModelOption {
+  if (!persona) {
+    return 'product'
+  }
+
+  if (persona.businessModel) {
+    return persona.businessModel
+  }
+
+  return persona.brandType === 'professional' ? 'professional' : 'product'
+}
+
+function resolveFeatures(persona: BrandPersona | null): BrandFeatures {
+  const businessModel = resolveBusinessModel(persona)
+  const storedFeatures = persona?.features
+
+  return {
+    products: storedFeatures?.products ?? (businessModel === 'product'),
+    services: storedFeatures?.services ?? (businessModel === 'service' || businessModel === 'professional'),
+    scheduling: storedFeatures?.scheduling ?? (businessModel === 'service'),
+    emergency: storedFeatures?.emergency ?? (businessModel === 'professional'),
+  }
+}
+
+function getAvailableModes(persona: BrandPersona | null): CustomerMode[] {
+  const modes = persona?.modes ?? createDefaultModes()
+  const features = resolveFeatures(persona)
+  const nextModes: CustomerMode[] = []
+
+  if (modes.service || features.services) {
+    nextModes.push('service')
+  }
+  if (modes.sales || features.products) {
+    nextModes.push('sales')
+  }
+  if (modes.scheduling || features.scheduling) {
+    nextModes.push('scheduling')
+  }
+  if (modes.emergency || features.emergency) {
+    nextModes.push('emergency')
+  }
+
+  return nextModes.length > 0 ? nextModes : ['service']
+}
+
+function getDefaultMode(persona: BrandPersona | null): CustomerMode {
+  const availableModes = getAvailableModes(persona)
+  if (availableModes.includes('service')) {
+    return 'service'
+  }
+
+  return availableModes[0]
+}
+
+function buildModeHeadline(mode: CustomerMode) {
+  switch (mode) {
+    case 'emergency':
+      return 'Modo crítico ativo'
+    case 'scheduling':
+      return 'Vamos organizar isso'
+    case 'sales':
+      return 'Posso te orientar na escolha'
+    default:
+      return 'Falar comigo'
+  }
+}
+
+function buildModeSubtext(mode: CustomerMode) {
+  switch (mode) {
+    case 'emergency':
+      return 'Eu vou conduzir por etapas, coletar os fatos principais e organizar um dossiê inicial.'
+    case 'scheduling':
+      return 'Posso coletar o contexto, entender disponibilidade e puxar os próximos passos.'
+    case 'sales':
+      return 'Se você quiser, eu posso te conduzir com foco mais comercial e direto.'
+    default:
+      return 'Me chama por aqui e eu te acompanho no que você precisar.'
+  }
+}
+
 function buildPersonaPayload(persona: BrandPersona) {
+  const businessModel = resolveBusinessModel(persona)
+  const features = resolveFeatures(persona)
+
   return {
     tone: persona.tone,
     power: persona.power,
+    business_model: businessModel,
+    brand_type: businessModel === 'professional' ? 'professional' : persona.brandType || 'business',
+    features,
     voice_style: persona.voiceStyle,
     act_mode: persona.actMode || 'seller',
     business_goal: persona.businessGoal || 'volume',
+    modes: persona.modes || createDefaultModes(),
+    emergency_type: persona.emergencyType || undefined,
+    service_offers: features.services
+      ? (persona.serviceOffers ?? []).map((item) => ({
+          title: item.title,
+          summary: item.summary,
+          label: item.label,
+        }))
+      : undefined,
+    scheduling_config: features.scheduling
+      ? {
+          title: persona.schedulingConfig?.title,
+          description: persona.schedulingConfig?.description,
+        }
+      : undefined,
+    professional_data:
+      businessModel === 'professional'
+        ? {
+            operation_mode: persona.professionalData?.operationMode,
+            presentation: persona.professionalData?.presentation,
+            practice_areas: persona.professionalData?.practiceAreas,
+            differentials: persona.professionalData?.differentials,
+            cases: persona.professionalData?.cases?.map((item) => ({
+              case_type: item.caseType,
+              context: item.context,
+              approach: item.approach,
+              learning: item.learning,
+            })),
+            contents: persona.professionalData?.contents,
+            identity: persona.professionalData?.identity,
+            guidance: persona.professionalData?.guidance
+              ? {
+                  situation_type: persona.professionalData.guidance.situationType,
+                  initial_response: persona.professionalData.guidance.initialResponse,
+                  initial_questions: persona.professionalData.guidance.initialQuestions,
+                  action_checklist: persona.professionalData.guidance.actionChecklist,
+                  data_collection: persona.professionalData.guidance.dataCollection,
+                  orientation_limits: persona.professionalData.guidance.orientationLimits,
+                  communication_tone: persona.professionalData.guidance.communicationTone,
+                  closing_message: persona.professionalData.guidance.closingMessage,
+                  playbooks: persona.professionalData.guidance.playbooks,
+                }
+              : undefined,
+          }
+        : undefined,
     business_description: persona.businessDescription || undefined,
     opening_hours: persona.openingHours,
     address: persona.address || undefined,
@@ -253,8 +432,21 @@ function buildCustomerThemeStyle(persona: BrandPersona): CSSProperties {
   } as CSSProperties
 }
 
+function hasProfessionalContent(persona: BrandPersona) {
+  return Boolean(
+    persona.professionalData?.presentation ||
+      persona.professionalData?.practiceAreas?.length ||
+      persona.professionalData?.differentials?.length ||
+      persona.professionalData?.cases?.length ||
+      persona.professionalData?.contents?.length ||
+      persona.professionalData?.identity?.headline ||
+      persona.professionalData?.identity?.principles?.length,
+  )
+}
+
 export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) {
-  const customerMessagesStorageKey = useMemo(() => getCustomerMessageStorageKey(brandSlug), [brandSlug])
+  const [activeMode, setActiveMode] = useState<CustomerMode>(() => getDefaultMode(brandSlug ? null : loadBrandPersona()))
+  const customerMessagesStorageKey = useMemo(() => getCustomerMessageStorageKey(brandSlug, activeMode), [activeMode, brandSlug])
   const [persona, setPersona] = useState<BrandPersona | null>(() => (brandSlug ? null : loadBrandPersona()))
   const userId = useMemo(() => getOrCreateUserId(), [])
   const [messages, setMessages] = useState<Message[]>(() => loadMessages(customerMessagesStorageKey))
@@ -268,6 +460,9 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
   const [selectedItem, setSelectedItem] = useState<CatalogItem | null>(null)
   const [mobileSection, setMobileSection] = useState<'catalog' | 'chat'>('catalog')
   const [activeCarouselIndex, setActiveCarouselIndex] = useState(0)
+  const [guidanceConsentState, setGuidanceConsentState] = useState<'pending' | 'accepted' | 'declined'>('declined')
+  const [caseSummary, setCaseSummary] = useState<CaseSummary | null>(null)
+  const [isGuidanceFlowClosed, setIsGuidanceFlowClosed] = useState(false)
   const introPulseTimeoutRef = useRef<number | null>(null)
   const hasBootstrappedRef = useRef(messages.length > 0)
   const sparkMemoryStorageKey = useMemo(
@@ -277,9 +472,9 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
         tone: persona?.tone ?? 'divertido',
         power: persona?.power ?? 'atração',
         contextMode: 'customer',
-        channelMode: 'web',
+        channelMode: `web:${activeMode}`,
       }),
-    [persona],
+    [activeMode, persona],
   )
   const [sparkMemory, setSparkMemory] = useState<SparkMemory>(() => loadSparkMemory(sparkMemoryStorageKey))
   const memorySummary = useMemo(() => buildSparkMemorySummary(sparkMemory), [sparkMemory])
@@ -317,6 +512,23 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
       has_new_arrivals: hasNewArrivals,
     }
   }, [newArrivalItems.length, promotionItems.length, showNewArrivals, showPromotions])
+  const businessModel = useMemo(() => resolveBusinessModel(persona), [persona])
+  const activeFeatures = useMemo(() => resolveFeatures(persona), [persona])
+  const availableModes = useMemo(() => getAvailableModes(persona), [persona])
+  const emergencyEnabled = availableModes.includes('emergency')
+  const isEmergencyMode = activeMode === 'emergency'
+  const isProfessionalBrand = businessModel === 'professional'
+  const professionalOperationMode = persona?.professionalData?.operationMode ?? 'institutional'
+  const isProfessionalGuidanceMode = isProfessionalBrand && persona?.professionalData?.operationMode === 'guidance'
+  const guidanceNeedsConsent = isProfessionalGuidanceMode && guidanceConsentState === 'pending'
+  const showProductsSection = activeFeatures.products && !isProfessionalBrand && !isEmergencyMode
+  const showServicesSection = activeFeatures.services && !isProfessionalBrand && !isEmergencyMode
+  const hasDiscoverySection = showProductsSection || showServicesSection
+  const serviceOffers = useMemo(
+    () => (persona?.serviceOffers ?? []).filter((item) => item.title.trim() || item.summary.trim() || (item.label ?? '').trim()),
+    [persona?.serviceOffers],
+  )
+  const showProfessionalSections = Boolean(persona && isProfessionalBrand && hasProfessionalContent(persona))
 
   useEffect(() => {
     if (!persona?.theme) {
@@ -345,6 +557,27 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
   }, [persona])
 
   useEffect(() => {
+    if (persona?.professionalData?.operationMode === 'guidance') {
+      setGuidanceConsentState('pending')
+      setIsGuidanceFlowClosed(false)
+      setCaseSummary(null)
+      return
+    }
+
+    setGuidanceConsentState('declined')
+    setIsGuidanceFlowClosed(false)
+    setCaseSummary(null)
+  }, [persona?.professionalData?.operationMode, brandSlug])
+
+  useEffect(() => {
+    if (availableModes.includes(activeMode)) {
+      return
+    }
+
+    setActiveMode(getDefaultMode(persona))
+  }, [activeMode, availableModes, persona])
+
+  useEffect(() => {
     const nextMessages = loadMessages(customerMessagesStorageKey)
     setMessages(nextMessages)
     hasBootstrappedRef.current = nextMessages.length > 0
@@ -369,6 +602,7 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
 
         setPersona(publicBrand.spark)
         setCatalogItems(publicBrand.catalog)
+        setActiveMode(getDefaultMode(publicBrand.spark))
         setPublicBrandStatus('ready')
       } catch (error) {
         if (!isMounted) {
@@ -397,6 +631,7 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
     const syncPublicData = () => {
       const nextPersona = loadBrandPersona()
       setPersona(nextPersona)
+      setActiveMode((currentMode) => (getAvailableModes(nextPersona).includes(currentMode) ? currentMode : getDefaultMode(nextPersona)))
 
       const configuredCatalog = loadCatalogItems()
       setCatalogItems(configuredCatalog.length > 0 ? configuredCatalog : mockCatalog)
@@ -500,6 +735,8 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
         user_id: userId,
         brand_name: persona.brandName,
         ...(brandSlug ? { tenant_slug: brandSlug } : {}),
+        mode: activeMode,
+        guidance_consent: guidanceConsentState === 'accepted',
         message: '',
         persona: buildPersonaPayload(persona),
         messages: [],
@@ -511,9 +748,9 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
         },
         ...(businessStatus ? { business_status: businessStatus } : {}),
         ...(buildSparkMemorySummary(nextSparkMemory) ? { memory_summary: buildSparkMemorySummary(nextSparkMemory) } : {}),
-        ...(catalogSummary.length > 0 ? { catalog_summary: catalogSummary } : {}),
+        ...(!isEmergencyMode && activeFeatures.products && catalogSummary.length > 0 ? { catalog_summary: catalogSummary } : {}),
         ...(locationSummary ? { location_summary: locationSummary } : {}),
-        ...(pageHighlights ? { page_highlights: pageHighlights } : {}),
+        ...(!isEmergencyMode && pageHighlights ? { page_highlights: pageHighlights } : {}),
       })
 
       if (bootstrapRequestIdRef.current !== requestId) {
@@ -521,6 +758,8 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
       }
 
       setMessages([{ role: 'ai', content: result.data.response }])
+      setCaseSummary(result.data.metadata?.case_summary ?? null)
+      setIsGuidanceFlowClosed(result.data.metadata?.flow_closed === true)
       setSparkState('speaking')
       scheduleSparkReset('speaking')
       triggerIntroPulse()
@@ -550,6 +789,10 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
       return
     }
 
+    if (isProfessionalGuidanceMode && guidanceConsentState === 'pending') {
+      return
+    }
+
     if (!hasBootstrappedRef.current && messages.length === 0) {
       hasBootstrappedRef.current = true
       void startConversation()
@@ -564,7 +807,7 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
         window.clearTimeout(introPulseTimeoutRef.current)
       }
     }
-  }, [messages.length, persona, publicBrandStatus])
+  }, [guidanceConsentState, isProfessionalGuidanceMode, messages.length, persona, publicBrandStatus])
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -602,6 +845,8 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
         user_id: userId,
         brand_name: persona.brandName,
         ...(brandSlug ? { tenant_slug: brandSlug } : {}),
+        mode: activeMode,
+        guidance_consent: guidanceConsentState === 'accepted' && !isGuidanceFlowClosed,
         message: trimmedMessage,
         persona: buildPersonaPayload(persona),
         messages,
@@ -612,12 +857,18 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
         },
         ...(businessStatus ? { business_status: businessStatus } : {}),
         ...(memorySummary ? { memory_summary: memorySummary } : {}),
-        ...(catalogSummary.length > 0 ? { catalog_summary: catalogSummary } : {}),
+        ...(!isEmergencyMode && activeFeatures.products && catalogSummary.length > 0 ? { catalog_summary: catalogSummary } : {}),
         ...(locationSummary ? { location_summary: locationSummary } : {}),
-        ...(pageHighlights ? { page_highlights: pageHighlights } : {}),
+        ...(!isEmergencyMode && pageHighlights ? { page_highlights: pageHighlights } : {}),
       })
 
       setMessages((previousMessages) => [...previousMessages, { role: 'ai', content: result.data.response }])
+      if (result.data.metadata?.case_summary) {
+        setCaseSummary(result.data.metadata.case_summary)
+      }
+      if (result.data.metadata?.flow_closed === true) {
+        setIsGuidanceFlowClosed(true)
+      }
       setSparkState(result.data.spark_state)
       scheduleSparkReset(result.data.spark_state)
       persistSparkMemory((currentMemory) =>
@@ -642,11 +893,39 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
 
   const handleCatalogAction = async (item: CatalogItem) => {
     setMobileSection('chat')
+    setActiveMode((currentMode) => (currentMode === 'emergency' ? 'service' : currentMode))
     await sendUserMessage(buildItemMessage(item))
+  }
+
+  const handleModeChange = (mode: CustomerMode) => {
+    setSelectedItem(null)
+    setMobileSection('chat')
+    setActiveMode(mode)
+  }
+
+  const handleEmergencyMode = () => {
+    if (!emergencyEnabled) {
+      return
+    }
+
+    handleModeChange('emergency')
   }
 
   const handleWhatsAppOpen = (item?: CatalogItem | null) => {
     const url = buildWhatsAppUrl(whatsappNumber, buildWhatsAppMessage(item))
+    if (!url) {
+      return
+    }
+
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
+  const handleSummaryForward = () => {
+    if (!caseSummary || !whatsappNumber) {
+      return
+    }
+
+    const url = buildWhatsAppUrl(whatsappNumber, formatSummaryForWhatsApp(caseSummary))
     if (!url) {
       return
     }
@@ -722,18 +1001,151 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
             <BrandSpark brandName={persona.brandName} state={sparkState} tone={persona.tone} power={persona.power} logo={persona.logo} />
           </div>
         </div>
+
+        {emergencyEnabled ? (
+          <div className="customer-emergency-strip">
+            <div className="customer-emergency-copy">
+              <strong>{isProfessionalBrand ? 'Precisa de ajuda agora?' : 'Tive um problema agora'}</strong>
+              <span>
+                {isProfessionalBrand
+                  ? 'Se precisar, eu entro em triagem inicial, organizo o contexto e preparo os próximos passos.'
+                  : 'Se precisar, eu mudo o fluxo e passo a conduzir essa conversa como ocorrência.'}
+              </span>
+            </div>
+            <button type="button" className={`customer-emergency-button ${activeMode === 'emergency' ? 'active' : ''}`} onClick={handleEmergencyMode}>
+              {activeMode === 'emergency' ? 'Modo crítico ativo' : isProfessionalBrand ? 'Precisa de ajuda agora?' : 'Tive um problema agora'}
+            </button>
+          </div>
+        ) : null}
+
+        {isProfessionalBrand ? (
+          <div className="professional-compliance-note">
+            Orientação inicial informativa. A análise jurídica completa é realizada por advogado.
+          </div>
+        ) : null}
       </section>
+
+      {isProfessionalGuidanceMode ? (
+        <section className="customer-highlight-section" aria-label="Consentimento para orientação inicial">
+          <div className="customer-section-heading">
+            <span className="catalog-kicker">Modo de orientação</span>
+            <h2>Você deseja receber uma orientação inicial baseada em diretrizes profissionais?</h2>
+          </div>
+          <div className="professional-grid">
+            <article className="professional-card">
+              <span className="professional-label">Antes de iniciar</span>
+              <p>
+                {guidanceConsentState === 'accepted'
+                  ? 'Orientação inicial ativada. Vou te conduzir com clareza, calma e limite profissional.'
+                  : guidanceConsentState === 'declined'
+                    ? 'Você optou por seguir sem orientação inicial. A conversa continua em modo profissional informativo.'
+                    : 'Essa orientação tem caráter informativo e não substitui a análise completa de um profissional.'}
+              </p>
+              <div className="persona-toggle-row">
+                <button
+                  type="button"
+                  className={`persona-toggle ${guidanceConsentState === 'accepted' ? 'selected' : ''}`}
+                  onClick={() => {
+                    setGuidanceConsentState('accepted')
+                    if (messages.length === 0) {
+                      hasBootstrappedRef.current = true
+                      void startConversation(true)
+                    }
+                  }}
+                >
+                  Aceitar orientação
+                </button>
+                <button type="button" className={`persona-toggle subtle ${guidanceConsentState === 'declined' ? 'selected' : ''}`} onClick={() => setGuidanceConsentState('declined')}>
+                  Continuar sem orientação
+                </button>
+              </div>
+            </article>
+          </div>
+        </section>
+      ) : null}
+
+      {caseSummary ? (
+        <section className="customer-highlight-section" aria-label="Resumo do seu caso">
+          <div className="customer-section-heading">
+            <span className="catalog-kicker">Resumo do seu caso</span>
+            <h2>Organizei um dossiê simples para facilitar o próximo passo.</h2>
+          </div>
+          <div className="professional-grid">
+            <article className="professional-card">
+              <span className="professional-label">Situação identificada</span>
+              <strong>{caseSummary.tipo || 'Orientação inicial'}</strong>
+            </article>
+            <article className="professional-card">
+              <span className="professional-label">Informações coletadas</span>
+              {(caseSummary.dados ?? []).length > 0 ? (
+                <ul className="customer-summary-list">
+                  {(caseSummary.dados ?? []).map((item, index) => (
+                    <li key={`dados-${index}`}>{item}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p>Ainda não organizei pontos suficientes para esse resumo.</p>
+              )}
+            </article>
+            <article className="professional-card">
+              <span className="professional-label">Evidências registradas</span>
+              {(caseSummary.evidencias ?? []).length > 0 ? (
+                <ul className="customer-summary-list">
+                  {(caseSummary.evidencias ?? []).map((item, index) => (
+                    <li key={`evidencias-${index}`}>{item}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p>Nenhuma evidência foi citada até aqui.</p>
+              )}
+            </article>
+            <article className="professional-card">
+              <span className="professional-label">Próximos passos sugeridos</span>
+              {(caseSummary.passos ?? []).length > 0 ? (
+                <ul className="customer-summary-list">
+                  {(caseSummary.passos ?? []).map((item, index) => (
+                    <li key={`passos-${index}`}>{item}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p>O próximo passo principal é levar esse contexto para análise profissional.</p>
+              )}
+            </article>
+          </div>
+          <div className="persona-toggle-row">
+            <button type="button" className="persona-toggle selected" onClick={handleSummaryForward} disabled={!whatsappNumber}>
+              Encaminhar para profissional
+            </button>
+            <button type="button" className="persona-toggle subtle" disabled>
+              Baixar resumo
+            </button>
+            <button
+              type="button"
+              className="persona-toggle subtle"
+              onClick={() => {
+                setGuidanceConsentState('declined')
+                setIsGuidanceFlowClosed(false)
+                setMobileSection('chat')
+              }}
+            >
+              Continuar conversa
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       <section className="customer-mobile-nav" aria-label="Navegação da experiência">
-        <button type="button" className={`customer-mobile-toggle ${mobileSection === 'catalog' ? 'active' : ''}`} onClick={() => setMobileSection('catalog')}>
-          Explorar opções
-        </button>
-        <button type="button" className={`customer-mobile-toggle ${mobileSection === 'chat' ? 'active' : ''}`} onClick={() => setMobileSection('chat')}>
-          Falar comigo
+        {hasDiscoverySection ? (
+          <button type="button" className={`customer-mobile-toggle ${mobileSection === 'catalog' ? 'active' : ''}`} onClick={() => setMobileSection('catalog')}>
+            {showProductsSection && showServicesSection ? 'Produtos e serviços' : showServicesSection ? 'Serviços' : 'Explorar opções'}
+          </button>
+        ) : null}
+        <button type="button" className={`customer-mobile-toggle ${mobileSection === 'chat' || isEmergencyMode ? 'active' : ''}`} onClick={() => setMobileSection('chat')}>
+          {isEmergencyMode ? 'Fluxo crítico' : 'Falar comigo'}
         </button>
       </section>
 
-      {showCarousel && persona.carouselImages ? (
+      {showProductsSection && showCarousel && persona.carouselImages ? (
         <section className="customer-highlight-section customer-carousel-section" aria-label="Destaques visuais da marca">
           <div className="customer-section-heading">
             <span className="catalog-kicker">Destaques</span>
@@ -762,7 +1174,7 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
         </section>
       ) : null}
 
-      {showPromotions && promotionItems.length > 0 ? (
+      {showProductsSection && showPromotions && promotionItems.length > 0 ? (
         <section className="customer-highlight-section" aria-label="Promoções em destaque">
           <div className="customer-section-heading">
             <span className="catalog-kicker">Promoções em destaque</span>
@@ -776,7 +1188,7 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
         </section>
       ) : null}
 
-      {showNewArrivals && newArrivalItems.length > 0 ? (
+      {showProductsSection && showNewArrivals && newArrivalItems.length > 0 ? (
         <section className="customer-highlight-section" aria-label="Novidades">
           <div className="customer-section-heading">
             <span className="catalog-kicker">Novidades</span>
@@ -790,9 +1202,129 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
         </section>
       ) : null}
 
-      <section className={`catalog-section customer-section ${mobileSection === 'chat' ? 'mobile-collapsed' : ''}`} aria-label="Catálogo da marca">
+      {showProfessionalSections ? (
+        <>
+          <section className="customer-highlight-section" aria-label="Perfil profissional">
+            <div className="customer-section-heading">
+              <span className="catalog-kicker">Perfil profissional</span>
+              <h2>{persona.professionalData?.presentation || 'Atuação técnica com presença clara e responsável.'}</h2>
+            </div>
+            <div className="professional-grid">
+              {(persona.professionalData?.practiceAreas ?? []).slice(0, 5).map((area) => (
+                <div key={area} className="professional-card professional-card--chip">
+                  <span className="professional-label">Em destaque</span>
+                  <strong>{area}</strong>
+                </div>
+              ))}
+              {(persona.professionalData?.differentials ?? []).slice(0, 3).map((differential) => (
+                <div key={differential} className="professional-card">
+                  <span className="professional-label">Mais ativo</span>
+                  <p>{differential}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          {professionalOperationMode === 'authority' && (persona.professionalData?.cases?.length ?? 0) > 0 ? (
+            <section className="customer-highlight-section" aria-label="Casos e atuação profissional">
+              <div className="customer-section-heading">
+                <span className="catalog-kicker">Casos e atuação profissional</span>
+                <h2>Uma leitura clara de contextos, abordagem e condução profissional.</h2>
+              </div>
+              <div className="professional-grid">
+                {persona.professionalData?.cases?.slice(0, 3).map((item, index) => (
+                  <article key={`${item.caseType}-${index}`} className="professional-card">
+                    <span className="professional-label">{index === 0 ? 'Em destaque' : 'Atuação profissional'}</span>
+                    <strong>{item.caseType}</strong>
+                    <p>{item.context}</p>
+                    <p>{item.approach}</p>
+                    {item.learning ? <p>{item.learning}</p> : null}
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {professionalOperationMode === 'authority' && (persona.professionalData?.contents?.length ?? 0) > 0 ? (
+            <section className="customer-highlight-section" aria-label="Conteúdos e posicionamento">
+              <div className="customer-section-heading">
+                <span className="catalog-kicker">Conteúdos e posicionamento</span>
+                <h2>Conteúdo útil para orientar, explicar e construir confiança com naturalidade.</h2>
+              </div>
+              <div className="professional-grid">
+                {persona.professionalData?.contents?.slice(0, 3).map((item, index) => (
+                  <article key={`${item.title}-${index}`} className="professional-card">
+                    <span className="professional-label">{index === 0 ? 'Conteúdo relevante' : 'Posicionamento'}</span>
+                    <strong>{item.title}</strong>
+                    <p>{item.summary}</p>
+                    {item.stance ? <p>{item.stance}</p> : null}
+                  </article>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {(persona.professionalData?.identity?.headline || persona.professionalData?.identity?.principles?.length) ? (
+            <section className="customer-highlight-section" aria-label="Identidade profissional">
+              <div className="customer-section-heading">
+                <span className="catalog-kicker">Identidade profissional</span>
+                <h2>{persona.professionalData?.identity?.headline || 'Princípios que sustentam a atuação.'}</h2>
+              </div>
+              <div className="professional-grid">
+                {(persona.professionalData?.identity?.principles ?? []).slice(0, 5).map((principle) => (
+                  <div key={principle} className="professional-card professional-card--chip">
+                    <span className="professional-label">Princípio</span>
+                    <strong>{principle}</strong>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+        </>
+      ) : null}
+
+      {showServicesSection ? (
+      <section className={`customer-highlight-section customer-section ${mobileSection === 'chat' ? 'mobile-collapsed' : ''}`} aria-label="Serviços da marca">
         <div className="catalog-copy">
-          <span className="catalog-kicker">Explorar opções</span>
+          <span className="catalog-kicker">Serviços</span>
+          <h2>Entenda como essa marca atua e encontre a melhor frente para o seu contexto.</h2>
+          <p>{buildCatalogIntro(persona)}</p>
+        </div>
+
+        <div className="professional-grid">
+          {serviceOffers.length > 0 ? (
+            serviceOffers.map((item, index) => (
+              <article key={`${item.title}-${index}`} className="professional-card">
+                <span className="professional-label">{item.label?.trim() || (index === 0 ? 'Em destaque' : 'Atendimento')}</span>
+                <strong>{item.title}</strong>
+                <p>{item.summary}</p>
+              </article>
+            ))
+          ) : (
+            <article className="professional-card">
+              <span className="professional-label">Atendimento</span>
+              <strong>{persona.brandName}</strong>
+              <p>{persona.businessDescription || 'Essa marca atende por contexto, conversa com clareza e organiza o próximo passo com você.'}</p>
+            </article>
+          )}
+        </div>
+      </section>
+      ) : null}
+
+      {activeFeatures.scheduling && !isProfessionalBrand && !isEmergencyMode ? (
+      <section className={`customer-highlight-section customer-section ${mobileSection === 'chat' ? 'mobile-collapsed' : ''}`} aria-label="Agendamento">
+        <div className="catalog-copy">
+          <span className="catalog-kicker">Agenda</span>
+          <h2>{persona.schedulingConfig?.title || 'Se quiser, eu também posso conduzir o agendamento.'}</h2>
+          <p>{persona.schedulingConfig?.description || 'Me chama no chat para eu coletar o contexto, entender disponibilidade e te guiar até o próximo passo.'}</p>
+        </div>
+      </section>
+      ) : null}
+
+      {showProductsSection ? (
+      <section className={`catalog-section customer-section ${mobileSection === 'chat' || isEmergencyMode ? 'mobile-collapsed' : ''}`} aria-label="Catálogo da marca">
+        <div className="catalog-copy">
+          <span className="catalog-kicker">{showServicesSection ? 'Produtos' : 'Explorar opções'}</span>
           <h2>Escolha uma opção ou fale comigo para eu te ajudar a encontrar o melhor para você.</h2>
           <p>{buildCatalogIntro(persona)}</p>
         </div>
@@ -803,11 +1335,33 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
           ))}
         </div>
       </section>
+      ) : null}
 
-      <section className={`customer-chat-card customer-section ${mobileSection === 'catalog' ? 'mobile-collapsed' : ''}`}>
+      <section className={`customer-chat-card customer-section ${mobileSection === 'catalog' && !isEmergencyMode && hasDiscoverySection ? 'mobile-collapsed' : ''}`}>
         <div className="customer-chat-intro">
-          <span className="catalog-kicker">Falar comigo</span>
-          <h2>Me chama por aqui e eu te acompanho na escolha.</h2>
+          <span className="catalog-kicker">{buildModeHeadline(activeMode)}</span>
+          <h2>{buildModeSubtext(activeMode)}</h2>
+          {isProfessionalGuidanceMode && guidanceConsentState === 'accepted' && messages.length > 0 ? (
+            <p className="brand-subtext">
+              {isGuidanceFlowClosed
+                ? 'Fluxo inicial concluído. Agora você pode encaminhar o resumo ou seguir a conversa em modo normal.'
+                : 'Estou te guiando com base em diretrizes profissionais para te ajudar neste momento.'}
+            </p>
+          ) : null}
+          {availableModes.length > 1 ? (
+            <div className="customer-mode-row">
+              {availableModes.filter((mode) => mode !== 'emergency').map((mode) => (
+                <button key={mode} type="button" className={`customer-mode-chip ${activeMode === mode ? 'active' : ''}`} onClick={() => handleModeChange(mode)}>
+                  {mode === 'sales' ? 'Vendas' : mode === 'scheduling' ? 'Agendamento' : 'Atendimento'}
+                </button>
+              ))}
+              {emergencyEnabled ? (
+                <button type="button" className={`customer-mode-chip customer-mode-chip--emergency ${activeMode === 'emergency' ? 'active' : ''}`} onClick={handleEmergencyMode}>
+                  Emergência
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <section className="chat-panel customer-chat-panel">
@@ -821,10 +1375,11 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
               value={message}
               onChange={(event) => setMessage(event.target.value)}
               onFocus={() => setMobileSection('chat')}
-              placeholder="Me chama aqui..."
+              placeholder={guidanceNeedsConsent ? 'Primeiro escolha se quer ativar a orientação inicial.' : 'Me chama aqui...'}
               autoComplete="off"
+              disabled={guidanceNeedsConsent}
             />
-            <button type="submit" disabled={isLoading || !message.trim()}>
+            <button type="submit" disabled={guidanceNeedsConsent || isLoading || !message.trim()}>
               {isLoading ? 'Ja te respondo...' : 'Enviar'}
             </button>
           </div>

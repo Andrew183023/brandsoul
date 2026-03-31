@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
+import axios from 'axios'
 
 import { registerAccount } from '../lib/auth'
 import { navigateTo } from '../lib/persona'
@@ -17,21 +18,73 @@ export default function RegisterPage() {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    const normalizedName = name.trim()
+    const normalizedEmail = email.trim()
+    const normalizedTenantName = tenantName.trim()
+
+    if (normalizedName.length < 2) {
+      setErrorMessage('Informe seu nome com pelo menos 2 caracteres.')
+      return
+    }
+
+    if (normalizedEmail.length < 5) {
+      setErrorMessage('Informe um email válido.')
+      return
+    }
+
+    if (password.length < 8) {
+      setErrorMessage('Sua senha precisa ter pelo menos 8 caracteres.')
+      return
+    }
+
+    if (normalizedTenantName.length < 2) {
+      setErrorMessage('Informe o nome da empresa com pelo menos 2 caracteres.')
+      return
+    }
+
     setIsSubmitting(true)
     setErrorMessage('')
 
     try {
       const session = await registerAccount({
-        name,
-        email,
+        name: normalizedName,
+        email: normalizedEmail,
         password,
-        tenant_name: tenantName,
+        tenant_name: normalizedTenantName,
         business_model: businessModel,
       })
       saveSession(session)
       navigateTo('/admin')
     } catch (error) {
       console.error(error)
+      if (axios.isAxiosError(error)) {
+        const detail = error.response?.data?.detail
+        if (Array.isArray(detail) && detail.length > 0) {
+          const firstIssue = detail[0]
+          const field = Array.isArray(firstIssue?.loc) ? firstIssue.loc[firstIssue.loc.length - 1] : ''
+          if (field === 'tenant_name') {
+            setErrorMessage('O nome da empresa é obrigatório e precisa ter pelo menos 2 caracteres.')
+            return
+          }
+          if (field === 'password') {
+            setErrorMessage('Sua senha precisa ter pelo menos 8 caracteres.')
+            return
+          }
+          if (field === 'email') {
+            setErrorMessage('Revise o email informado.')
+            return
+          }
+          if (field === 'name') {
+            setErrorMessage('Revise seu nome antes de continuar.')
+            return
+          }
+          if (field === 'business_model') {
+            setErrorMessage('Escolha um modelo de negócio válido.')
+            return
+          }
+        }
+      }
+
       setErrorMessage('Não consegui criar sua conta agora. Revise os dados e tente de novo.')
     } finally {
       setIsSubmitting(false)

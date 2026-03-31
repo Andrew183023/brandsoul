@@ -94,8 +94,18 @@ export function saveCatalogItems(items: CatalogItem[]) {
     .map((item) => normalizeCatalogItem(item))
     .filter((item): item is CatalogItem => item !== null)
     .slice(0, 6)
+    .map((item) => buildLightCatalogItem(item))
 
-  window.localStorage.setItem(CATALOG_STORAGE_KEY, JSON.stringify(normalizedCatalog))
+  try {
+    window.localStorage.setItem(CATALOG_STORAGE_KEY, JSON.stringify(normalizedCatalog))
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'QuotaExceededError') {
+      window.localStorage.removeItem(CATALOG_STORAGE_KEY)
+      return
+    }
+
+    throw error
+  }
 }
 
 export function buildCatalogSummary(items: CatalogItem[]) {
@@ -179,4 +189,24 @@ function normalizeCatalogStock(value?: number) {
 
   const normalizedValue = Math.max(0, Math.floor(value))
   return normalizedValue
+}
+
+function buildLightCatalogItem(item: CatalogItem): Partial<CatalogItem> {
+  return {
+    id: item.id,
+    name: item.name,
+    description: item.description,
+    category: item.category,
+    price: item.price,
+    highlight: item.highlight,
+    priority: item.priority,
+    isFeatured: item.isFeatured,
+    isPromotion: item.isPromotion,
+    isNewArrival: item.isNewArrival,
+    complements: item.complements,
+    stock: item.stock,
+    availability: item.availability,
+    ctaLabel: item.ctaLabel,
+    title: item.title,
+  }
 }

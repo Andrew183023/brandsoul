@@ -1,5 +1,12 @@
 import type { CatalogItem } from '../types/catalog'
 
+interface CaseSummaryPayload {
+  tipo?: string
+  dados?: string[]
+  evidencias?: string[]
+  passos?: string[]
+}
+
 export function sanitizeWhatsAppInput(value: string) {
   const trimmedValue = value.trim()
   const hasPlusPrefix = trimmedValue.startsWith('+')
@@ -52,4 +59,26 @@ export function buildWhatsAppUrl(number?: string, message?: string) {
 
   const encodedMessage = encodeURIComponent(message?.trim() || buildWhatsAppMessage())
   return `https://wa.me/${waNumber}?text=${encodedMessage}`
+}
+
+export function formatSummaryForWhatsApp(summary: CaseSummaryPayload) {
+  const caseType = summary.tipo ? summary.tipo.replace(/_/g, ' ') : 'orientação inicial'
+  const dataLines = (summary.dados ?? []).slice(0, 4).map((item) => `- ${item}`)
+  const evidenceLines = (summary.evidencias ?? []).slice(0, 4).map((item) => `- ${item}`)
+  const stepLines = (summary.passos ?? []).slice(0, 4).map((item) => `- ${item}`)
+
+  return [
+    'Olá. Quero encaminhar este resumo para análise profissional.',
+    '',
+    `Tipo de caso: ${caseType}`,
+    '',
+    'Informações coletadas:',
+    ...(dataLines.length > 0 ? dataLines : ['- Ainda sem detalhes adicionais.']),
+    '',
+    'Evidências registradas:',
+    ...(evidenceLines.length > 0 ? evidenceLines : ['- Ainda sem evidências registradas.']),
+    '',
+    'Próximos passos sugeridos:',
+    ...(stepLines.length > 0 ? stepLines : ['- Aguardar orientação profissional.']),
+  ].join('\n')
 }
