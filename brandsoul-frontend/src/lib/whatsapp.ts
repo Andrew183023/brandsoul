@@ -7,6 +7,13 @@ interface CaseSummaryPayload {
   passos?: string[]
 }
 
+interface WhatsAppTemplateData {
+  tipo: string
+  resumo: string
+  impacto: string
+  evidencias: string
+}
+
 export function sanitizeWhatsAppInput(value: string) {
   const trimmedValue = value.trim()
   const hasPlusPrefix = trimmedValue.startsWith('+')
@@ -61,24 +68,42 @@ export function buildWhatsAppUrl(number?: string, message?: string) {
   return `https://wa.me/${waNumber}?text=${encodedMessage}`
 }
 
-export function formatSummaryForWhatsApp(summary: CaseSummaryPayload) {
+export function applyWhatsAppTemplate(template: string, data: WhatsAppTemplateData) {
+  return template
+    .replaceAll('{tipo}', data.tipo)
+    .replaceAll('{resumo}', data.resumo)
+    .replaceAll('{impacto}', data.impacto)
+    .replaceAll('{evidencias}', data.evidencias)
+}
+
+export function formatSummaryForWhatsApp(summary: CaseSummaryPayload, template?: string) {
   const caseType = summary.tipo ? summary.tipo.replace(/_/g, ' ') : 'orientação inicial'
-  const dataLines = (summary.dados ?? []).slice(0, 4).map((item) => `- ${item}`)
-  const evidenceLines = (summary.evidencias ?? []).slice(0, 4).map((item) => `- ${item}`)
-  const stepLines = (summary.passos ?? []).slice(0, 4).map((item) => `- ${item}`)
+  const dataItems = (summary.dados ?? []).slice(0, 4)
+  const evidenceItems = (summary.evidencias ?? []).slice(0, 4)
+  const stepItems = (summary.passos ?? []).slice(0, 4)
+  const shortSummary = dataItems[0] ?? 'Caso em organização inicial'
+  const impactSummary = dataItems[1] ?? dataItems[2] ?? 'Impacto ainda em detalhamento'
+  const evidenceSummary = evidenceItems.length > 0 ? evidenceItems.join(', ') : 'Sem evidências anexadas até o momento'
+  const nextStepSummary = stepItems[0] ?? 'Aguardar orientação profissional'
+
+  if (template?.trim()) {
+    return applyWhatsAppTemplate(template.trim(), {
+      tipo: caseType,
+      resumo: shortSummary,
+      impacto: impactSummary,
+      evidencias: evidenceSummary,
+    })
+  }
 
   return [
-    'Olá. Quero encaminhar este resumo para análise profissional.',
+    'Olá, organizei meu caso pelo BrandSoul e gostaria de encaminhar para análise.',
     '',
     `Tipo de caso: ${caseType}`,
+    `Resumo: ${shortSummary}`,
+    `Impacto: ${impactSummary}`,
+    `Evidências: ${evidenceSummary}`,
+    `Próximo passo já orientado: ${nextStepSummary}`,
     '',
-    'Informações coletadas:',
-    ...(dataLines.length > 0 ? dataLines : ['- Ainda sem detalhes adicionais.']),
-    '',
-    'Evidências registradas:',
-    ...(evidenceLines.length > 0 ? evidenceLines : ['- Ainda sem evidências registradas.']),
-    '',
-    'Próximos passos sugeridos:',
-    ...(stepLines.length > 0 ? stepLines : ['- Aguardar orientação profissional.']),
+    'Podemos seguir com a análise?',
   ].join('\n')
 }

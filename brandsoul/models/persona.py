@@ -18,6 +18,22 @@ class SparkModes(BaseModel):
     emergency: bool = False
 
 
+class EmergencyMode(BaseModel):
+    enabled: bool = False
+    auto_start: bool = False
+    show_upload_early: bool = True
+
+
+class CtaConfig(BaseModel):
+    whatsapp_enabled: bool = False
+    whatsapp_number: str | None = Field(default=None, max_length=40)
+    whatsapp_message_template: str | None = Field(default=None, max_length=400)
+    show_after_evidence: bool = True
+    show_on_completion: bool = True
+    primary_text: str | None = Field(default=None, max_length=60)
+    secondary_text: str | None = Field(default=None, max_length=180)
+
+
 class BrandFeatures(BaseModel):
     products: bool = True
     services: bool = False
@@ -88,6 +104,8 @@ class Persona(BaseModel):
     business_goal: str = Field(default="volume", min_length=1, examples=["volume"])
     modes: SparkModes = Field(default_factory=SparkModes)
     emergency_type: Literal["legal", "health", "technical"] | None = Field(default=None, examples=["technical"])
+    emergency_mode: EmergencyMode = Field(default_factory=EmergencyMode)
+    cta_config: CtaConfig = Field(default_factory=CtaConfig)
     service_offers: list[ServiceOffer] = Field(default_factory=list)
     scheduling_config: SchedulingConfig | None = None
     professional_data: ProfessionalData | None = None

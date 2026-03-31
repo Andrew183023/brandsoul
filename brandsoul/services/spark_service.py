@@ -35,7 +35,28 @@ def build_default_spark(tenant: dict) -> SparkPayload:
         actMode="seller",
         businessGoal="volume",
         modes={"sales": True, "service": True, "scheduling": False, "emergency": False},
+        emergencyMode={"enabled": False, "autoStart": False, "showUploadEarly": True},
     )
+
+
+def build_default_emergency_mode(business_model: str, brand_type: str) -> dict[str, bool]:
+    return {
+        "enabled": business_model == "professional" or brand_type == "professional",
+        "autoStart": False,
+        "showUploadEarly": True,
+    }
+
+
+def build_default_cta_config() -> dict[str, bool | str | None]:
+    return {
+        "whatsappEnabled": False,
+        "whatsappNumber": None,
+        "whatsappMessageTemplate": None,
+        "showAfterEvidence": True,
+        "showOnCompletion": True,
+        "primaryText": "Encaminhar para profissional",
+        "secondaryText": "Leve este caso organizado para análise profissional.",
+    }
 
 
 def serialize_spark_record(record: dict) -> SparkPayload:
@@ -43,6 +64,8 @@ def serialize_spark_record(record: dict) -> SparkPayload:
     brand_type = record.get("brand_type") or "business"
     features = json.loads(record["features_json"]) if record.get("features_json") else build_default_features(business_model, brand_type)
     modes = json.loads(record["modes_json"]) if record.get("modes_json") else build_default_modes(features, business_model, brand_type)
+    emergency_mode = json.loads(record["emergency_mode_json"]) if record.get("emergency_mode_json") else build_default_emergency_mode(business_model, brand_type)
+    cta_config = json.loads(record["cta_config_json"]) if record.get("cta_config_json") else build_default_cta_config()
 
     return SparkPayload(
         brandName=record["brand_name"],
@@ -57,6 +80,8 @@ def serialize_spark_record(record: dict) -> SparkPayload:
         businessGoal=record["business_goal"],
         modes=modes,
         emergencyType=record.get("emergency_type"),
+        emergencyMode=emergency_mode,
+        ctaConfig=cta_config,
         serviceOffers=json.loads(record["service_offers_json"]) if record.get("service_offers_json") else [],
         schedulingConfig=json.loads(record["scheduling_config_json"]) if record.get("scheduling_config_json") else None,
         professionalData=json.loads(record["professional_data_json"]) if record.get("professional_data_json") else None,
@@ -105,6 +130,8 @@ def save_tenant_spark(tenant: dict, spark: SparkPayload) -> SparkPayload:
         "business_goal": spark.businessGoal,
         "modes_json": json.dumps(spark.modes.model_dump()) if spark.modes else None,
         "emergency_type": spark.emergencyType,
+        "emergency_mode_json": json.dumps(spark.emergencyMode.model_dump()) if spark.emergencyMode else None,
+        "cta_config_json": json.dumps(spark.ctaConfig.model_dump()) if spark.ctaConfig else None,
         "service_offers_json": json.dumps([item.model_dump() for item in (spark.serviceOffers or [])]),
         "scheduling_config_json": json.dumps(spark.schedulingConfig.model_dump()) if spark.schedulingConfig else None,
         "professional_data_json": json.dumps(spark.professionalData.model_dump()) if spark.professionalData else None,

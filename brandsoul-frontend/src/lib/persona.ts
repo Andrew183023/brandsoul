@@ -36,6 +36,22 @@ export interface SparkModes {
   emergency: boolean
 }
 
+export interface EmergencyModeConfig {
+  enabled: boolean
+  autoStart: boolean
+  showUploadEarly: boolean
+}
+
+export interface CtaConfig {
+  whatsappEnabled: boolean
+  whatsappNumber?: string
+  whatsappMessageTemplate?: string
+  showAfterEvidence: boolean
+  showOnCompletion: boolean
+  primaryText?: string
+  secondaryText?: string
+}
+
 export interface BrandFeatures {
   products: boolean
   services: boolean
@@ -118,6 +134,8 @@ export interface BrandPersona {
   businessGoal?: BusinessGoalOption
   modes?: SparkModes
   emergencyType?: EmergencyTypeOption
+  emergencyMode?: EmergencyModeConfig
+  ctaConfig?: CtaConfig
   businessDescription?: string
   institutionalImage?: string
   theme?: BrandTheme
@@ -267,6 +285,8 @@ export function loadBrandPersona(): BrandPersona | null {
       businessGoal: normalizeBusinessGoal(parsedPersona.businessGoal) ?? 'volume',
       modes: normalizeModes(parsedPersona.modes),
       emergencyType: normalizeEmergencyType(parsedPersona.emergencyType),
+      emergencyMode: normalizeEmergencyMode(parsedPersona.emergencyMode),
+      ctaConfig: normalizeCtaConfig(parsedPersona.ctaConfig),
       businessDescription: normalizeBusinessDescription(parsedPersona.businessDescription),
       institutionalImage: normalizeImageField(parsedPersona.institutionalImage),
       theme: normalizeTheme(parsedPersona.theme),
@@ -311,6 +331,8 @@ export function saveBrandPersona(persona: BrandPersona) {
       businessGoal: normalizeBusinessGoal(persona.businessGoal) ?? 'volume',
       modes: normalizeModes(persona.modes),
       emergencyType: normalizeEmergencyType(persona.emergencyType),
+      emergencyMode: normalizeEmergencyMode(persona.emergencyMode),
+      ctaConfig: normalizeCtaConfig(persona.ctaConfig),
       businessDescription: normalizeBusinessDescription(persona.businessDescription),
       institutionalImage: normalizeImageField(persona.institutionalImage),
       theme: normalizeTheme(persona.theme),
@@ -558,6 +580,26 @@ function normalizeFeatures(value?: Partial<BrandFeatures>, businessModel?: strin
     services: value?.services ?? defaults.services,
     scheduling: value?.scheduling ?? defaults.scheduling,
     emergency: value?.emergency ?? defaults.emergency,
+  }
+}
+
+function normalizeEmergencyMode(value?: Partial<EmergencyModeConfig>): EmergencyModeConfig {
+  return {
+    enabled: value?.enabled === true,
+    autoStart: value?.autoStart === true,
+    showUploadEarly: value?.showUploadEarly !== false,
+  }
+}
+
+function normalizeCtaConfig(value?: Partial<CtaConfig>): CtaConfig {
+  return {
+    whatsappEnabled: value?.whatsappEnabled === true,
+    whatsappNumber: normalizeWhatsAppNumber(value?.whatsappNumber),
+    whatsappMessageTemplate: normalizeTextValue(value?.whatsappMessageTemplate, 320),
+    showAfterEvidence: value?.showAfterEvidence !== false,
+    showOnCompletion: value?.showOnCompletion !== false,
+    primaryText: normalizeTextValue(value?.primaryText, 48),
+    secondaryText: normalizeTextValue(value?.secondaryText, 140),
   }
 }
 

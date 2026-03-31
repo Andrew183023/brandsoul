@@ -4,6 +4,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from models.auth import AuthResponse, ForgotPasswordRequest, LoginRequest, MessageResponse, RegisterRequest, ResetPasswordRequest, TenantPublic, UserPublic
+from models.case import CaseSubmitRequest, CaseSubmitResponse
 from models.catalog import CatalogItemPayload
 from models.channel import ChannelMessage, ChannelResponse, ChatRequest, ChatResponse
 from models.interaction import InteractionRequest, InteractionResponse
@@ -28,6 +29,7 @@ from services.catalog_service import (
     list_tenant_catalog,
     update_tenant_catalog_item,
 )
+from services.case_service import submit_case
 from services.interaction_service import simulate_interaction
 from services.public_brand_service import fetch_public_brand
 from services.spark_service import fetch_tenant_spark, save_tenant_spark
@@ -162,6 +164,11 @@ def admin_catalog_delete(item_id: int, current_tenant: dict = Depends(get_curren
 @app.get("/public/brands/{slug}", response_model=PublicBrandResponse)
 def public_brand(slug: str) -> PublicBrandResponse:
     return fetch_public_brand(slug)
+
+
+@app.post("/case/submit", response_model=CaseSubmitResponse)
+def case_submit(payload: CaseSubmitRequest) -> CaseSubmitResponse:
+    return submit_case(payload)
 
 
 @app.post("/channel/message", response_model=ChannelResponse)

@@ -34,6 +34,32 @@ type CustomerMode = 'sales' | 'service' | 'scheduling' | 'emergency'
 interface ChannelResponseMetadata {
   detected_intent?: string
   flow_closed?: boolean
+  highlight_evidence?: boolean
+  case_checklist?: {
+    context?: boolean
+    impact?: boolean
+    evidence?: boolean
+    nextSteps?: boolean
+  }
+  case_progress?: {
+    completedCount?: number
+    readyForSubmission?: boolean
+    hasEvidence?: boolean
+    isPartiallyReady?: boolean
+  }
+  guidance_progress?: {
+    contexto?: string
+    impacto?: string
+    evidencias?: string
+    proximos_passos?: string
+  }
+  guidance_dossier?: {
+    situacao_identificada?: string
+    contexto?: string
+    impacto?: string
+    evidencias?: string[]
+    proximos_passos?: string[]
+  }
   case_summary?: {
     tipo?: string
     dados?: string[]
@@ -67,10 +93,198 @@ interface CaseSummary {
   passos?: string[]
 }
 
+interface GuidanceEvidenceItem {
+  type: 'image' | 'video' | 'audio'
+  name: string
+  count: number
+  timestamp: string
+}
+
+interface GuidanceProgress {
+  contexto: 'pendente' | 'em_andamento' | 'concluido'
+  impacto: 'pendente' | 'em_andamento' | 'concluido'
+  evidencias: 'pendente' | 'em_andamento' | 'concluido'
+  proximos_passos: 'pendente' | 'em_andamento' | 'concluido'
+}
+
+interface GuidanceDossier {
+  situacao_identificada: string
+  contexto: string
+  impacto: string
+  evidencias: string[]
+  proximos_passos: string[]
+}
+
+interface CaseChecklist {
+  context: boolean
+  impact: boolean
+  evidence: boolean
+  nextSteps: boolean
+}
+
+interface CaseProgress {
+  completedCount: number
+  readyForSubmission: boolean
+  hasEvidence: boolean
+  isPartiallyReady: boolean
+}
+
+interface GuidanceCtaState {
+  whatsappSuggested: boolean
+  showWhatsAppCta: boolean
+}
+
+interface CaseSubmitResponse {
+  status: 'submitted'
+  message: string
+  destination: 'whatsapp' | 'email' | 'panel'
+  case_id: number
+  already_submitted: boolean
+}
+
 const USER_ID_STORAGE_KEY = 'brandsoul_user_id'
 const BOOTSTRAP_LOCK_KEY = 'brandsoul_bootstrap_lock'
 const BOOTSTRAP_LOCK_MAX_AGE = 8000
 const BOOTSTRAP_ERROR_MESSAGE = 'Tive um ruído aqui agora. Me chama de novo que eu volto.'
+
+function createEmptyGuidanceProgress(): GuidanceProgress {
+  return {
+    contexto: 'pendente',
+    impacto: 'pendente',
+    evidencias: 'pendente',
+    proximos_passos: 'pendente',
+  }
+}
+
+function buildGuidanceProgressLabel(status: GuidanceProgress[keyof GuidanceProgress]) {
+  if (status === 'concluido') {
+    return 'Concluído'
+  }
+  if (status === 'em_andamento') {
+    return 'Em andamento'
+  }
+  return 'Pendente'
+}
+
+function triggerEvidencePanelHighlight(
+  setHighlight: (value: boolean) => void,
+  timeoutRef: { current: number | null },
+) {
+  if (timeoutRef.current) {
+    window.clearTimeout(timeoutRef.current)
+  }
+
+  setHighlight(true)
+  timeoutRef.current = window.setTimeout(() => {
+    setHighlight(false)
+  }, 2400)
+}
+
+function createEvidenceItems(files: FileList | null, type: GuidanceEvidenceItem['type']) {
+  if (!files || files.length === 0) {
+    return []
+  }
+
+  const timestamp = new Date().toISOString()
+  return Array.from(files).map((file) => ({
+    type,
+    name: file.name,
+    count: 1,
+    timestamp,
+  }))
+}
+
+function createEmptyGuidanceDossier(): GuidanceDossier {
+  return {
+    situacao_identificada: 'Aguardando informações',
+    contexto: 'Em coleta',
+    impacto: 'Em coleta',
+    evidencias: ['Em coleta'],
+    proximos_passos: ['Em coleta'],
+  }
+}
+
+function createEmptyCaseChecklist(): CaseChecklist {
+  return {
+    context: false,
+    impact: false,
+    evidence: false,
+    nextSteps: false,
+  }
+}
+
+function createEmptyCaseProgress(): CaseProgress {
+  return {
+    completedCount: 0,
+    readyForSubmission: false,
+    hasEvidence: false,
+    isPartiallyReady: false,
+  }
+}
+
+function createEmptyGuidanceCtaState(): GuidanceCtaState {
+  return {
+    whatsappSuggested: false,
+    showWhatsAppCta: false,
+  }
+}
+
+function normalizeCaseChecklist(metadata?: ChannelResponseMetadata): CaseChecklist {
+  return {
+    context: metadata?.case_checklist?.context === true,
+    impact: metadata?.case_checklist?.impact === true,
+    evidence: metadata?.case_checklist?.evidence === true,
+    nextSteps: metadata?.case_checklist?.nextSteps === true,
+  }
+}
+
+function normalizeCaseProgress(metadata?: ChannelResponseMetadata): CaseProgress {
+  return {
+    completedCount: metadata?.case_progress?.completedCount ?? 0,
+    readyForSubmission: metadata?.case_progress?.readyForSubmission === true,
+    hasEvidence: metadata?.case_progress?.hasEvidence === true,
+    isPartiallyReady: metadata?.case_progress?.isPartiallyReady === true,
+  }
+}
+
+function buildProgressStatusFromChecklist(isComplete: boolean, fallback: GuidanceProgress[keyof GuidanceProgress]): GuidanceProgress[keyof GuidanceProgress] {
+  if (isComplete) {
+    return 'concluido'
+  }
+
+  return fallback
+}
+
+function buildCaseSubmissionSummary(dossier: GuidanceDossier, summary: CaseSummary | null) {
+  const caseType = summary?.tipo || dossier.situacao_identificada
+  const evidenceLines = (summary?.evidencias?.length ? summary.evidencias : dossier.evidencias).map((item) => `- ${item}`)
+  const nextStepLines = (summary?.passos?.length ? summary.passos : dossier.proximos_passos).map((item) => `- ${item}`)
+
+  return [
+    `Tipo de caso: ${caseType}`,
+    '',
+    `Situação identificada: ${dossier.contexto}`,
+    `Impacto / prejuízo: ${dossier.impacto}`,
+    '',
+    'Evidências registradas:',
+    ...(evidenceLines.length > 0 ? evidenceLines : ['- Em coleta']),
+    '',
+    'Próximos passos:',
+    ...(nextStepLines.length > 0 ? nextStepLines : ['- Em coleta']),
+  ].join('\n')
+}
+
+function buildGuidanceWhatsAppSuggestionMessage(dossier: GuidanceDossier, summary: CaseSummary | null) {
+  const caseType = summary?.tipo || dossier.situacao_identificada || 'caso'
+  return [
+    'Perfeito. Com essas evidências, seu caso já está mais bem organizado.',
+    'Se quiser, posso encaminhar agora para análise profissional e agilizar o atendimento.',
+    '',
+    `Tipo de caso: ${caseType}`,
+    `Contexto: ${dossier.contexto}`,
+    `Impacto: ${dossier.impacto}`,
+  ].join('\n')
+}
 
 function getCustomerMessageStorageKey(brandSlug?: string, mode: CustomerMode = 'service') {
   return brandSlug ? `brandsoul_messages:customer:web:${brandSlug}:${mode}` : `brandsoul_messages:customer:web:${mode}`
@@ -105,6 +319,24 @@ function getOrCreateUserId() {
 
   window.localStorage.setItem(USER_ID_STORAGE_KEY, generatedUserId)
   return generatedUserId
+}
+
+function resetCustomerStorage(brandSlug?: string) {
+  const messagePrefix = brandSlug ? `brandsoul_messages:customer:web:${brandSlug}:` : 'brandsoul_messages:customer:web:'
+  const memoryPrefix = 'brandsoul_memory_customer_'
+
+  for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
+    const key = window.localStorage.key(index)
+    if (!key) {
+      continue
+    }
+
+    if (key.startsWith(messagePrefix) || key.startsWith(memoryPrefix) || key === USER_ID_STORAGE_KEY) {
+      window.localStorage.removeItem(key)
+    }
+  }
+
+  window.sessionStorage.removeItem(BOOTSTRAP_LOCK_KEY)
 }
 
 function acquireBootstrapLock() {
@@ -334,6 +566,24 @@ function buildPersonaPayload(persona: BrandPersona) {
     business_goal: persona.businessGoal || 'volume',
     modes: persona.modes || createDefaultModes(),
     emergency_type: persona.emergencyType || undefined,
+    emergency_mode: persona.emergencyMode
+      ? {
+          enabled: persona.emergencyMode.enabled,
+          auto_start: persona.emergencyMode.autoStart,
+          show_upload_early: persona.emergencyMode.showUploadEarly,
+        }
+      : undefined,
+    cta_config: persona.ctaConfig
+      ? {
+          whatsapp_enabled: persona.ctaConfig.whatsappEnabled,
+          whatsapp_number: persona.ctaConfig.whatsappNumber,
+          whatsapp_message_template: persona.ctaConfig.whatsappMessageTemplate,
+          show_after_evidence: persona.ctaConfig.showAfterEvidence,
+          show_on_completion: persona.ctaConfig.showOnCompletion,
+          primary_text: persona.ctaConfig.primaryText,
+          secondary_text: persona.ctaConfig.secondaryText,
+        }
+      : undefined,
     service_offers: features.services
       ? (persona.serviceOffers ?? []).map((item) => ({
           title: item.title,
@@ -448,7 +698,7 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
   const [activeMode, setActiveMode] = useState<CustomerMode>(() => getDefaultMode(brandSlug ? null : loadBrandPersona()))
   const customerMessagesStorageKey = useMemo(() => getCustomerMessageStorageKey(brandSlug, activeMode), [activeMode, brandSlug])
   const [persona, setPersona] = useState<BrandPersona | null>(() => (brandSlug ? null : loadBrandPersona()))
-  const userId = useMemo(() => getOrCreateUserId(), [])
+  const [userId, setUserId] = useState(() => getOrCreateUserId())
   const [messages, setMessages] = useState<Message[]>(() => loadMessages(customerMessagesStorageKey))
   const [message, setMessage] = useState('')
   const [sparkState, setSparkState] = useState<SparkState>('idle')
@@ -463,7 +713,22 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
   const [guidanceConsentState, setGuidanceConsentState] = useState<'pending' | 'accepted' | 'declined'>('declined')
   const [caseSummary, setCaseSummary] = useState<CaseSummary | null>(null)
   const [isGuidanceFlowClosed, setIsGuidanceFlowClosed] = useState(false)
+  const [guidanceEvidenceItems, setGuidanceEvidenceItems] = useState<GuidanceEvidenceItem[]>([])
+  const [guidanceProgress, setGuidanceProgress] = useState<GuidanceProgress>(createEmptyGuidanceProgress)
+  const [guidanceDossier, setGuidanceDossier] = useState<GuidanceDossier>(createEmptyGuidanceDossier)
+  const [caseChecklist, setCaseChecklist] = useState<CaseChecklist>(createEmptyCaseChecklist)
+  const [caseProgress, setCaseProgress] = useState<CaseProgress>(createEmptyCaseProgress)
+  const [guidanceCtaState, setGuidanceCtaState] = useState<GuidanceCtaState>(createEmptyGuidanceCtaState)
+  const [highlightEvidencePanel, setHighlightEvidencePanel] = useState(false)
+  const [isSubmitConfirmOpen, setIsSubmitConfirmOpen] = useState(false)
+  const [isCaseSubmitting, setIsCaseSubmitting] = useState(false)
+  const [isCaseSubmitted, setIsCaseSubmitted] = useState(false)
+  const [caseSubmitMessage, setCaseSubmitMessage] = useState<string | null>(null)
   const introPulseTimeoutRef = useRef<number | null>(null)
+  const imageEvidenceInputRef = useRef<HTMLInputElement | null>(null)
+  const videoEvidenceInputRef = useRef<HTMLInputElement | null>(null)
+  const audioEvidenceInputRef = useRef<HTMLInputElement | null>(null)
+  const evidenceHighlightTimeoutRef = useRef<number | null>(null)
   const hasBootstrappedRef = useRef(messages.length > 0)
   const sparkMemoryStorageKey = useMemo(
     () =>
@@ -478,7 +743,14 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
   )
   const [sparkMemory, setSparkMemory] = useState<SparkMemory>(() => loadSparkMemory(sparkMemoryStorageKey))
   const memorySummary = useMemo(() => buildSparkMemorySummary(sparkMemory), [sparkMemory])
-  const whatsappNumber = useMemo(() => normalizeWhatsAppNumber(persona?.whatsapp ?? persona?.contactInfo), [persona])
+  const configuredCtaNumber = useMemo(() => normalizeWhatsAppNumber(persona?.ctaConfig?.whatsappNumber), [persona?.ctaConfig?.whatsappNumber])
+  const whatsappNumber = useMemo(
+    () => configuredCtaNumber ?? normalizeWhatsAppNumber(persona?.whatsapp ?? persona?.contactInfo),
+    [configuredCtaNumber, persona],
+  )
+  const hasConfiguredWhatsApp = Boolean(whatsappNumber) && persona?.ctaConfig?.whatsappEnabled === true
+  const ctaPrimaryText = persona?.ctaConfig?.primaryText?.trim() || 'Encaminhar para profissional'
+  const ctaSecondaryText = persona?.ctaConfig?.secondaryText?.trim() || 'Leve este caso organizado para análise profissional.'
   const brandCategory = useMemo(() => (persona ? buildBrandCategory(persona) : null), [persona])
   const [catalogItems, setCatalogItems] = useState<CatalogItem[]>(() => {
     if (brandSlug) {
@@ -520,6 +792,9 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
   const isProfessionalBrand = businessModel === 'professional'
   const professionalOperationMode = persona?.professionalData?.operationMode ?? 'institutional'
   const isProfessionalGuidanceMode = isProfessionalBrand && persona?.professionalData?.operationMode === 'guidance'
+  const isGuidanceActive = isProfessionalGuidanceMode && (guidanceConsentState === 'accepted' || isEmergencyMode || isGuidanceFlowClosed || isCaseSubmitted)
+  const showOrientationConsent = isProfessionalGuidanceMode && isEmergencyMode && guidanceConsentState === 'pending'
+  const showGuidancePanels = isGuidanceActive
   const guidanceNeedsConsent = isProfessionalGuidanceMode && guidanceConsentState === 'pending'
   const showProductsSection = activeFeatures.products && !isProfessionalBrand && !isEmergencyMode
   const showServicesSection = activeFeatures.services && !isProfessionalBrand && !isEmergencyMode
@@ -529,6 +804,12 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
     [persona?.serviceOffers],
   )
   const showProfessionalSections = Boolean(persona && isProfessionalBrand && hasProfessionalContent(persona))
+  const topPracticeAreas = (persona?.professionalData?.practiceAreas ?? []).slice(0, 3)
+  const professionalAuthorityLine =
+    persona?.professionalData?.identity?.headline ||
+    persona?.professionalData?.presentation ||
+    'Atuação técnica com presença clara, responsável e orientada ao próximo passo.'
+  const flowReadyForSubmission = (caseProgress.readyForSubmission || isGuidanceFlowClosed) && !isCaseSubmitted
 
   useEffect(() => {
     if (!persona?.theme) {
@@ -561,12 +842,26 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
       setGuidanceConsentState('pending')
       setIsGuidanceFlowClosed(false)
       setCaseSummary(null)
+      setGuidanceEvidenceItems([])
+      setGuidanceProgress(createEmptyGuidanceProgress())
+      setGuidanceDossier(createEmptyGuidanceDossier())
+      setHighlightEvidencePanel(false)
+      setIsCaseSubmitted(false)
+      setCaseSubmitMessage(null)
+      setIsSubmitConfirmOpen(false)
       return
     }
 
     setGuidanceConsentState('declined')
     setIsGuidanceFlowClosed(false)
     setCaseSummary(null)
+    setGuidanceEvidenceItems([])
+    setGuidanceProgress(createEmptyGuidanceProgress())
+    setGuidanceDossier(createEmptyGuidanceDossier())
+    setHighlightEvidencePanel(false)
+    setIsCaseSubmitted(false)
+    setCaseSubmitMessage(null)
+    setIsSubmitConfirmOpen(false)
   }, [persona?.professionalData?.operationMode, brandSlug])
 
   useEffect(() => {
@@ -706,7 +1001,7 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
     }, 1800)
   }
 
-  const startConversation = async (force = false) => {
+  const startConversation = async (force = false, userIdOverride?: string) => {
     if (!persona) {
       return
     }
@@ -721,6 +1016,7 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
 
     const requestId = bootstrapRequestIdRef.current + 1
     bootstrapRequestIdRef.current = requestId
+    const effectiveUserId = userIdOverride ?? userId
 
     setIsLoading(true)
     setSparkState('idle')
@@ -732,7 +1028,7 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
     try {
       const result = await axios.post<ChannelMessageResponse>(buildApiUrl('/channel/message'), {
         channel: 'web',
-        user_id: userId,
+        user_id: effectiveUserId,
         brand_name: persona.brandName,
         ...(brandSlug ? { tenant_slug: brandSlug } : {}),
         mode: activeMode,
@@ -740,6 +1036,7 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
         message: '',
         persona: buildPersonaPayload(persona),
         messages: [],
+        ...(guidanceEvidenceItems.length > 0 ? { evidence_items: guidanceEvidenceItems } : {}),
         context_mode: 'customer',
         business_goal: persona.businessGoal || 'volume',
         metadata: {
@@ -760,6 +1057,44 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
       setMessages([{ role: 'ai', content: result.data.response }])
       setCaseSummary(result.data.metadata?.case_summary ?? null)
       setIsGuidanceFlowClosed(result.data.metadata?.flow_closed === true)
+      setCaseChecklist(normalizeCaseChecklist(result.data.metadata))
+      setCaseProgress(normalizeCaseProgress(result.data.metadata))
+      setGuidanceProgress(
+        result.data.metadata?.guidance_progress
+          ? {
+              contexto: buildProgressStatusFromChecklist(
+                result.data.metadata?.case_checklist?.context === true,
+                (result.data.metadata.guidance_progress.contexto as GuidanceProgress['contexto']) ?? 'pendente',
+              ),
+              impacto: buildProgressStatusFromChecklist(
+                result.data.metadata?.case_checklist?.impact === true,
+                (result.data.metadata.guidance_progress.impacto as GuidanceProgress['impacto']) ?? 'pendente',
+              ),
+              evidencias: buildProgressStatusFromChecklist(
+                result.data.metadata?.case_checklist?.evidence === true,
+                (result.data.metadata.guidance_progress.evidencias as GuidanceProgress['evidencias']) ?? 'pendente',
+              ),
+              proximos_passos: buildProgressStatusFromChecklist(
+                result.data.metadata?.case_checklist?.nextSteps === true,
+                (result.data.metadata.guidance_progress.proximos_passos as GuidanceProgress['proximos_passos']) ?? 'pendente',
+              ),
+            }
+          : createEmptyGuidanceProgress(),
+      )
+      setGuidanceDossier(
+        result.data.metadata?.guidance_dossier
+          ? {
+              situacao_identificada: result.data.metadata.guidance_dossier.situacao_identificada || 'Aguardando informações',
+              contexto: result.data.metadata.guidance_dossier.contexto || 'Em coleta',
+              impacto: result.data.metadata.guidance_dossier.impacto || 'Em coleta',
+              evidencias: result.data.metadata.guidance_dossier.evidencias?.length ? result.data.metadata.guidance_dossier.evidencias : ['Em coleta'],
+              proximos_passos: result.data.metadata.guidance_dossier.proximos_passos?.length ? result.data.metadata.guidance_dossier.proximos_passos : ['Em coleta'],
+            }
+          : createEmptyGuidanceDossier(),
+      )
+      if (result.data.metadata?.highlight_evidence) {
+        triggerEvidencePanelHighlight(setHighlightEvidencePanel, evidenceHighlightTimeoutRef)
+      }
       setSparkState('speaking')
       scheduleSparkReset('speaking')
       triggerIntroPulse()
@@ -807,7 +1142,7 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
         window.clearTimeout(introPulseTimeoutRef.current)
       }
     }
-  }, [guidanceConsentState, isProfessionalGuidanceMode, messages.length, persona, publicBrandStatus])
+  }, [guidanceConsentState, guidanceEvidenceItems, isProfessionalGuidanceMode, messages.length, persona, publicBrandStatus])
 
   useEffect(() => {
     if (messages.length > 0) {
@@ -818,7 +1153,7 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
     window.localStorage.removeItem(customerMessagesStorageKey)
   }, [customerMessagesStorageKey, messages])
 
-  const sendUserMessage = async (rawMessage: string) => {
+  const sendUserMessage = async (rawMessage: string, evidenceOverride?: GuidanceEvidenceItem[]) => {
     if (!persona) {
       return
     }
@@ -827,6 +1162,7 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
     if (!trimmedMessage || isLoading) {
       return
     }
+    const effectiveEvidenceItems = evidenceOverride ?? guidanceEvidenceItems
 
     if (timeoutRef.current) {
       window.clearTimeout(timeoutRef.current)
@@ -850,6 +1186,7 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
         message: trimmedMessage,
         persona: buildPersonaPayload(persona),
         messages,
+        ...(effectiveEvidenceItems.length > 0 ? { evidence_items: effectiveEvidenceItems } : {}),
         context_mode: 'customer',
         business_goal: persona.businessGoal || 'volume',
         metadata: {
@@ -868,6 +1205,40 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
       }
       if (result.data.metadata?.flow_closed === true) {
         setIsGuidanceFlowClosed(true)
+      }
+      setCaseChecklist(normalizeCaseChecklist(result.data.metadata))
+      setCaseProgress(normalizeCaseProgress(result.data.metadata))
+      if (result.data.metadata?.guidance_progress) {
+        setGuidanceProgress({
+          contexto: buildProgressStatusFromChecklist(
+            result.data.metadata?.case_checklist?.context === true,
+            (result.data.metadata.guidance_progress.contexto as GuidanceProgress['contexto']) ?? 'pendente',
+          ),
+          impacto: buildProgressStatusFromChecklist(
+            result.data.metadata?.case_checklist?.impact === true,
+            (result.data.metadata.guidance_progress.impacto as GuidanceProgress['impacto']) ?? 'pendente',
+          ),
+          evidencias: buildProgressStatusFromChecklist(
+            result.data.metadata?.case_checklist?.evidence === true,
+            (result.data.metadata.guidance_progress.evidencias as GuidanceProgress['evidencias']) ?? 'pendente',
+          ),
+          proximos_passos: buildProgressStatusFromChecklist(
+            result.data.metadata?.case_checklist?.nextSteps === true,
+            (result.data.metadata.guidance_progress.proximos_passos as GuidanceProgress['proximos_passos']) ?? 'pendente',
+          ),
+        })
+      }
+      if (result.data.metadata?.guidance_dossier) {
+        setGuidanceDossier({
+          situacao_identificada: result.data.metadata.guidance_dossier.situacao_identificada || 'Aguardando informações',
+          contexto: result.data.metadata.guidance_dossier.contexto || 'Em coleta',
+          impacto: result.data.metadata.guidance_dossier.impacto || 'Em coleta',
+          evidencias: result.data.metadata.guidance_dossier.evidencias?.length ? result.data.metadata.guidance_dossier.evidencias : ['Em coleta'],
+          proximos_passos: result.data.metadata.guidance_dossier.proximos_passos?.length ? result.data.metadata.guidance_dossier.proximos_passos : ['Em coleta'],
+        })
+      }
+      if (result.data.metadata?.highlight_evidence) {
+        triggerEvidencePanelHighlight(setHighlightEvidencePanel, evidenceHighlightTimeoutRef)
       }
       setSparkState(result.data.spark_state)
       scheduleSparkReset(result.data.spark_state)
@@ -920,17 +1291,191 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
     window.open(url, '_blank', 'noopener,noreferrer')
   }
 
+  const handleEvidenceSelection = (type: GuidanceEvidenceItem['type'], files: FileList | null) => {
+    const nextItems = createEvidenceItems(files, type)
+    if (nextItems.length === 0) {
+      return
+    }
+
+    const mergedEvidenceItems = [...guidanceEvidenceItems, ...nextItems]
+    setGuidanceEvidenceItems(mergedEvidenceItems)
+    handleEvidenceAdded(nextItems.length)
+    if (guidanceConsentState === 'accepted' && !isGuidanceFlowClosed) {
+      void sendUserMessage(
+        type === 'image'
+          ? 'Adicionei fotos ao caso para complementar o dossiê.'
+          : type === 'video'
+            ? 'Adicionei um vídeo ao caso para complementar o dossiê.'
+            : 'Adicionei um áudio ao caso para complementar o dossiê.',
+        mergedEvidenceItems,
+      )
+    }
+  }
+
+  const handleNoEvidenceConfirmation = () => {
+    setCaseChecklist((currentChecklist) => ({
+      ...currentChecklist,
+      evidence: true,
+    }))
+    setCaseProgress((currentProgress) => {
+      const evidenceWasComplete = currentProgress.hasEvidence || caseChecklist.evidence
+      const nextCompletedCount = currentProgress.completedCount + (evidenceWasComplete ? 0 : 1)
+      return {
+        ...currentProgress,
+        completedCount: nextCompletedCount,
+        hasEvidence: false,
+        isPartiallyReady: nextCompletedCount >= 2 && !currentProgress.readyForSubmission,
+      }
+    })
+    setGuidanceProgress((currentProgress) => ({
+      ...currentProgress,
+      evidencias: 'concluido',
+    }))
+    setGuidanceCtaState((currentState) => ({
+      ...currentState,
+      showWhatsAppCta: false,
+    }))
+    void sendUserMessage('Não tenho evidências disponíveis no momento, mas quero seguir com a orientação inicial.')
+  }
+
   const handleSummaryForward = () => {
     if (!caseSummary || !whatsappNumber) {
       return
     }
 
-    const url = buildWhatsAppUrl(whatsappNumber, formatSummaryForWhatsApp(caseSummary))
+    const url = buildWhatsAppUrl(whatsappNumber, formatSummaryForWhatsApp(caseSummary, persona?.ctaConfig?.whatsappMessageTemplate))
     if (!url) {
       return
     }
 
     window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
+  const handleSuggestedWhatsAppForward = () => {
+    if (!whatsappNumber) {
+      return
+    }
+
+    const messageToSend = caseSummary
+      ? formatSummaryForWhatsApp(caseSummary, persona?.ctaConfig?.whatsappMessageTemplate)
+      : buildGuidanceWhatsAppSuggestionMessage(guidanceDossier, caseSummary)
+    const url = buildWhatsAppUrl(whatsappNumber, messageToSend)
+    if (!url) {
+      return
+    }
+
+    setGuidanceCtaState((currentState) => ({
+      ...currentState,
+      showWhatsAppCta: false,
+    }))
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
+  const handleEvidenceAdded = (evidenceCount: number) => {
+    if (evidenceCount <= 0 || !isProfessionalGuidanceMode || guidanceConsentState !== 'accepted' || isCaseSubmitted) {
+      return
+    }
+
+    setCaseChecklist((currentChecklist) => ({
+      ...currentChecklist,
+      evidence: true,
+    }))
+    setCaseProgress((currentProgress) => {
+      const evidenceWasComplete = currentProgress.hasEvidence || caseChecklist.evidence
+      const nextCompletedCount = currentProgress.completedCount + (evidenceWasComplete ? 0 : 1)
+      return {
+        ...currentProgress,
+        completedCount: nextCompletedCount,
+        hasEvidence: true,
+        isPartiallyReady: nextCompletedCount >= 2 && !currentProgress.readyForSubmission,
+      }
+    })
+    setGuidanceProgress((currentProgress) => ({
+      ...currentProgress,
+      evidencias: 'concluido',
+    }))
+    if (!hasConfiguredWhatsApp || persona?.ctaConfig?.showAfterEvidence === false) {
+      return
+    }
+
+    setGuidanceCtaState((currentState) => {
+      if (currentState.whatsappSuggested) {
+        return currentState
+      }
+
+      return {
+        whatsappSuggested: true,
+        showWhatsAppCta: true,
+      }
+    })
+  }
+
+  const handleNewConversation = () => {
+    resetCustomerStorage(brandSlug)
+
+    const nextUserId = getOrCreateUserId()
+    setUserId(nextUserId)
+    setMessages([])
+    setMessage('')
+    setSparkState('idle')
+    setIsLoading(false)
+    setSelectedItem(null)
+    setCaseSummary(null)
+    setGuidanceEvidenceItems([])
+    setGuidanceProgress(createEmptyGuidanceProgress())
+    setGuidanceDossier(createEmptyGuidanceDossier())
+    setCaseChecklist(createEmptyCaseChecklist())
+    setCaseProgress(createEmptyCaseProgress())
+    setGuidanceCtaState(createEmptyGuidanceCtaState())
+    setIsGuidanceFlowClosed(false)
+    setIsCaseSubmitted(false)
+    setCaseSubmitMessage(null)
+    setIsSubmitConfirmOpen(false)
+    setSparkMemory(loadSparkMemory(sparkMemoryStorageKey))
+    releaseBootstrapLock()
+
+    if (persona?.professionalData?.operationMode === 'guidance') {
+      setGuidanceConsentState('pending')
+      hasBootstrappedRef.current = false
+      return
+    }
+
+    setGuidanceConsentState('declined')
+    hasBootstrappedRef.current = false
+    void startConversation(true, nextUserId)
+  }
+
+  const handleCaseSubmit = async () => {
+    if (!brandSlug || !flowReadyForSubmission || isCaseSubmitting) {
+      return
+    }
+
+    setIsCaseSubmitting(true)
+    try {
+      const result = await axios.post<CaseSubmitResponse>(
+        buildApiUrl('/case/submit'),
+        {
+          tenant_slug: brandSlug,
+          user_id: userId,
+          case_type: caseSummary?.tipo || guidanceDossier.situacao_identificada,
+          summary: buildCaseSubmissionSummary(guidanceDossier, caseSummary),
+          messages_relevant: messages.slice(-8).map((item) => `${item.role}: ${item.content}`),
+          evidences: guidanceEvidenceItems,
+          timestamp: new Date().toISOString(),
+          guidance_mode: true,
+        },
+      )
+
+      setIsCaseSubmitted(true)
+      setIsSubmitConfirmOpen(false)
+      setGuidanceConsentState('declined')
+      setCaseSubmitMessage(result.data.message)
+    } catch (error) {
+      console.error(error)
+      setCaseSubmitMessage('Não consegui encaminhar o caso agora. Tente de novo em instantes.')
+    } finally {
+      setIsCaseSubmitting(false)
+    }
   }
 
   if (brandSlug && publicBrandStatus === 'loading') {
@@ -1025,7 +1570,32 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
         ) : null}
       </section>
 
-      {isProfessionalGuidanceMode ? (
+      {isProfessionalBrand ? (
+        <section className="customer-highlight-section professional-profile-top" aria-label="Perfil profissional">
+          <div className="customer-section-heading">
+            <span className="catalog-kicker">Perfil profissional</span>
+            <h2>{persona.brandName}</h2>
+            <p className="brand-subtext">{professionalAuthorityLine}</p>
+          </div>
+          <div className="professional-grid">
+            {topPracticeAreas.length > 0 ? (
+              topPracticeAreas.map((area) => (
+                <div key={area} className="professional-card professional-card--chip">
+                  <span className="professional-label">Área de atuação</span>
+                  <strong>{area}</strong>
+                </div>
+              ))
+            ) : (
+              <article className="professional-card">
+                <span className="professional-label">Atuação</span>
+                <p>Atendimento profissional com orientação inicial clara, organização do caso e encaminhamento responsável.</p>
+              </article>
+            )}
+          </div>
+        </section>
+      ) : null}
+
+      {showOrientationConsent ? (
         <section className="customer-highlight-section" aria-label="Consentimento para orientação inicial">
           <div className="customer-section-heading">
             <span className="catalog-kicker">Modo de orientação</span>
@@ -1035,16 +1605,12 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
             <article className="professional-card">
               <span className="professional-label">Antes de iniciar</span>
               <p>
-                {guidanceConsentState === 'accepted'
-                  ? 'Orientação inicial ativada. Vou te conduzir com clareza, calma e limite profissional.'
-                  : guidanceConsentState === 'declined'
-                    ? 'Você optou por seguir sem orientação inicial. A conversa continua em modo profissional informativo.'
-                    : 'Essa orientação tem caráter informativo e não substitui a análise completa de um profissional.'}
+                Essa orientação tem caráter informativo e não substitui a análise completa de um profissional.
               </p>
               <div className="persona-toggle-row">
                 <button
                   type="button"
-                  className={`persona-toggle ${guidanceConsentState === 'accepted' ? 'selected' : ''}`}
+                  className="persona-toggle"
                   onClick={() => {
                     setGuidanceConsentState('accepted')
                     if (messages.length === 0) {
@@ -1055,81 +1621,11 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
                 >
                   Aceitar orientação
                 </button>
-                <button type="button" className={`persona-toggle subtle ${guidanceConsentState === 'declined' ? 'selected' : ''}`} onClick={() => setGuidanceConsentState('declined')}>
+                <button type="button" className="persona-toggle subtle" onClick={() => setGuidanceConsentState('declined')}>
                   Continuar sem orientação
                 </button>
               </div>
             </article>
-          </div>
-        </section>
-      ) : null}
-
-      {caseSummary ? (
-        <section className="customer-highlight-section" aria-label="Resumo do seu caso">
-          <div className="customer-section-heading">
-            <span className="catalog-kicker">Resumo do seu caso</span>
-            <h2>Organizei um dossiê simples para facilitar o próximo passo.</h2>
-          </div>
-          <div className="professional-grid">
-            <article className="professional-card">
-              <span className="professional-label">Situação identificada</span>
-              <strong>{caseSummary.tipo || 'Orientação inicial'}</strong>
-            </article>
-            <article className="professional-card">
-              <span className="professional-label">Informações coletadas</span>
-              {(caseSummary.dados ?? []).length > 0 ? (
-                <ul className="customer-summary-list">
-                  {(caseSummary.dados ?? []).map((item, index) => (
-                    <li key={`dados-${index}`}>{item}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p>Ainda não organizei pontos suficientes para esse resumo.</p>
-              )}
-            </article>
-            <article className="professional-card">
-              <span className="professional-label">Evidências registradas</span>
-              {(caseSummary.evidencias ?? []).length > 0 ? (
-                <ul className="customer-summary-list">
-                  {(caseSummary.evidencias ?? []).map((item, index) => (
-                    <li key={`evidencias-${index}`}>{item}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p>Nenhuma evidência foi citada até aqui.</p>
-              )}
-            </article>
-            <article className="professional-card">
-              <span className="professional-label">Próximos passos sugeridos</span>
-              {(caseSummary.passos ?? []).length > 0 ? (
-                <ul className="customer-summary-list">
-                  {(caseSummary.passos ?? []).map((item, index) => (
-                    <li key={`passos-${index}`}>{item}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p>O próximo passo principal é levar esse contexto para análise profissional.</p>
-              )}
-            </article>
-          </div>
-          <div className="persona-toggle-row">
-            <button type="button" className="persona-toggle selected" onClick={handleSummaryForward} disabled={!whatsappNumber}>
-              Encaminhar para profissional
-            </button>
-            <button type="button" className="persona-toggle subtle" disabled>
-              Baixar resumo
-            </button>
-            <button
-              type="button"
-              className="persona-toggle subtle"
-              onClick={() => {
-                setGuidanceConsentState('declined')
-                setIsGuidanceFlowClosed(false)
-                setMobileSection('chat')
-              }}
-            >
-              Continuar conversa
-            </button>
           </div>
         </section>
       ) : null}
@@ -1202,30 +1698,9 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
         </section>
       ) : null}
 
-      {showProfessionalSections ? (
+      {showProfessionalSections && professionalOperationMode === 'authority' && !isGuidanceActive ? (
         <>
-          <section className="customer-highlight-section" aria-label="Perfil profissional">
-            <div className="customer-section-heading">
-              <span className="catalog-kicker">Perfil profissional</span>
-              <h2>{persona.professionalData?.presentation || 'Atuação técnica com presença clara e responsável.'}</h2>
-            </div>
-            <div className="professional-grid">
-              {(persona.professionalData?.practiceAreas ?? []).slice(0, 5).map((area) => (
-                <div key={area} className="professional-card professional-card--chip">
-                  <span className="professional-label">Em destaque</span>
-                  <strong>{area}</strong>
-                </div>
-              ))}
-              {(persona.professionalData?.differentials ?? []).slice(0, 3).map((differential) => (
-                <div key={differential} className="professional-card">
-                  <span className="professional-label">Mais ativo</span>
-                  <p>{differential}</p>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          {professionalOperationMode === 'authority' && (persona.professionalData?.cases?.length ?? 0) > 0 ? (
+          {(persona.professionalData?.cases?.length ?? 0) > 0 ? (
             <section className="customer-highlight-section" aria-label="Casos e atuação profissional">
               <div className="customer-section-heading">
                 <span className="catalog-kicker">Casos e atuação profissional</span>
@@ -1245,7 +1720,7 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
             </section>
           ) : null}
 
-          {professionalOperationMode === 'authority' && (persona.professionalData?.contents?.length ?? 0) > 0 ? (
+          {(persona.professionalData?.contents?.length ?? 0) > 0 ? (
             <section className="customer-highlight-section" aria-label="Conteúdos e posicionamento">
               <div className="customer-section-heading">
                 <span className="catalog-kicker">Conteúdos e posicionamento</span>
@@ -1337,9 +1812,16 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
       </section>
       ) : null}
 
-      <section className={`customer-chat-card customer-section ${mobileSection === 'catalog' && !isEmergencyMode && hasDiscoverySection ? 'mobile-collapsed' : ''}`}>
+      <div className={showGuidancePanels ? 'guidance-flow-layout' : 'guidance-flow-layout guidance-flow-layout--inactive'}>
+
+      <section className={`customer-chat-card customer-section ${showGuidancePanels ? 'guidance-flow-chat' : ''} ${mobileSection === 'catalog' && !isEmergencyMode && hasDiscoverySection ? 'mobile-collapsed' : ''}`}>
         <div className="customer-chat-intro">
-          <span className="catalog-kicker">{buildModeHeadline(activeMode)}</span>
+          <div className="customer-chat-toolbar">
+            <span className="catalog-kicker">{buildModeHeadline(activeMode)}</span>
+            <button type="button" className="customer-chat-reset" onClick={handleNewConversation}>
+              Nova conversa
+            </button>
+          </div>
           <h2>{buildModeSubtext(activeMode)}</h2>
           {isProfessionalGuidanceMode && guidanceConsentState === 'accepted' && messages.length > 0 ? (
             <p className="brand-subtext">
@@ -1386,10 +1868,235 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
         </form>
       </section>
 
+      {showGuidancePanels ? (
+        <div className="guidance-flow-side">
+          <section className="customer-highlight-section guidance-dossier-panel" aria-label="Dossiê do caso">
+            <div className="customer-section-heading">
+              <span className="catalog-kicker">Dossiê do caso</span>
+              <h2>{isGuidanceFlowClosed ? 'As principais informações do caso já estão organizadas.' : 'À medida que conversamos, vou organizar aqui os pontos principais.'}</h2>
+            </div>
+            <div className="professional-grid professional-grid--guidance">
+              <article className="professional-card">
+                <span className="professional-label">Situação identificada</span>
+                <strong>{caseSummary?.tipo || guidanceDossier.situacao_identificada || 'Aguardando informações'}</strong>
+                <p>{guidanceDossier.contexto || 'Em coleta'}</p>
+              </article>
+              <article className="professional-card">
+                <span className="professional-label">Impacto / prejuízo</span>
+                <p>{caseSummary?.dados?.[1] || guidanceDossier.impacto || 'Em coleta'}</p>
+              </article>
+              <article className="professional-card">
+                <span className="professional-label">Evidências registradas</span>
+                <ul className="customer-summary-list">
+                  {(caseSummary?.evidencias?.length ? caseSummary.evidencias : guidanceDossier.evidencias).map((item, index) => (
+                    <li key={`dossier-evidence-inline-${index}`}>{item}</li>
+                  ))}
+                </ul>
+              </article>
+              <article className="professional-card">
+                <span className="professional-label">Próximos passos</span>
+                <ul className="customer-summary-list">
+                  {(caseSummary?.passos?.length ? caseSummary.passos : guidanceDossier.proximos_passos).map((item, index) => (
+                    <li key={`dossier-steps-inline-${index}`}>{item}</li>
+                  ))}
+                </ul>
+              </article>
+            </div>
+            {caseSummary ? (
+              <div className="persona-toggle-row">
+                {flowReadyForSubmission && hasConfiguredWhatsApp && persona?.ctaConfig?.showOnCompletion !== false ? (
+                  <button type="button" className="persona-toggle selected guidance-submit-button" onClick={() => setIsSubmitConfirmOpen(true)}>
+                    {ctaPrimaryText}
+                  </button>
+                ) : null}
+                <button type="button" className="persona-toggle subtle" disabled>
+                  Baixar resumo
+                </button>
+                {isCaseSubmitted ? (
+                  <>
+                    <button type="button" className="persona-toggle subtle" onClick={handleSummaryForward}>
+                      Falar no WhatsApp
+                    </button>
+                    <button type="button" className="persona-toggle subtle" disabled>
+                      Ver status do caso
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    className="persona-toggle subtle"
+                    onClick={() => {
+                      setGuidanceConsentState('declined')
+                      setIsGuidanceFlowClosed(false)
+                      setMobileSection('chat')
+                    }}
+                  >
+                    Continuar conversa
+                  </button>
+                )}
+              </div>
+            ) : null}
+            {caseSubmitMessage ? <p className="guidance-submit-feedback">{caseSubmitMessage}</p> : null}
+            {guidanceCtaState.showWhatsAppCta && hasConfiguredWhatsApp ? (
+              <div className="guidance-inline-cta" aria-live="polite">
+                <p className="guidance-inline-cta-copy">
+                  {ctaSecondaryText}
+                </p>
+                <div className="persona-toggle-row">
+                  <button type="button" className="persona-toggle selected guidance-submit-button" onClick={handleSuggestedWhatsAppForward}>
+                    {ctaPrimaryText}
+                  </button>
+                  <button type="button" className="persona-toggle subtle" onClick={() => imageEvidenceInputRef.current?.click()}>
+                    Adicionar mais evidências
+                  </button>
+                  <button
+                    type="button"
+                    className="persona-toggle subtle"
+                    onClick={() =>
+                      setGuidanceCtaState((currentState) => ({
+                        ...currentState,
+                        showWhatsAppCta: false,
+                      }))
+                    }
+                  >
+                    Continuar conversa
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </section>
+
+          <section className={`customer-highlight-section guidance-evidence-panel ${highlightEvidencePanel ? 'highlighted' : ''}`} aria-label="Evidências do caso">
+            <div className="customer-section-heading">
+              <span className="catalog-kicker">Evidências do caso</span>
+              <h2>Anexe provas para fortalecer o dossiê e deixar a análise mais objetiva.</h2>
+            </div>
+            <article className="professional-card">
+              <p className="guidance-evidence-copy">Anexe fotos, vídeos ou áudios para fortalecer o dossiê e facilitar a análise do caso.</p>
+              <div className="persona-toggle-row">
+                <button type="button" className="persona-toggle subtle" onClick={() => imageEvidenceInputRef.current?.click()}>
+                  Adicionar fotos
+                </button>
+                <button type="button" className="persona-toggle subtle" onClick={() => videoEvidenceInputRef.current?.click()}>
+                  Adicionar vídeo
+                </button>
+                <button type="button" className="persona-toggle subtle" onClick={() => audioEvidenceInputRef.current?.click()}>
+                  Adicionar áudio
+                </button>
+              </div>
+              <div className="persona-toggle-row">
+                <button type="button" className="persona-toggle subtle" onClick={handleNoEvidenceConfirmation}>
+                  Não tenho evidências agora
+                </button>
+              </div>
+              <input
+                ref={imageEvidenceInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="guidance-evidence-input"
+                onChange={(event) => handleEvidenceSelection('image', event.target.files)}
+              />
+              <input
+                ref={videoEvidenceInputRef}
+                type="file"
+                accept="video/*"
+                className="guidance-evidence-input"
+                onChange={(event) => handleEvidenceSelection('video', event.target.files)}
+              />
+              <input
+                ref={audioEvidenceInputRef}
+                type="file"
+                accept="audio/*"
+                className="guidance-evidence-input"
+                onChange={(event) => handleEvidenceSelection('audio', event.target.files)}
+              />
+              {guidanceEvidenceItems.length > 0 ? (
+                <ul className="customer-summary-list">
+                  {guidanceEvidenceItems.map((item, index) => (
+                    <li key={`${item.type}-${item.name}-inline-${index}`}>
+                      {item.type === 'image' ? 'Foto' : item.type === 'video' ? 'Vídeo' : 'Áudio'}: {item.name}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>Nenhuma evidência adicionada até aqui.</p>
+              )}
+            </article>
+          </section>
+
+          <section className="customer-highlight-section guidance-status-panel" aria-label="Status do dossiê">
+            <div className="customer-section-heading">
+              <span className="catalog-kicker">Status do dossiê</span>
+              <h2>À medida que a conversa avança, eu atualizo aqui o que já está pronto no caso.</h2>
+            </div>
+            <article className="professional-card">
+              <p>
+                {caseProgress.readyForSubmission
+                  ? 'O caso já tem base suficiente para encaminhamento profissional.'
+                  : caseProgress.isPartiallyReady
+                    ? `Já organizei ${caseProgress.completedCount} de 4 etapas principais do caso.`
+                    : 'Estou verificando os pontos essenciais para estruturar o caso com segurança.'}
+              </p>
+              <ul className="guidance-progress-list">
+                <li>
+                  <strong>Contexto do caso</strong>
+                  <span className={`guidance-progress-badge guidance-progress-badge--${guidanceProgress.contexto}`}>{caseChecklist.context ? 'Concluído' : buildGuidanceProgressLabel(guidanceProgress.contexto)}</span>
+                </li>
+                <li>
+                  <strong>Impacto / prejuízo</strong>
+                  <span className={`guidance-progress-badge guidance-progress-badge--${guidanceProgress.impacto}`}>{caseChecklist.impact ? 'Concluído' : buildGuidanceProgressLabel(guidanceProgress.impacto)}</span>
+                </li>
+                <li>
+                  <strong>Evidências</strong>
+                  <span className={`guidance-progress-badge guidance-progress-badge--${guidanceProgress.evidencias}`}>
+                    {caseChecklist.evidence ? (caseProgress.hasEvidence ? 'Concluído' : 'Sem evidência agora') : buildGuidanceProgressLabel(guidanceProgress.evidencias)}
+                  </span>
+                </li>
+                <li>
+                  <strong>Próximos passos</strong>
+                  <span className={`guidance-progress-badge guidance-progress-badge--${guidanceProgress.proximos_passos}`}>{caseChecklist.nextSteps ? 'Concluído' : buildGuidanceProgressLabel(guidanceProgress.proximos_passos)}</span>
+                </li>
+              </ul>
+            </article>
+          </section>
+        </div>
+      ) : null}
+
+      </div>
+
       <footer className="brandsoul-signature" aria-label="Assinatura do BrandSoul">
         <img src={brandsoulLogo} alt="BrandSoul" className="brandsoul-footer-mark" />
         <span>Powered by BrandSoul</span>
       </footer>
+
+      {isSubmitConfirmOpen ? (
+        <div className="product-modal-overlay" role="dialog" aria-modal="true" aria-label="Confirmar encaminhamento do caso" onClick={() => setIsSubmitConfirmOpen(false)}>
+          <div className="product-modal" onClick={(event) => event.stopPropagation()}>
+            <button type="button" className="product-modal-close" onClick={() => setIsSubmitConfirmOpen(false)}>
+              Fechar
+            </button>
+            <div className="product-modal-copy">
+              <span className="product-modal-section-label">Confirmação</span>
+              <h3>Seu caso será enviado com:</h3>
+              <ul className="customer-summary-list">
+                <li>resumo organizado</li>
+                <li>evidências anexadas</li>
+                <li>informações do ocorrido</li>
+              </ul>
+              <p>Deseja encaminhar para análise profissional?</p>
+            </div>
+            <div className="persona-toggle-row">
+              <button type="button" className="persona-toggle selected guidance-submit-button" onClick={handleCaseSubmit} disabled={isCaseSubmitting}>
+                {isCaseSubmitting ? 'Encaminhando...' : 'Confirmar'}
+              </button>
+              <button type="button" className="persona-toggle subtle" onClick={() => setIsSubmitConfirmOpen(false)} disabled={isCaseSubmitting}>
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <ProductModal item={selectedItem} onClose={() => setSelectedItem(null)} onPrimaryAction={handleCatalogAction} onWhatsAppAction={whatsappNumber ? handleWhatsAppOpen : undefined} />
     </main>

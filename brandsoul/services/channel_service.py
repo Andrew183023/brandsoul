@@ -4,7 +4,7 @@ import unicodedata
 from datetime import UTC, datetime
 from pathlib import Path
 
-from models.channel import CatalogSummaryItem, ChannelMessage, ChannelResponse, LocationSummary, Message, PageHighlights
+from models.channel import CatalogSummaryItem, ChannelMessage, ChannelResponse, GuidanceEvidenceItem, LocationSummary, Message, PageHighlights
 from models.persona import Persona
 from models.spark import SparkPayload
 from services.auth_store import get_tenant_by_slug
@@ -22,6 +22,7 @@ from services.spark_service import fetch_tenant_spark
 MAX_HISTORY_MESSAGES = 8
 GUIDANCE_LOG_PATH = Path(__file__).resolve().parents[1] / "data" / "professional_guidance_logs.jsonl"
 GUIDANCE_CLOSURE_TEXT = "Para uma análise completa e adequada ao seu caso, é importante falar diretamente com o profissional responsável."
+GUIDANCE_FINAL_MESSAGE = "Organizei as principais informações do seu caso. Agora o ideal é que um profissional avalie com mais precisão."
 
 
 def normalize_history(messages: list[Message] | None) -> list[Message]:
@@ -100,6 +101,178 @@ def extract_user_statements(messages: list[Message], current_message: str) -> li
     return user_messages[-6:]
 
 
+def extract_case_context(user_statements: list[str]) -> str | None:
+    meaningful_statements = [statement.strip() for statement in user_statements if len(statement.strip()) > 12]
+    if not meaningful_statements:
+        return None
+
+    return " ".join(meaningful_statements[:2])[:280]
+
+
+def extract_case_impact(user_statements: list[str]) -> str | None:
+    impact_keywords = (
+        "preju",
+        "dificuld",
+        "perdi",
+        "atras",
+        "impedi",
+        "bloque",
+        "dan",
+        "feri",
+        "machuc",
+        "problema",
+        "transtorno",
+    )
+    for statement in reversed(user_statements):
+        normalized_statement = normalize_text(statement)
+        if any(keyword in normalized_statement for keyword in impact_keywords):
+            return statement[:220]
+    return None
+
+
+def extract_case_consequence(user_statements: list[str]) -> str | None:
+    consequence_keywords = (
+        "agora nao consigo",
+        "nao consigo",
+        "fiquei sem",
+        "afetou",
+        "atrapalhou",
+        "impactou",
+        "precisei",
+        "estou sem",
+        "na rotina",
+        "no trabalho",
+        "na minha rotina",
+    )
+    for statement in reversed(user_statements):
+        normalized_statement = normalize_text(statement)
+        if any(keyword in normalized_statement for keyword in consequence_keywords):
+            return statement[:220]
+    return None
+
+
+def user_confirmed_no_evidence(current_message: str, user_statements: list[str]) -> bool:
+    normalized_text = normalize_text(" ".join([*user_statements, current_message]))
+    patterns = (
+        r"\b(nao tenho foto|nao tenho fotos|nao tenho video|nao tenho videos|nao tenho audio|nao tenho audios)\b",
+        r"\b(sem evidencia|sem evidencias|sem prova|sem provas|sem comprovante|sem comprovantes)\b",
+        r"\b(nao tenho como comprovar|nao consegui registrar)\b",
+    )
+    return any(re.search(pattern, normalized_text) for pattern in patterns)
+
+
+def collect_conversation_data(
+    user_statements: list[str],
+    evidence_items: list[GuidanceEvidenceItem] | None = None,
+    current_message: str = "",
+) -> dict[str, str]:
+    evidence_labels = detect_evidence_labels(user_statements)
+    collected_data: dict[str, str] = {}
+
+    case_context = extract_case_context(user_statements)
+    case_impact = extract_case_impact(user_statements)
+    case_consequence = extract_case_consequence(user_statements)
+
+    if case_context:
+        collected_data["contexto"] = case_context
+    if case_impact:
+        collected_data["impacto"] = case_impact
+    if evidence_items:
+        uploaded_labels = [f"{item.type}: {item.name}" for item in evidence_items]
+        collected_data["evidencia"] = ", ".join(uploaded_labels[:4])
+    elif evidence_labels:
+        collected_data["evidencia"] = ", ".join(evidence_labels[:4])
+    elif user_confirmed_no_evidence(current_message, user_statements):
+        collected_data["evidencia"] = "Sem evidências disponíveis no momento"
+    if case_consequence:
+        collected_data["consequencia"] = case_consequence
+
+    return collected_data
+
+
+def is_case_complete(conversation_data: dict[str, str]) -> bool:
+    required_fields = [
+        "contexto",
+        "impacto",
+        "evidencia",
+        "consequencia",
+    ]
+
+    return all(conversation_data.get(field) for field in required_fields)
+
+
+def has_uploaded_evidence(evidence_items: list[GuidanceEvidenceItem] | None) -> bool:
+    return bool(evidence_items and len(evidence_items) > 0)
+
+
+def has_evidence_confirmation(user_statements: list[str], current_message: str) -> bool:
+    return user_confirmed_no_evidence(current_message, user_statements)
+
+
+def has_next_steps_available(persona: Persona, payload: ChannelMessage, normalized_messages: list[Message]) -> bool:
+    professional_data = persona.professional_data
+    guidance = professional_data.guidance if professional_data else None
+    if not guidance:
+        return False
+
+    selected_playbook = None
+    if guidance.situation_type and guidance.playbooks:
+        selected_playbook = guidance.playbooks.get(guidance.situation_type)
+
+    if selected_playbook and isinstance(selected_playbook.get("action_checklist"), list):
+        checklist_items = [str(item).strip() for item in selected_playbook["action_checklist"] if str(item).strip()]
+        if checklist_items:
+            return True
+
+    if guidance.action_checklist:
+        return True
+
+    user_statements = extract_user_statements(normalized_messages, payload.message)
+    return len(user_statements) >= 2
+
+
+def build_case_checklist(
+    payload: ChannelMessage,
+    persona: Persona,
+    normalized_messages: list[Message],
+) -> dict[str, bool]:
+    user_statements = extract_user_statements(normalized_messages, payload.message)
+    collected_data = collect_conversation_data(user_statements, payload.evidence_items, payload.message)
+    evidence_confirmed_absent = has_evidence_confirmation(user_statements, payload.message)
+
+    return {
+        "context": bool(collected_data.get("contexto")),
+        "impact": bool(collected_data.get("impacto") or collected_data.get("consequencia")),
+        "evidence": has_uploaded_evidence(payload.evidence_items) or evidence_confirmed_absent or bool(collected_data.get("evidencia")),
+        "nextSteps": has_next_steps_available(persona, payload, normalized_messages),
+    }
+
+
+def build_case_progress(
+    payload: ChannelMessage,
+    persona: Persona,
+    normalized_messages: list[Message],
+) -> dict[str, bool | int]:
+    checklist = build_case_checklist(payload, persona, normalized_messages)
+    user_statements = extract_user_statements(normalized_messages, payload.message)
+    evidence_confirmed_absent = has_evidence_confirmation(user_statements, payload.message)
+    has_evidence = has_uploaded_evidence(payload.evidence_items)
+    completed_count = sum(1 for item in checklist.values() if item)
+    ready_for_submission = bool(
+        checklist["context"]
+        and checklist["impact"]
+        and checklist["nextSteps"]
+        and (has_evidence or evidence_confirmed_absent)
+    )
+
+    return {
+        "completedCount": completed_count,
+        "readyForSubmission": ready_for_submission,
+        "hasEvidence": has_evidence,
+        "isPartiallyReady": completed_count >= 2 and not ready_for_submission,
+    }
+
+
 def detect_information_signals(user_statements: list[str]) -> list[str]:
     joined_text = normalize_text(" ".join(user_statements))
     signal_rules = [
@@ -143,8 +316,8 @@ def should_close_guidance_flow(payload: ChannelMessage, persona: Persona, normal
     if user_indicated_guidance_end(payload.message):
         return True
 
-    information_signals = detect_information_signals(user_statements)
-    if len(information_signals) >= 3 and len(user_statements) >= 3:
+    conversation_data = collect_conversation_data(user_statements, payload.evidence_items, payload.message)
+    if is_case_complete(conversation_data):
         return True
 
     selected_playbook = None
@@ -199,11 +372,17 @@ def build_case_summary(payload: ChannelMessage, persona: Persona, normalized_mes
     if not user_statements:
         return None
 
+    collected_data = collect_conversation_data(user_statements, payload.evidence_items, payload.message)
+
     selected_playbook = None
     if guidance and guidance.situation_type and guidance.playbooks:
         selected_playbook = guidance.playbooks.get(guidance.situation_type)
 
     evidence_labels = detect_evidence_labels(user_statements)
+    if payload.evidence_items:
+        evidence_labels = [f"{item.type}: {item.name}" for item in payload.evidence_items]
+    elif collected_data.get("evidencia"):
+        evidence_labels = [collected_data["evidencia"]]
     if selected_playbook and isinstance(selected_playbook.get("data_collection"), list):
         for item in selected_playbook["data_collection"]:
             normalized_item = str(item).strip()
@@ -217,10 +396,81 @@ def build_case_summary(payload: ChannelMessage, persona: Persona, normalized_mes
 
     return {
         "tipo": guidance.situation_type if guidance and guidance.situation_type else "orientacao_inicial",
-        "dados": user_statements,
+        "dados": [
+            value for value in (
+                collected_data.get("contexto"),
+                collected_data.get("impacto"),
+                collected_data.get("consequencia"),
+                *user_statements[-2:],
+            ) if value
+        ][:5],
         "evidencias": evidence_labels or ["Observações relatadas na conversa"],
         "passos": next_steps[:4],
     }
+
+
+def build_guidance_dossier(
+    payload: ChannelMessage,
+    persona: Persona,
+    normalized_messages: list[Message],
+) -> dict[str, list[str] | str]:
+    professional_data = persona.professional_data
+    guidance = professional_data.guidance if professional_data else None
+    user_statements = extract_user_statements(normalized_messages, payload.message)
+    collected_data = collect_conversation_data(user_statements, payload.evidence_items, payload.message)
+
+    selected_playbook = None
+    if guidance and guidance.situation_type and guidance.playbooks:
+        selected_playbook = guidance.playbooks.get(guidance.situation_type)
+
+    evidence_labels = detect_evidence_labels(user_statements)
+    if payload.evidence_items:
+        evidence_labels = [f"{item.type}: {item.name}" for item in payload.evidence_items]
+    elif collected_data.get("evidencia"):
+        evidence_labels = [collected_data["evidencia"]]
+
+    next_steps = ["Em coleta"]
+    if selected_playbook and isinstance(selected_playbook.get("action_checklist"), list):
+        next_steps = [str(item).strip() for item in selected_playbook["action_checklist"] if str(item).strip()][:3] or ["Em coleta"]
+
+    return {
+        "situacao_identificada": guidance.situation_type if guidance and guidance.situation_type else "Em coleta",
+        "contexto": collected_data.get("contexto") or "Aguardando informações",
+        "impacto": collected_data.get("impacto") or "Aguardando informações",
+        "evidencias": evidence_labels or ["Em coleta"],
+        "proximos_passos": next_steps,
+    }
+
+
+def build_guidance_progress(
+    payload: ChannelMessage,
+    persona: Persona,
+    normalized_messages: list[Message],
+) -> dict[str, str]:
+    user_statements = extract_user_statements(normalized_messages, payload.message)
+    collected_data = collect_conversation_data(user_statements, payload.evidence_items, payload.message)
+    checklist = build_case_checklist(payload, persona, normalized_messages)
+    evidence_confirmed_absent = has_evidence_confirmation(user_statements, payload.message)
+
+    return {
+        "contexto": "concluido" if checklist["context"] else "em_andamento" if user_statements else "pendente",
+        "impacto": "concluido" if checklist["impact"] else "em_andamento" if len(user_statements) >= 2 else "pendente",
+        "evidencias": "concluido" if checklist["evidence"] else "em_andamento" if evidence_confirmed_absent or bool(collected_data.get("evidencia")) else "pendente",
+        "proximos_passos": "concluido" if checklist["nextSteps"] else "em_andamento" if len(user_statements) >= 2 else "pendente",
+    }
+
+
+def should_prompt_for_evidence(payload: ChannelMessage, normalized_messages: list[Message]) -> bool:
+    if payload.guidance_consent is not True:
+        return False
+
+    user_statements = extract_user_statements(normalized_messages, payload.message)
+    collected_data = collect_conversation_data(user_statements, payload.evidence_items, payload.message)
+    has_context = bool(collected_data.get("contexto"))
+    has_impact = bool(collected_data.get("impacto"))
+    has_evidence = bool(collected_data.get("evidencia"))
+
+    return has_context and has_impact and not has_evidence
 
 
 def format_guidance_closure(response: str, case_summary: dict[str, list[str] | str] | None) -> str:
@@ -374,6 +624,8 @@ def append_professional_guidance_log(
                 "mode": payload.mode or "service",
                 "guidance_consent": payload.guidance_consent is True,
                 "detected_intent": response_metadata.get("detected_intent"),
+                "guidance_progress": response_metadata.get("guidance_progress"),
+                "flow_closed": response_metadata.get("flow_closed") is True,
             },
         }
         with GUIDANCE_LOG_PATH.open("a", encoding="utf-8") as log_file:
@@ -397,6 +649,11 @@ def handle_channel_message(payload: ChannelMessage) -> ChannelResponse:
     ) = resolve_public_brand_payload(payload)
     channel_context = build_channel_ai_context(payload.channel, normalized_metadata)
     response_metadata = build_response_metadata(normalized_metadata, payload.message, resolved_persona)
+    if payload.guidance_consent is True:
+        response_metadata["case_checklist"] = build_case_checklist(payload, resolved_persona, normalized_messages)
+        response_metadata["case_progress"] = build_case_progress(payload, resolved_persona, normalized_messages)
+        response_metadata["guidance_progress"] = build_guidance_progress(payload, resolved_persona, normalized_messages)
+        response_metadata["guidance_dossier"] = build_guidance_dossier(payload, resolved_persona, normalized_messages)
 
     if should_bootstrap_initial_response(payload.message, normalized_messages, normalized_metadata):
         return ChannelResponse(
@@ -410,6 +667,27 @@ def handle_channel_message(payload: ChannelMessage) -> ChannelResponse:
             ),
             spark_state="speaking",
             memory_used=False,
+            metadata=response_metadata,
+        )
+
+    flow_closed = should_close_guidance_flow(payload, resolved_persona, normalized_messages)
+    if flow_closed:
+        case_summary = build_case_summary(payload, resolved_persona, normalized_messages)
+        response_metadata["flow_closed"] = True
+        if case_summary:
+            response_metadata["case_summary"] = case_summary
+
+        response = format_guidance_closure(GUIDANCE_FINAL_MESSAGE, case_summary)
+
+        if should_log_professional_guidance(resolved_persona, payload):
+            append_professional_guidance_log(payload, resolved_persona, response, response_metadata)
+
+        return ChannelResponse(
+            channel=payload.channel,
+            user_id=payload.user_id,
+            response=response,
+            spark_state="speaking",
+            memory_used=memory_used(normalized_messages),
             metadata=response_metadata,
         )
 
@@ -433,13 +711,15 @@ def handle_channel_message(payload: ChannelMessage) -> ChannelResponse:
         guidance_consent=payload.guidance_consent is True,
     )
 
-    flow_closed = should_close_guidance_flow(payload, resolved_persona, normalized_messages)
-    if flow_closed:
-        case_summary = build_case_summary(payload, resolved_persona, normalized_messages)
-        response = format_guidance_closure(response, case_summary)
-        response_metadata["flow_closed"] = True
-        if case_summary:
-            response_metadata["case_summary"] = case_summary
+    if should_prompt_for_evidence(payload, normalized_messages):
+        evidence_prompt = (
+            "Se você tiver fotos, vídeos ou áudio, pode anexar agora para fortalecer o dossiê do caso. "
+            "Essas evidências ajudam a organizar melhor o caso e facilitar a análise profissional. "
+            "Use os botões de upload abaixo para adicionar os arquivos."
+        )
+        if normalize_text(evidence_prompt) not in normalize_text(response):
+            response = f"{response.rstrip()}\n\n{evidence_prompt}"
+        response_metadata["highlight_evidence"] = True
 
     if should_log_professional_guidance(resolved_persona, payload):
         append_professional_guidance_log(payload, resolved_persona, response, response_metadata)

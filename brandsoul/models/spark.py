@@ -24,6 +24,22 @@ class SparkModes(BaseModel):
     emergency: bool = False
 
 
+class SparkEmergencyMode(BaseModel):
+    enabled: bool = False
+    autoStart: bool = False
+    showUploadEarly: bool = True
+
+
+class SparkCtaConfig(BaseModel):
+    whatsappEnabled: bool = False
+    whatsappNumber: str | None = None
+    whatsappMessageTemplate: str | None = None
+    showAfterEvidence: bool = True
+    showOnCompletion: bool = True
+    primaryText: str | None = None
+    secondaryText: str | None = None
+
+
 class SparkFeatures(BaseModel):
     products: bool = True
     services: bool = False
@@ -96,6 +112,8 @@ class SparkPayload(BaseModel):
     businessGoal: str = Field(default="volume", min_length=1, max_length=40)
     modes: SparkModes = Field(default_factory=SparkModes)
     emergencyType: str | None = Field(default=None, min_length=1, max_length=40)
+    emergencyMode: SparkEmergencyMode = Field(default_factory=SparkEmergencyMode)
+    ctaConfig: SparkCtaConfig = Field(default_factory=SparkCtaConfig)
     serviceOffers: list[SparkServiceOffer] = Field(default_factory=list)
     schedulingConfig: SparkSchedulingConfig | None = None
     professionalData: SparkProfessionalData | None = None

@@ -1179,6 +1179,9 @@ def build_professional_guidance_context(persona: Persona, guidance_consent: bool
             "- conduza por etapas curtas, colete dados, organize fatos e explique o proximo passo com sobriedade.",
             "- enquanto o fluxo estiver em andamento, nao encerre a conversa cedo demais e nao repita aviso final em toda resposta.",
             "- so considere o fluxo encerrado quando os dados principais estiverem organizados ou a pessoa indicar que ja concluiu o relato inicial.",
+            "- trate a conversa como montagem guiada de caso, nao como bate-papo solto.",
+            "- valorize fotos, videos e audios como evidencias que fortalecem o dossie.",
+            "- use linguagem de progresso quando fizer sentido, como 'ja organizei parte do caso' ou 'agora so falta consolidar as evidencias'.",
         ]
     )
 

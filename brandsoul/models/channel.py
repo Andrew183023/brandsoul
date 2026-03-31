@@ -38,6 +38,13 @@ class PageHighlights(BaseModel):
     has_new_arrivals: bool = False
 
 
+class GuidanceEvidenceItem(BaseModel):
+    type: Literal["image", "video", "audio"]
+    name: str = Field(..., min_length=1)
+    count: int = Field(default=1, ge=1)
+    timestamp: str = Field(..., min_length=1)
+
+
 class ChannelMessage(BaseModel):
     channel: str = Field(..., min_length=1, examples=["web"])
     user_id: str = Field(..., min_length=1, examples=["local-user"])
@@ -53,6 +60,7 @@ class ChannelMessage(BaseModel):
     persona: Persona
     messages: list[Message] | None = None
     metadata: dict[str, str] | None = None
+    evidence_items: list[GuidanceEvidenceItem] | None = None
     memory_summary: MemorySummary | None = None
     catalog_summary: list[CatalogSummaryItem] | None = None
     business_goal: Literal["volume", "ticket", "rotation", "launch"] | str | None = "volume"

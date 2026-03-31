@@ -1,5 +1,6 @@
 import os
 import sqlite3
+from hashlib import sha256
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -84,6 +85,8 @@ def initialize_database(connection: sqlite3.Connection, database_key: str) -> No
             business_goal TEXT NOT NULL,
             modes_json TEXT,
             emergency_type TEXT,
+            emergency_mode_json TEXT,
+            cta_config_json TEXT,
             service_offers_json TEXT,
             scheduling_config_json TEXT,
             professional_data_json TEXT,
@@ -146,6 +149,24 @@ def initialize_database(connection: sqlite3.Connection, database_key: str) -> No
 
         CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id
         ON password_reset_tokens(user_id);
+
+        CREATE TABLE IF NOT EXISTS case_submissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tenant_id INTEGER NOT NULL,
+            user_id TEXT NOT NULL,
+            case_type TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            messages_json TEXT,
+            evidences_json TEXT,
+            guidance_mode INTEGER NOT NULL DEFAULT 1,
+            destination TEXT NOT NULL DEFAULT 'panel',
+            submission_key TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_case_submissions_tenant_id
+        ON case_submissions(tenant_id);
         """
     )
     ensure_table_columns(
@@ -157,6 +178,8 @@ def initialize_database(connection: sqlite3.Connection, database_key: str) -> No
             "features_json": "TEXT",
             "modes_json": "TEXT",
             "emergency_type": "TEXT",
+            "emergency_mode_json": "TEXT",
+            "cta_config_json": "TEXT",
             "service_offers_json": "TEXT",
             "scheduling_config_json": "TEXT",
             "professional_data_json": "TEXT",
@@ -391,7 +414,7 @@ def upsert_spark(*, tenant_id: int, spark_payload: dict) -> dict:
                 """
                 UPDATE sparks
                 SET brand_name = ?, logo = ?, tone = ?, power = ?, business_model = ?, brand_type = ?, features_json = ?, voice_style = ?, act_mode = ?, business_goal = ?,
-                    modes_json = ?, emergency_type = ?, service_offers_json = ?, scheduling_config_json = ?, professional_data_json = ?, business_description = ?, institutional_image = ?, theme_json = ?, page_sections_json = ?,
+                    modes_json = ?, emergency_type = ?, emergency_mode_json = ?, cta_config_json = ?, service_offers_json = ?, scheduling_config_json = ?, professional_data_json = ?, business_description = ?, institutional_image = ?, theme_json = ?, page_sections_json = ?,
                     carousel_images_json = ?, opening_hours_json = ?, address = ?, city = ?, state = ?,
                     delivery_available = ?, business_hours = ?, service_region = ?, brand_highlight = ?,
                     whatsapp = ?, email = ?, instagram = ?, facebook = ?, tiktok = ?, site = ?, contact_info = ?,
@@ -411,6 +434,8 @@ def upsert_spark(*, tenant_id: int, spark_payload: dict) -> dict:
                     spark_payload["business_goal"],
                     spark_payload.get("modes_json"),
                     spark_payload.get("emergency_type"),
+                    spark_payload.get("emergency_mode_json"),
+                    spark_payload.get("cta_config_json"),
                     spark_payload.get("service_offers_json"),
                     spark_payload.get("scheduling_config_json"),
                     spark_payload.get("professional_data_json"),
@@ -443,12 +468,12 @@ def upsert_spark(*, tenant_id: int, spark_payload: dict) -> dict:
                 """
                 INSERT INTO sparks (
                     tenant_id, brand_name, logo, tone, power, business_model, brand_type, features_json, voice_style, act_mode, business_goal,
-                    modes_json, emergency_type, service_offers_json, scheduling_config_json, professional_data_json, business_description, institutional_image, theme_json, page_sections_json,
+                    modes_json, emergency_type, emergency_mode_json, cta_config_json, service_offers_json, scheduling_config_json, professional_data_json, business_description, institutional_image, theme_json, page_sections_json,
                     carousel_images_json, opening_hours_json, address, city, state, delivery_available,
                     business_hours, service_region, brand_highlight, whatsapp, email, instagram,
                     facebook, tiktok, site, contact_info, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     tenant_id,
@@ -464,6 +489,8 @@ def upsert_spark(*, tenant_id: int, spark_payload: dict) -> dict:
                     spark_payload["business_goal"],
                     spark_payload.get("modes_json"),
                     spark_payload.get("emergency_type"),
+                    spark_payload.get("emergency_mode_json"),
+                    spark_payload.get("cta_config_json"),
                     spark_payload.get("service_offers_json"),
                     spark_payload.get("scheduling_config_json"),
                     spark_payload.get("professional_data_json"),
@@ -609,3 +636,54 @@ def delete_catalog_item(*, item_id: int, tenant_id: int) -> bool:
         )
         connection.commit()
         return cursor.rowcount > 0
+
+
+def create_case_submission(
+    *,
+    tenant_id: int,
+    user_id: str,
+    case_type: str,
+    summary: str,
+    messages_json: str,
+    evidences_json: str,
+    guidance_mode: bool,
+    destination: str,
+) -> dict:
+    now = utcnow_iso()
+    submission_key = sha256(f"{tenant_id}:{user_id}:{case_type}:{summary}".encode("utf-8")).hexdigest()
+
+    with get_connection() as connection:
+        existing = connection.execute(
+            "SELECT * FROM case_submissions WHERE submission_key = ?",
+            (submission_key,),
+        ).fetchone()
+        if existing:
+            return {**(row_to_dict(existing) or {}), "already_submitted": True}
+
+        cursor = connection.execute(
+            """
+            INSERT INTO case_submissions (
+                tenant_id, user_id, case_type, summary, messages_json, evidences_json,
+                guidance_mode, destination, submission_key, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                tenant_id,
+                user_id,
+                case_type,
+                summary,
+                messages_json,
+                evidences_json,
+                1 if guidance_mode else 0,
+                destination,
+                submission_key,
+                now,
+            ),
+        )
+        connection.commit()
+        row = connection.execute(
+            "SELECT * FROM case_submissions WHERE id = ?",
+            (cursor.lastrowid,),
+        ).fetchone()
+        return {**(row_to_dict(row) or {}), "already_submitted": False}
