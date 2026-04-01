@@ -1,5 +1,12 @@
 # BrandSoul
 
+<p align="center">
+  <strong>Give your brand a living voice.</strong><br/><br/>
+  <a href="https://brandsoul.app" target="_blank">
+    🚀 Experience BrandSoul Live
+  </a>
+</p>
+
 > **Giving brands a living voice.**
 
 ![Status](https://img.shields.io/badge/status-beta-ff8a4c)
