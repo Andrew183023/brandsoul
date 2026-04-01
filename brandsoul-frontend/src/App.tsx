@@ -1319,9 +1319,16 @@ export default function App() {
   }, [sparkMemoryStorageKey])
 
   const loadSparkFromBackend = useCallback(async () => {
-    const backendSpark = await fetchSpark()
-    saveBrandPersona(backendSpark)
-    return backendSpark
+    try {
+      const backendSpark = await fetchSpark()
+      saveBrandPersona(backendSpark)
+      return backendSpark
+    } catch (error) {
+      if (isUnauthorizedError(error)) {
+        handleExpiredSession()
+      }
+      throw error
+    }
   }, [])
 
   useEffect(() => {
@@ -1352,6 +1359,10 @@ export default function App() {
         setCatalogItems(backendCatalog)
       } catch (error) {
         console.error(error)
+        if (isMounted && isUnauthorizedError(error)) {
+          handleExpiredSession()
+          return
+        }
         if (isMounted) {
           setCatalogItems(loadCatalogItems())
         }
@@ -1627,6 +1638,14 @@ export default function App() {
     navigateTo('/login')
   }
 
+  const isUnauthorizedError = (error: unknown) => axios.isAxiosError(error) && error.response?.status === 401
+
+  function handleExpiredSession() {
+    logout()
+    setCurrentTenant(null)
+    navigateTo('/login')
+  }
+
   useEffect(() => {
     let isMounted = true
 
@@ -1638,6 +1657,9 @@ export default function App() {
         }
       } catch (error) {
         console.error(error)
+        if (isMounted && isUnauthorizedError(error)) {
+          handleExpiredSession()
+        }
       }
     }
 
@@ -1790,6 +1812,10 @@ export default function App() {
       setConfigStatus('')
     } catch (error) {
       console.error(error)
+      if (isUnauthorizedError(error)) {
+        handleExpiredSession()
+        return
+      }
       setConfigStatus('Não consegui salvar esse item no backend agora.')
     }
   }
@@ -1834,22 +1860,33 @@ export default function App() {
       }
     } catch (error) {
       console.error(error)
+      if (isUnauthorizedError(error)) {
+        handleExpiredSession()
+        return
+      }
       setConfigStatus('Não consegui remover esse item no backend agora.')
     }
   }
 
   const handleSaveBrandConfiguration = async () => {
-    saveBrandPersona(currentPersona)
+    console.log('PAYLOAD ENVIADO AO BACKEND:', currentPersona)
 
     try {
-      await saveSpark(currentPersona)
+      const savedSpark = await saveSpark(currentPersona)
+      console.log('SPARK SALVA PELO BACKEND:', savedSpark)
       const updatedSpark = await loadSparkFromBackend()
+      console.log('SPARK REIDRATADA DO BACKEND:', updatedSpark)
+      saveBrandPersona(updatedSpark)
       applyPersonaState(updatedSpark)
       setIsEditingCentelha(false)
       setConfigStatus('Configuração salva. A página pública já reflete isso.')
     } catch (error) {
       console.error(error)
-      setConfigStatus('Salvei localmente, mas não consegui sincronizar com o backend agora.')
+      if (isUnauthorizedError(error)) {
+        handleExpiredSession()
+        return
+      }
+      setConfigStatus('Não consegui sincronizar a configuração com o backend agora.')
     }
   }
 

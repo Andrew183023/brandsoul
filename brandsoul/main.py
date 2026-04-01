@@ -137,7 +137,10 @@ def admin_spark(current_tenant: dict = Depends(get_current_tenant)) -> SparkPayl
 
 @app.put("/admin/spark", response_model=SparkPayload)
 def admin_spark_update(payload: SparkPayload, current_tenant: dict = Depends(get_current_tenant)) -> SparkPayload:
-    return save_tenant_spark(current_tenant, payload)
+    print("SPARK UPDATE RECEBIDO:", payload.model_dump())
+    saved_spark = save_tenant_spark(current_tenant, payload)
+    print("SPARK UPDATE SALVO:", saved_spark.model_dump())
+    return saved_spark
 
 
 @app.get("/admin/catalog", response_model=list[CatalogItemPayload])

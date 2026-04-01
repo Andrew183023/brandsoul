@@ -115,6 +115,141 @@ def test_admin_spark_roundtrip_uses_authenticated_tenant(tmp_path, monkeypatch):
     assert refreshed_response.json()["businessDescription"] == "Marca com presenca forte."
 
 
+def test_admin_spark_roundtrip_persists_new_configuration_blocks(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRANDSOUL_DB_PATH", str(tmp_path / "spark-professional.db"))
+
+    register_response = client.post(
+        "/auth/register",
+        json={
+            "name": "Owner",
+            "email": "professional@example.com",
+            "password": "SenhaSegura123",
+            "tenant_name": "ACF Advocacia",
+            "business_model": "service",
+        },
+    )
+    assert register_response.status_code == 200
+    token = register_response.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    save_response = client.put(
+        "/admin/spark",
+        headers=headers,
+        json={
+            "brandName": "ACF Advocacia",
+            "logo": "data:image/png;base64,abc123",
+            "tone": "inteligente",
+            "power": "clareza",
+            "businessModel": "professional",
+            "brandType": "professional",
+            "features": {
+                "products": False,
+                "services": True,
+                "scheduling": False,
+                "emergency": True,
+            },
+            "voiceStyle": "balanced",
+            "actMode": "consultant",
+            "businessGoal": "ticket",
+            "modes": {
+                "sales": False,
+                "service": True,
+                "scheduling": False,
+                "emergency": True,
+            },
+            "emergencyType": "legal",
+            "emergencyMode": {
+                "enabled": True,
+                "autoStart": True,
+                "showUploadEarly": True,
+            },
+            "ctaConfig": {
+                "whatsappEnabled": True,
+                "whatsappNumber": "+5531999999999",
+                "whatsappMessageTemplate": "Tipo: {tipo}\nResumo: {resumo}",
+                "showAfterEvidence": True,
+                "showOnCompletion": True,
+                "primaryText": "Encaminhar para profissional",
+                "secondaryText": "Leve esse caso para análise.",
+            },
+            "businessDescription": "Atuação jurídica com foco em orientação inicial estruturada.",
+            "institutionalImage": "data:image/png;base64,def456",
+            "theme": {"primaryColor": "#112233", "secondaryColor": "#445566"},
+            "pageSections": {"showCarousel": False, "showPromotions": False, "showNewArrivals": False},
+            "address": "Rua A, 10",
+            "city": "Belo Horizonte",
+            "state": "MG",
+            "whatsapp": "+5531999999999",
+            "email": "contato@acf.com",
+            "professionalData": {
+                "operationMode": "guidance",
+                "presentation": "Atuação estratégica com clareza técnica.",
+                "practiceAreas": ["Consumidor", "Cível"],
+                "differentials": ["Resposta ágil", "Análise cuidadosa"],
+                "cases": [
+                    {
+                        "caseType": "Acidente de trânsito",
+                        "context": "Colisão com fuga",
+                        "approach": "Organização inicial de provas",
+                        "learning": "Ganhar contexto rápido",
+                    }
+                ],
+                "contents": [
+                    {
+                        "title": "Primeiros passos após um acidente",
+                        "summary": "Como organizar documentos e provas.",
+                        "stance": "Orientação inicial informativa.",
+                    }
+                ],
+                "identity": {
+                    "headline": "Clareza técnica e atuação responsável.",
+                    "principles": ["Ética", "Clareza"],
+                },
+                "guidance": {
+                    "situationType": "acidente_transito",
+                    "initialResponse": "Vamos organizar os fatos essenciais.",
+                    "initialQuestions": ["Quando aconteceu?", "Há feridos?"],
+                    "actionChecklist": ["Registrar local", "Guardar provas"],
+                    "dataCollection": ["Data", "Local", "Fotos"],
+                    "orientationLimits": "Não emitir parecer definitivo.",
+                    "communicationTone": "Sereno e objetivo",
+                    "closingMessage": "Um profissional fará a análise completa.",
+                    "playbooks": {
+                        "acidente_transito": {
+                            "situationType": "acidente_transito",
+                            "initialResponse": "Vamos organizar os fatos essenciais.",
+                            "initialQuestions": ["Quando aconteceu?"],
+                            "actionChecklist": ["Registrar local"],
+                            "dataCollection": ["Data"],
+                            "orientationLimits": "Não emitir parecer definitivo.",
+                            "closingMessage": "Um profissional fará a análise completa.",
+                        }
+                    },
+                },
+            },
+        },
+    )
+
+    assert save_response.status_code == 200
+    body = save_response.json()
+    assert body["brandType"] == "professional"
+    assert body["businessModel"] == "professional"
+    assert body["emergencyMode"]["autoStart"] is True
+    assert body["ctaConfig"]["whatsappEnabled"] is True
+    assert body["professionalData"]["operationMode"] == "guidance"
+    assert body["professionalData"]["guidance"]["situationType"] == "acidente_transito"
+
+    refreshed_response = client.get("/admin/spark", headers=headers)
+    assert refreshed_response.status_code == 200
+    refreshed_body = refreshed_response.json()
+    assert refreshed_body["emergencyType"] == "legal"
+    assert refreshed_body["emergencyMode"]["showUploadEarly"] is True
+    assert refreshed_body["ctaConfig"]["primaryText"] == "Encaminhar para profissional"
+    assert refreshed_body["professionalData"]["presentation"] == "Atuação estratégica com clareza técnica."
+    assert refreshed_body["professionalData"]["guidance"]["communicationTone"] == "Sereno e objetivo"
+    assert refreshed_body["theme"]["secondaryColor"] == "#445566"
+
+
 def test_admin_catalog_crud_uses_authenticated_tenant(tmp_path, monkeypatch):
     monkeypatch.setenv("BRANDSOUL_DB_PATH", str(tmp_path / "catalog.db"))
 
