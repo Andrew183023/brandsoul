@@ -2,7 +2,7 @@
 
 <p align="center">
   <strong>Give your brand a living voice.</strong><br/><br/>
-  <a href="https://brandsoul.app" target="_blank">
+  <a href="[https://brandsoul.app](https://brandsoul-1.onrender.com/)" target="_blank">
     🚀 Experience BrandSoul Live
   </a>
 </p>
