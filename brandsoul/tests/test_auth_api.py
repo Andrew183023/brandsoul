@@ -375,6 +375,108 @@ def test_public_brand_by_slug_returns_public_spark_and_catalog(tmp_path, monkeyp
     assert body["pageHighlights"]["hasPromotions"] is True
 
 
+def test_schedule_booking_persists_and_returns_whatsapp_link(tmp_path, monkeypatch):
+    monkeypatch.setenv("BRANDSOUL_DB_PATH", str(tmp_path / "schedule-booking.db"))
+
+    register_response = client.post(
+        "/auth/register",
+        json={
+            "name": "Owner",
+            "email": "schedule@example.com",
+            "password": "SenhaSegura123",
+            "tenant_name": "Studio Agenda",
+            "business_model": "service",
+        },
+    )
+    assert register_response.status_code == 200
+    token = register_response.json()["token"]
+    headers = {"Authorization": f"Bearer {token}"}
+
+    save_response = client.put(
+        "/admin/spark",
+        headers=headers,
+        json={
+            "brandName": "Studio Agenda",
+            "tone": "inteligente",
+            "power": "clareza",
+            "businessModel": "service",
+            "features": {
+                "products": False,
+                "services": True,
+                "scheduling": True,
+                "emergency": False,
+            },
+            "voiceStyle": "balanced",
+            "actMode": "assistant",
+            "businessGoal": "schedule",
+            "businessDescription": "Atendimentos com agendamento rápido.",
+            "whatsapp": "+5531999999999",
+            "schedulingConfig": {
+                "enabled": True,
+                "title": "Agende seu horário",
+                "description": "Escolha o melhor momento para falar com a equipe.",
+                "serviceOptions": ["Consulta inicial", "Retorno"],
+                "durationMinutes": 60,
+                "weeklyAvailability": {
+                    "monday": {"enabled": True, "start": "09:00", "end": "11:00"},
+                    "tuesday": {"enabled": True, "start": "09:00", "end": "11:00"},
+                    "wednesday": {"enabled": False, "start": "09:00", "end": "11:00"},
+                },
+                "blockedDates": ["2026-04-21"],
+                "blockedSlots": ["2026-04-02T10:00"],
+                "slotIntervalMinutes": 30,
+                "attendanceMode": "online",
+                "attendanceModes": {
+                    "presencial": True,
+                    "online": True,
+                    "domicilio": False,
+                },
+                "whatsappNotificationEnabled": True,
+                "whatsappNumber": "+5531999999999",
+                "whatsappMessageTemplate": "Novo agendamento: {nome} | {servico} | {data} {horario}",
+                "manualConfirmation": True,
+            },
+        },
+    )
+    assert save_response.status_code == 200
+
+    booking_response = client.post(
+        "/schedule/booking",
+        json={
+            "tenant_slug": "studio-agenda",
+            "name": "Cliente Teste",
+            "phone": "+5531888888888",
+            "service": "Consulta inicial",
+            "attendance_mode": "online",
+            "date": "2026-04-02",
+            "time": "09:30",
+            "note": "Preciso entender disponibilidade.",
+        },
+    )
+
+    assert booking_response.status_code == 200
+    body = booking_response.json()
+    assert body["tenant_slug"] == "studio-agenda"
+    assert body["status"] == "pending"
+    assert body["whatsapp_url"].startswith("https://wa.me/5531999999999?text=")
+    assert "Novo agendamento" in body["notification_message"]
+
+    admin_list_response = client.get("/admin/bookings", headers=headers)
+    assert admin_list_response.status_code == 200
+    bookings = admin_list_response.json()
+    assert len(bookings) == 1
+    assert bookings[0]["name"] == "Cliente Teste"
+    assert bookings[0]["service"] == "Consulta inicial"
+    assert bookings[0]["attendance_mode"] == "online"
+
+    public_schedule_response = client.get("/public/brands/studio-agenda/schedule")
+    assert public_schedule_response.status_code == 200
+    public_schedule = public_schedule_response.json()
+    assert "2026-04-21" in public_schedule["blocked_dates"]
+    assert "2026-04-02T10:00" in public_schedule["blocked_slots"]
+    assert "2026-04-02T09:30" in public_schedule["booked_slots"]
+
+
 def test_channel_message_uses_public_brand_slug_context(tmp_path, monkeypatch):
     monkeypatch.setenv("BRANDSOUL_DB_PATH", str(tmp_path / "public-channel.db"))
 

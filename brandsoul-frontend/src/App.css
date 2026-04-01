@@ -804,6 +804,266 @@
   line-height: 1.6;
 }
 
+.schedule-inline-cta {
+  margin-bottom: 1rem;
+}
+
+.schedule-summary-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.schedule-meta {
+  align-content: start;
+}
+
+.schedule-meta p {
+  margin: 0;
+  color: rgba(241, 244, 255, 0.82);
+  line-height: 1.55;
+}
+
+.schedule-booking-form {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.schedule-flow {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.schedule-wizard-progress {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.schedule-wizard-progress-label {
+  color: rgba(241, 244, 255, 0.76);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.schedule-wizard-progress-dots {
+  display: flex;
+  gap: 0.45rem;
+}
+
+.schedule-wizard-progress-dot {
+  flex: 1;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.schedule-wizard-progress-dot.active {
+  background: linear-gradient(90deg, rgba(255, 160, 92, 0.9), rgba(255, 108, 79, 0.78));
+}
+
+.schedule-step-card {
+  display: grid;
+  gap: 0.8rem;
+  padding: 0.95rem 1rem;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.schedule-step-card.active {
+  border-color: rgba(255, 175, 117, 0.22);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 154, 86, 0.04));
+}
+
+.schedule-step-header {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.schedule-step-header strong {
+  color: rgba(248, 250, 255, 0.94);
+  font-size: 1rem;
+}
+
+.schedule-step-screen {
+  min-height: 320px;
+  align-content: start;
+}
+
+.schedule-choice-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.schedule-choice-card {
+  min-height: 76px;
+  padding: 1rem 1rem 1.05rem;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(247, 250, 255, 0.94);
+  text-align: left;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.schedule-choice-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 176, 116, 0.28);
+}
+
+.schedule-choice-card.active {
+  border-color: rgba(255, 175, 117, 0.38);
+  background: linear-gradient(180deg, rgba(255, 150, 84, 0.18), rgba(255, 94, 67, 0.1));
+}
+
+.schedule-confirm-summary {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.95rem 1rem;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.schedule-confirm-summary p {
+  margin: 0;
+  color: rgba(242, 246, 255, 0.84);
+  line-height: 1.5;
+}
+
+.schedule-wizard-footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  padding-top: 0.25rem;
+  background: linear-gradient(180deg, rgba(11, 12, 18, 0), rgba(11, 12, 18, 0.88) 28%);
+}
+
+.schedule-wizard-footer > * {
+  flex: 1;
+}
+
+.schedule-calendar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.schedule-calendar-head strong {
+  text-transform: capitalize;
+  color: rgba(248, 250, 255, 0.94);
+}
+
+.schedule-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.schedule-calendar-weekday {
+  text-align: center;
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(237, 241, 255, 0.58);
+}
+
+.schedule-calendar-empty {
+  min-height: 46px;
+}
+
+.schedule-calendar-day {
+  min-height: 54px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(245, 248, 255, 0.9);
+  display: grid;
+  place-items: center;
+  gap: 0.2rem;
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, opacity 160ms ease;
+}
+
+.schedule-calendar-day.available:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 176, 116, 0.28);
+}
+
+.schedule-calendar-day.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.schedule-calendar-day.selected {
+  background: linear-gradient(180deg, rgba(255, 150, 84, 0.18), rgba(255, 94, 67, 0.1));
+  border-color: rgba(255, 175, 117, 0.38);
+}
+
+.schedule-calendar-day small {
+  font-size: 0.78rem;
+  line-height: 1;
+}
+
+.schedule-empty-copy {
+  margin: 0;
+  color: rgba(240, 244, 255, 0.72);
+  line-height: 1.55;
+}
+
+.weekly-availability-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.9rem;
+}
+
+.weekly-availability-card {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.weekly-availability-card.active {
+  border-color: rgba(255, 176, 116, 0.22);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 160, 92, 0.04));
+}
+
+.weekly-availability-header {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.weekly-availability-header strong {
+  font-size: 1rem;
+  color: rgba(248, 250, 255, 0.96);
+}
+
+.weekly-availability-header span {
+  color: rgba(238, 242, 255, 0.62);
+  font-size: 0.82rem;
+}
+
+.weekly-availability-times {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
 .customer-chat-toolbar {
   display: flex;
   align-items: center;
@@ -2003,7 +2263,7 @@
 }
 
 .admin-context-switch {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 .admin-context-switch .channel-mode-button {
@@ -2692,6 +2952,67 @@
   color: var(--text-soft);
   font-size: 0.78rem;
   letter-spacing: 0.04em;
+}
+
+.customer-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.customer-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 0.85rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.045);
+  color: rgba(242, 245, 255, 0.88);
+  font-size: 0.8rem;
+  letter-spacing: 0.03em;
+}
+
+.customer-chip-button {
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.customer-chip-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 176, 116, 0.28);
+}
+
+.customer-chip-button.active {
+  background: linear-gradient(180deg, rgba(255, 150, 84, 0.18), rgba(255, 94, 67, 0.1));
+  border-color: rgba(255, 175, 117, 0.38);
+  box-shadow: 0 12px 28px rgba(255, 102, 63, 0.12);
+}
+
+.customer-chip--busy {
+  opacity: 0.55;
+}
+
+.scheduling-ops-card {
+  gap: 1.25rem;
+}
+
+.scheduling-ops-layout {
+  display: grid;
+  gap: 1rem;
+}
+
+.scheduling-ops-section {
+  align-content: start;
+}
+
+.scheduling-week-grid,
+.scheduling-bookings-list {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
 }
 
 .chat-session-memory {

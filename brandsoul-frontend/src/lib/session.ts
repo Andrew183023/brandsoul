@@ -11,7 +11,7 @@ export interface AuthTenant {
   id: number
   name: string
   slug: string
-  business_model: 'product' | 'service' | 'hybrid'
+  business_model: 'product' | 'service' | 'hybrid' | 'professional'
   plan: string
   is_active: boolean
   created_at: string
@@ -63,4 +63,3 @@ export function isAuthenticated() {
 export function logout() {
   clearSession()
 }
-

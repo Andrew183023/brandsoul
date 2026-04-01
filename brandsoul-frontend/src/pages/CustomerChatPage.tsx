@@ -13,7 +13,8 @@ import { buildApiUrl } from '../lib/api'
 import { getBusinessStatus } from '../lib/businessStatus'
 import { buildCatalogSummary, CATALOG_STORAGE_KEY, loadCatalogItems } from '../lib/catalog'
 import { fetchPublicBrand } from '../lib/publicBrandApi'
-import { loadBrandPersona, PERSONA_STORAGE_KEY, type BrandFeatures, type BrandPersona, type BusinessModelOption, type SparkModes } from '../lib/persona'
+import { createScheduleBooking, fetchPublicScheduleAvailability } from '../lib/scheduleApi'
+import { loadBrandPersona, PERSONA_STORAGE_KEY, type BrandFeatures, type BrandPersona, type BusinessModelOption, type SparkModes, type WeeklyAvailabilityConfig } from '../lib/persona'
 import { buildWhatsAppMessage, buildWhatsAppUrl, formatSummaryForWhatsApp, normalizeWhatsAppNumber } from '../lib/whatsapp'
 import {
   buildSparkMemorySummary,
@@ -142,10 +143,44 @@ interface CaseSubmitResponse {
   already_submitted: boolean
 }
 
+type ScheduleStep = 'service' | 'mode' | 'date' | 'time' | 'form' | 'confirm'
+
+interface ScheduleFormState {
+  name: string
+  phone: string
+  service: string
+  attendanceMode: 'presencial' | 'online' | 'domicilio' | ''
+  date: string
+  time: string
+  note: string
+  locationDetails: string
+}
+
 const USER_ID_STORAGE_KEY = 'brandsoul_user_id'
 const BOOTSTRAP_LOCK_KEY = 'brandsoul_bootstrap_lock'
 const BOOTSTRAP_LOCK_MAX_AGE = 8000
 const BOOTSTRAP_ERROR_MESSAGE = 'Tive um ruído aqui agora. Me chama de novo que eu volto.'
+type SchedulingWeekdayKey = keyof WeeklyAvailabilityConfig
+
+const SCHEDULING_WEEKDAY_INDEX: SchedulingWeekdayKey[] = [
+  'sunday',
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+]
+const CALENDAR_WEEKDAY_LABELS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
+const SCHEDULE_ATTENDANCE_MODE_LABELS: Record<'presencial' | 'online' | 'domicilio', string> = {
+  presencial: 'Presencial',
+  online: 'Online',
+  domicilio: 'Em domicílio',
+}
+
+interface ScheduleConfirmationState {
+  whatsappUrl?: string | null
+}
 
 function createEmptyGuidanceProgress(): GuidanceProgress {
   return {
@@ -211,6 +246,58 @@ function createEmptyCaseChecklist(): CaseChecklist {
     evidence: false,
     nextSteps: false,
   }
+}
+
+function formatLocalDate(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function getMonthMatrix(baseDate: Date) {
+  const year = baseDate.getFullYear()
+  const month = baseDate.getMonth()
+  const firstDay = new Date(year, month, 1)
+  const lastDay = new Date(year, month + 1, 0)
+  const leadingEmptyDays = firstDay.getDay()
+  const days: Array<Date | null> = []
+
+  for (let index = 0; index < leadingEmptyDays; index += 1) {
+    days.push(null)
+  }
+
+  for (let day = 1; day <= lastDay.getDate(); day += 1) {
+    days.push(new Date(year, month, day))
+  }
+
+  while (days.length % 7 !== 0) {
+    days.push(null)
+  }
+
+  return days
+}
+
+function buildTimeSlots(start?: string, end?: string, intervalMinutes = 30) {
+  if (!start || !end) {
+    return []
+  }
+
+  const [startHour, startMinute] = start.split(':').map(Number)
+  const [endHour, endMinute] = end.split(':').map(Number)
+  if ([startHour, startMinute, endHour, endMinute].some(Number.isNaN)) {
+    return []
+  }
+
+  let currentMinutes = startHour * 60 + startMinute
+  const endMinutes = endHour * 60 + endMinute
+  const result: string[] = []
+
+  while (currentMinutes < endMinutes) {
+    const hours = Math.floor(currentMinutes / 60)
+    const minutes = currentMinutes % 60
+    result.push(`${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`)
+    currentMinutes += intervalMinutes
+  }
+
+  return result
 }
 
 function createEmptyCaseProgress(): CaseProgress {
@@ -724,6 +811,23 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
   const [isCaseSubmitting, setIsCaseSubmitting] = useState(false)
   const [isCaseSubmitted, setIsCaseSubmitted] = useState(false)
   const [caseSubmitMessage, setCaseSubmitMessage] = useState<string | null>(null)
+  const [isScheduleFormOpen, setIsScheduleFormOpen] = useState(false)
+  const [currentScheduleStep, setCurrentScheduleStep] = useState<ScheduleStep>('service')
+  const [isScheduleSubmitting, setIsScheduleSubmitting] = useState(false)
+  const [scheduleSubmitMessage, setScheduleSubmitMessage] = useState<string | null>(null)
+  const [scheduleConfirmation, setScheduleConfirmation] = useState<ScheduleConfirmationState | null>(null)
+  const [scheduleAvailability, setScheduleAvailability] = useState<{ blocked_dates: string[]; blocked_slots: string[]; booked_slots: string[] } | null>(null)
+  const [scheduleDisplayMonth, setScheduleDisplayMonth] = useState(() => new Date())
+  const [scheduleForm, setScheduleForm] = useState<ScheduleFormState>({
+    name: '',
+    phone: '',
+    service: '',
+    attendanceMode: '',
+    date: '',
+    time: '',
+    note: '',
+    locationDetails: '',
+  })
   const introPulseTimeoutRef = useRef<number | null>(null)
   const imageEvidenceInputRef = useRef<HTMLInputElement | null>(null)
   const videoEvidenceInputRef = useRef<HTMLInputElement | null>(null)
@@ -798,7 +902,37 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
   const guidanceNeedsConsent = isProfessionalGuidanceMode && guidanceConsentState === 'pending'
   const showProductsSection = activeFeatures.products && !isProfessionalBrand && !isEmergencyMode
   const showServicesSection = activeFeatures.services && !isProfessionalBrand && !isEmergencyMode
+  const isSchedulingEnabled = (businessModel === 'service' || businessModel === 'professional') && persona?.schedulingConfig?.enabled === true
+  const enabledAttendanceModes = useMemo(() => {
+    const configuredModes = persona?.schedulingConfig?.attendanceModes
+    const modes = (Object.keys(SCHEDULE_ATTENDANCE_MODE_LABELS) as Array<'presencial' | 'online' | 'domicilio'>).filter(
+      (modeKey) => configuredModes?.[modeKey] === true,
+    )
+    if (modes.length > 0) {
+      return modes
+    }
+    return persona?.schedulingConfig?.attendanceMode ? [persona.schedulingConfig.attendanceMode] : []
+  }, [persona?.schedulingConfig?.attendanceMode, persona?.schedulingConfig?.attendanceModes])
+  const shouldSelectAttendanceMode = enabledAttendanceModes.length > 1
+  const effectiveScheduleAttendanceMode = scheduleForm.attendanceMode || enabledAttendanceModes[0] || ''
+  const showScheduleModeStep = shouldSelectAttendanceMode
   const hasDiscoverySection = showProductsSection || showServicesSection
+  const scheduleSteps = useMemo(() => {
+    const baseSteps: ScheduleStep[] = []
+    const hasMultipleServices = (persona?.schedulingConfig?.serviceOptions?.length ?? 0) > 1
+
+    if (hasMultipleServices || !(persona?.schedulingConfig?.serviceOptions?.[0])) {
+      baseSteps.push('service')
+    }
+    if (shouldSelectAttendanceMode) {
+      baseSteps.push('mode')
+    }
+    baseSteps.push('date', 'time', 'form', 'confirm')
+    return baseSteps
+  }, [persona?.schedulingConfig?.serviceOptions, shouldSelectAttendanceMode])
+  const currentScheduleStepIndex = Math.max(scheduleSteps.indexOf(currentScheduleStep), 0)
+  const scheduleProgressLabel = `Etapa ${Math.min(currentScheduleStepIndex + 1, scheduleSteps.length)} de ${scheduleSteps.length}`
+  const showScheduleConfirmStep = currentScheduleStep === 'confirm'
   const serviceOffers = useMemo(
     () => (persona?.serviceOffers ?? []).filter((item) => item.title.trim() || item.summary.trim() || (item.label ?? '').trim()),
     [persona?.serviceOffers],
@@ -810,7 +944,56 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
     persona?.professionalData?.presentation ||
     'Atuação técnica com presença clara, responsável e orientada ao próximo passo.'
   const flowReadyForSubmission = (caseProgress.readyForSubmission || isGuidanceFlowClosed) && !isCaseSubmitted
+  const selectedDateEntry = useMemo(() => {
+    if (!scheduleForm.date || !persona?.schedulingConfig?.weeklyAvailability) {
+      return undefined
+    }
+    const selectedDate = new Date(`${scheduleForm.date}T12:00:00`)
+    const weekdayKey = SCHEDULING_WEEKDAY_INDEX[selectedDate.getDay()]
+    return persona.schedulingConfig.weeklyAvailability[weekdayKey]
+  }, [persona?.schedulingConfig?.weeklyAvailability, scheduleForm.date])
+  const availableTimeSlots = useMemo(() => {
+    const interval = persona?.schedulingConfig?.slotIntervalMinutes ?? 30
+    const slots = buildTimeSlots(selectedDateEntry?.start, selectedDateEntry?.end, interval)
+    if (!scheduleForm.date) {
+      return slots
+    }
+    return slots.filter((slot) => {
+      const slotKey = `${scheduleForm.date}T${slot}`
+      return !scheduleAvailability?.booked_slots.includes(slotKey) && !scheduleAvailability?.blocked_slots.includes(slotKey)
+    })
+  }, [persona?.schedulingConfig?.slotIntervalMinutes, scheduleAvailability?.blocked_slots, scheduleAvailability?.booked_slots, scheduleForm.date, selectedDateEntry?.end, selectedDateEntry?.start])
 
+  useEffect(() => {
+    if (!isSchedulingEnabled) {
+      return
+    }
+
+    if (enabledAttendanceModes.length === 1 && scheduleForm.attendanceMode !== enabledAttendanceModes[0]) {
+      setScheduleForm((currentForm) => ({ ...currentForm, attendanceMode: enabledAttendanceModes[0] }))
+      return
+    }
+
+    if (enabledAttendanceModes.length > 1 && scheduleForm.attendanceMode && !enabledAttendanceModes.includes(scheduleForm.attendanceMode)) {
+      setScheduleForm((currentForm) => ({ ...currentForm, attendanceMode: '' }))
+    }
+  }, [enabledAttendanceModes, isSchedulingEnabled, scheduleForm.attendanceMode])
+
+  useEffect(() => {
+    if (!isScheduleFormOpen || currentScheduleStep === 'confirm') {
+      return
+    }
+
+    if (currentScheduleStep === 'service' && !scheduleSteps.includes('service')) {
+      setCurrentScheduleStep(scheduleSteps.includes('mode') ? 'mode' : 'date')
+      return
+    }
+
+    if (currentScheduleStep === 'mode' && !scheduleSteps.includes('mode')) {
+      setCurrentScheduleStep('date')
+    }
+  }, [currentScheduleStep, isScheduleFormOpen, scheduleSteps])
+  const scheduleCalendarDays = useMemo(() => getMonthMatrix(scheduleDisplayMonth), [scheduleDisplayMonth])
   useEffect(() => {
     if (!persona?.theme) {
       return
@@ -890,13 +1073,17 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
       setPublicBrandStatus('loading')
 
       try {
-        const publicBrand = await fetchPublicBrand(brandSlug)
+        const [publicBrand, availability] = await Promise.all([
+          fetchPublicBrand(brandSlug),
+          fetchPublicScheduleAvailability(brandSlug).catch(() => null),
+        ])
         if (!isMounted) {
           return
         }
 
         setPersona(publicBrand.spark)
         setCatalogItems(publicBrand.catalog)
+        setScheduleAvailability(availability)
         setActiveMode(getDefaultMode(publicBrand.spark))
         setPublicBrandStatus('ready')
       } catch (error) {
@@ -907,6 +1094,7 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
         console.error(error)
         setPersona(null)
         setCatalogItems([])
+        setScheduleAvailability(null)
         setPublicBrandStatus('not-found')
       }
     }
@@ -1478,6 +1666,146 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
     }
   }
 
+  const getInitialScheduleStep = () => {
+    if (scheduleSteps.includes('service')) {
+      return 'service' as ScheduleStep
+    }
+    if (scheduleSteps.includes('mode')) {
+      return 'mode' as ScheduleStep
+    }
+    return 'date' as ScheduleStep
+  }
+
+  const resetScheduleWizard = () => {
+    const defaultService = persona?.schedulingConfig?.serviceOptions?.[0] ?? ''
+    const nextInitialStep = getInitialScheduleStep()
+    setScheduleSubmitMessage(null)
+    setScheduleConfirmation(null)
+    setScheduleForm({
+      name: '',
+      phone: '',
+      service: scheduleSteps.includes('service') ? '' : defaultService,
+      attendanceMode: enabledAttendanceModes.length === 1 ? enabledAttendanceModes[0] : '',
+      date: '',
+      time: '',
+      note: '',
+      locationDetails: '',
+    })
+    setCurrentScheduleStep(nextInitialStep)
+  }
+
+  const openScheduleWizard = () => {
+    setMobileSection('chat')
+    setIsScheduleFormOpen(true)
+    resetScheduleWizard()
+  }
+
+  const goToPreviousScheduleStep = () => {
+    const currentIndex = scheduleSteps.indexOf(currentScheduleStep)
+    if (currentIndex <= 0) {
+      setIsScheduleFormOpen(false)
+      return
+    }
+    setScheduleSubmitMessage(null)
+    setCurrentScheduleStep(scheduleSteps[currentIndex - 1])
+  }
+
+  const handleScheduleFieldChange = (field: keyof ScheduleFormState, value: string) => {
+    setScheduleForm((currentForm) => {
+      const nextForm = { ...currentForm, [field]: value }
+
+      if (field === 'service') {
+        nextForm.date = ''
+        nextForm.time = ''
+      }
+
+      if (field === 'attendanceMode') {
+        nextForm.date = ''
+        nextForm.time = ''
+        if (value !== 'domicilio') {
+          nextForm.locationDetails = ''
+        }
+      }
+
+      if (field === 'date') {
+        nextForm.time = ''
+      }
+
+      return nextForm
+    })
+    if (scheduleSubmitMessage) {
+      setScheduleSubmitMessage(null)
+    }
+  }
+
+  const isCalendarDateAvailable = (date: Date) => {
+    const dateKey = formatLocalDate(date)
+    if (scheduleAvailability?.blocked_dates.includes(dateKey)) {
+      return false
+    }
+
+    const weeklyAvailability = persona?.schedulingConfig?.weeklyAvailability
+    if (!weeklyAvailability) {
+      return false
+    }
+
+    const weekdayKey = SCHEDULING_WEEKDAY_INDEX[date.getDay()]
+    const entry = weeklyAvailability[weekdayKey]
+    return Boolean(entry?.enabled && entry.start && entry.end)
+  }
+
+  const handleScheduleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!brandSlug || !persona?.schedulingConfig?.enabled || isScheduleSubmitting) {
+      return
+    }
+
+    if (
+      !scheduleForm.name.trim() ||
+      !scheduleForm.phone.trim() ||
+      !scheduleForm.service.trim() ||
+      !scheduleForm.date.trim() ||
+      !scheduleForm.time.trim() ||
+      !effectiveScheduleAttendanceMode
+    ) {
+      setScheduleSubmitMessage('Preencha nome, telefone, serviço, dia e horário para concluir o agendamento.')
+      return
+    }
+
+    if (effectiveScheduleAttendanceMode === 'domicilio' && !scheduleForm.locationDetails.trim()) {
+      setScheduleSubmitMessage('Informe endereço, bairro ou referência para atendimentos em domicílio.')
+      return
+    }
+
+    setIsScheduleSubmitting(true)
+    try {
+      const result = await createScheduleBooking({
+        tenant_slug: brandSlug,
+        name: scheduleForm.name.trim(),
+        phone: scheduleForm.phone.trim(),
+        service: scheduleForm.service.trim(),
+        attendance_mode: effectiveScheduleAttendanceMode,
+        date: scheduleForm.date,
+        time: scheduleForm.time,
+        note: scheduleForm.note.trim() || undefined,
+        location_details: scheduleForm.locationDetails.trim() || undefined,
+      })
+
+      setScheduleSubmitMessage(
+        persona.schedulingConfig.manualConfirmation
+          ? 'Pedido de agendamento enviado. A empresa vai confirmar o horário com você.'
+          : 'Agendamento enviado com sucesso. A empresa recebeu seu horário.'
+      )
+      setScheduleConfirmation({ whatsappUrl: result.whatsapp_url })
+      setCurrentScheduleStep('confirm')
+    } catch (error) {
+      console.error(error)
+      setScheduleSubmitMessage('Não consegui enviar seu agendamento agora. Tente novamente em instantes.')
+    } finally {
+      setIsScheduleSubmitting(false)
+    }
+  }
+
   if (brandSlug && publicBrandStatus === 'loading') {
     return (
       <main className="customer-shell spark-idle">
@@ -1786,13 +2114,293 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
       </section>
       ) : null}
 
-      {activeFeatures.scheduling && !isProfessionalBrand && !isEmergencyMode ? (
+      {isSchedulingEnabled && !isEmergencyMode ? (
       <section className={`customer-highlight-section customer-section ${mobileSection === 'chat' ? 'mobile-collapsed' : ''}`} aria-label="Agendamento">
         <div className="catalog-copy">
           <span className="catalog-kicker">Agenda</span>
-          <h2>{persona.schedulingConfig?.title || 'Se quiser, eu também posso conduzir o agendamento.'}</h2>
-          <p>{persona.schedulingConfig?.description || 'Me chama no chat para eu coletar o contexto, entender disponibilidade e te guiar até o próximo passo.'}</p>
+          <h2>{persona?.schedulingConfig?.title || 'Agende seu atendimento com facilidade.'}</h2>
+          <p>{persona?.schedulingConfig?.description || 'Escolha o serviço, selecione um horário e eu encaminho tudo para a operação confirmar com você.'}</p>
         </div>
+        <div className="schedule-summary-grid">
+          {persona?.schedulingConfig?.serviceOptions?.length ? (
+            <article className="professional-card">
+              <span className="professional-label">Serviços atendidos</span>
+              <div className="customer-chip-row">
+                {persona.schedulingConfig?.serviceOptions?.map((serviceOption) => (
+                  <span key={serviceOption} className="customer-chip">
+                    {serviceOption}
+                  </span>
+                ))}
+              </div>
+            </article>
+          ) : null}
+          <article className="professional-card schedule-meta">
+            <span className="professional-label">Como funciona</span>
+            <p>Escolha um dia disponível no calendário e depois selecione um horário.</p>
+            <p>Dias indisponíveis não podem ser agendados.</p>
+            {enabledAttendanceModes.length <= 1 ? (
+              <p>
+                {effectiveScheduleAttendanceMode === 'online'
+                  ? 'Atendimento online'
+                  : effectiveScheduleAttendanceMode === 'domicilio'
+                    ? 'Atendimento em domicílio'
+                    : 'Atendimento presencial'}
+              </p>
+            ) : (
+              <p>Escolha como você prefere ser atendido antes de concluir a marcação.</p>
+            )}
+          </article>
+        </div>
+        <div className="persona-toggle-row">
+          <button
+            type="button"
+            className="persona-toggle selected guidance-submit-button"
+            onClick={() => (isScheduleFormOpen ? setIsScheduleFormOpen(false) : openScheduleWizard())}
+          >
+            Agendar horário
+          </button>
+        </div>
+        {scheduleSubmitMessage ? <p className="guidance-submit-feedback">{scheduleSubmitMessage}</p> : null}
+        {isScheduleFormOpen ? (
+          <form className="schedule-booking-form" onSubmit={handleScheduleSubmit}>
+            <div className="schedule-wizard-progress">
+              <span className="schedule-wizard-progress-label">{scheduleProgressLabel}</span>
+              <div className="schedule-wizard-progress-dots" aria-hidden="true">
+                {scheduleSteps.map((step, index) => (
+                  <span key={step} className={`schedule-wizard-progress-dot ${index <= currentScheduleStepIndex ? 'active' : ''}`} />
+                ))}
+              </div>
+            </div>
+
+            {currentScheduleStep === 'service' ? (
+              <section className="schedule-step-card active schedule-step-screen">
+                <div className="schedule-step-header">
+                  <span className="professional-label">{scheduleProgressLabel}</span>
+                  <strong>Escolha o serviço</strong>
+                </div>
+                <div className="schedule-choice-grid">
+                  {(persona?.schedulingConfig?.serviceOptions?.length ? persona.schedulingConfig.serviceOptions : ['Atendimento']).map((serviceOption) => (
+                    <button
+                      key={serviceOption}
+                      type="button"
+                      className={`schedule-choice-card ${scheduleForm.service === serviceOption ? 'active' : ''}`}
+                      onClick={() => {
+                        handleScheduleFieldChange('service', serviceOption)
+                        setCurrentScheduleStep(showScheduleModeStep ? 'mode' : 'date')
+                      }}
+                    >
+                      <strong>{serviceOption}</strong>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {currentScheduleStep === 'mode' ? (
+              <section className="schedule-step-card active schedule-step-screen">
+                <div className="schedule-step-header">
+                  <span className="professional-label">{scheduleProgressLabel}</span>
+                  <strong>Como você prefere ser atendido?</strong>
+                </div>
+                <div className="schedule-choice-grid">
+                  {enabledAttendanceModes.map((modeKey) => (
+                    <button
+                      key={modeKey}
+                      type="button"
+                      className={`schedule-choice-card ${effectiveScheduleAttendanceMode === modeKey ? 'active' : ''}`}
+                      onClick={() => {
+                        handleScheduleFieldChange('attendanceMode', modeKey)
+                        setCurrentScheduleStep('date')
+                      }}
+                    >
+                      <strong>{SCHEDULE_ATTENDANCE_MODE_LABELS[modeKey]}</strong>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
+            {currentScheduleStep === 'date' ? (
+              <section className="schedule-step-card active schedule-step-screen">
+                <div className="schedule-step-header">
+                  <span className="professional-label">{scheduleProgressLabel}</span>
+                  <strong>Escolha um dia disponível</strong>
+                </div>
+                <div className="schedule-calendar-head">
+                  <button type="button" className="persona-toggle subtle" onClick={() => setScheduleDisplayMonth((currentMonth) => new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1))}>
+                    Mês anterior
+                  </button>
+                  <strong>{scheduleDisplayMonth.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })}</strong>
+                  <button type="button" className="persona-toggle subtle" onClick={() => setScheduleDisplayMonth((currentMonth) => new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))}>
+                    Próximo mês
+                  </button>
+                </div>
+                <div className="schedule-calendar-grid">
+                  {CALENDAR_WEEKDAY_LABELS.map((label) => (
+                    <span key={label} className="schedule-calendar-weekday">{label}</span>
+                  ))}
+                  {scheduleCalendarDays.map((calendarDate, index) => {
+                    if (!calendarDate) {
+                      return <span key={`empty-${index}`} className="schedule-calendar-empty" aria-hidden="true" />
+                    }
+
+                    const dateKey = formatLocalDate(calendarDate)
+                    const isPastDate = calendarDate < new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate())
+                    const isAvailable = !isPastDate && isCalendarDateAvailable(calendarDate)
+
+                    return (
+                      <button
+                        key={dateKey}
+                        type="button"
+                        className={`schedule-calendar-day ${isAvailable ? 'available' : 'disabled'} ${scheduleForm.date === dateKey ? 'selected' : ''}`}
+                        onClick={() => {
+                          if (!isAvailable) {
+                            return
+                          }
+                          handleScheduleFieldChange('date', dateKey)
+                          setCurrentScheduleStep('time')
+                        }}
+                        disabled={!isAvailable}
+                      >
+                        <span>{calendarDate.getDate()}</span>
+                        {!isAvailable ? <small>×</small> : null}
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="schedule-empty-copy">Dias indisponíveis não podem ser agendados.</p>
+              </section>
+            ) : null}
+
+            {currentScheduleStep === 'time' ? (
+              <section className="schedule-step-card active schedule-step-screen">
+                <div className="schedule-step-header">
+                  <span className="professional-label">{scheduleProgressLabel}</span>
+                  <strong>Selecione um horário</strong>
+                </div>
+                {availableTimeSlots.length > 0 ? (
+                  <div className="schedule-choice-grid">
+                    {availableTimeSlots.map((hourOption) => (
+                      <button
+                        key={hourOption}
+                        type="button"
+                        className={`schedule-choice-card ${scheduleForm.time === hourOption ? 'active' : ''}`}
+                        onClick={() => {
+                          handleScheduleFieldChange('time', hourOption)
+                          setCurrentScheduleStep('form')
+                        }}
+                      >
+                        <strong>{hourOption}</strong>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="schedule-empty-copy">Nenhum horário disponível para este dia.</p>
+                )}
+              </section>
+            ) : null}
+
+            {currentScheduleStep === 'form' ? (
+              <section className="schedule-step-card active schedule-step-screen">
+                <div className="schedule-step-header">
+                  <span className="professional-label">{scheduleProgressLabel}</span>
+                  <strong>Seus dados</strong>
+                </div>
+                <div className="admin-config-grid">
+                  <label className="persona-field">
+                    <span>Nome</span>
+                    <input className="persona-input" value={scheduleForm.name} onChange={(event) => handleScheduleFieldChange('name', event.target.value)} placeholder="Seu nome" required />
+                  </label>
+                  <label className="persona-field">
+                    <span>Telefone</span>
+                    <input className="persona-input" value={scheduleForm.phone} onChange={(event) => handleScheduleFieldChange('phone', event.target.value)} placeholder="Seu WhatsApp" required />
+                  </label>
+                  {effectiveScheduleAttendanceMode === 'presencial' && (persona.address || persona.city || persona.state) ? (
+                    <div className="persona-field admin-config-grid-span">
+                      <span>Local do atendimento</span>
+                      <p className="schedule-empty-copy">{[persona.address, persona.city, persona.state].filter(Boolean).join(' • ')}</p>
+                    </div>
+                  ) : null}
+                  {effectiveScheduleAttendanceMode === 'online' ? (
+                    <div className="persona-field admin-config-grid-span">
+                      <span>Instruções</span>
+                      <p className="schedule-empty-copy">O link ou instruções serão enviados após confirmação.</p>
+                    </div>
+                  ) : null}
+                  {effectiveScheduleAttendanceMode === 'domicilio' ? (
+                    <label className="persona-field admin-config-grid-span">
+                      <span>Endereço, bairro ou referência</span>
+                      <input className="persona-input" value={scheduleForm.locationDetails} onChange={(event) => handleScheduleFieldChange('locationDetails', event.target.value)} placeholder="Informe onde o atendimento deve acontecer." required />
+                    </label>
+                  ) : null}
+                  <label className="persona-field admin-config-grid-span">
+                    <span>Observação opcional</span>
+                    <textarea className="persona-input persona-textarea" value={scheduleForm.note} onChange={(event) => handleScheduleFieldChange('note', event.target.value)} placeholder="Descreva rapidamente o contexto do atendimento." rows={3} />
+                  </label>
+                </div>
+              </section>
+            ) : null}
+
+            {showScheduleConfirmStep ? (
+              <section className="schedule-step-card active schedule-step-screen">
+                <div className="schedule-step-header">
+                  <span className="professional-label">{scheduleProgressLabel}</span>
+                  <strong>Agendamento solicitado com sucesso</strong>
+                </div>
+                <div className="schedule-confirm-summary">
+                  <p><strong>Serviço:</strong> {scheduleForm.service}</p>
+                  <p><strong>Modalidade:</strong> {SCHEDULE_ATTENDANCE_MODE_LABELS[effectiveScheduleAttendanceMode as 'presencial' | 'online' | 'domicilio']}</p>
+                  <p><strong>Data:</strong> {scheduleForm.date}</p>
+                  <p><strong>Horário:</strong> {scheduleForm.time}</p>
+                </div>
+              </section>
+            ) : null}
+
+            <div className="schedule-wizard-footer">
+              {currentScheduleStep !== 'confirm' ? (
+                <>
+                  <button type="button" className="persona-toggle subtle" onClick={goToPreviousScheduleStep} disabled={isScheduleSubmitting}>
+                    Voltar
+                  </button>
+                  {currentScheduleStep === 'form' ? (
+                    <button type="submit" className="persona-toggle selected guidance-submit-button" disabled={isScheduleSubmitting}>
+                      {isScheduleSubmitting ? 'Enviando...' : 'Confirmar agendamento'}
+                    </button>
+                  ) : (
+                    <button type="button" className="persona-toggle selected guidance-submit-button" disabled>
+                      Escolha uma opção para continuar
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="persona-toggle subtle"
+                    onClick={() => {
+                      setIsScheduleFormOpen(false)
+                      resetScheduleWizard()
+                    }}
+                  >
+                    Voltar ao início
+                  </button>
+                  <button
+                    type="button"
+                    className="persona-toggle selected guidance-submit-button"
+                    onClick={() => {
+                      if (scheduleConfirmation?.whatsappUrl) {
+                        window.open(scheduleConfirmation.whatsappUrl, '_blank', 'noopener,noreferrer')
+                      }
+                    }}
+                    disabled={!scheduleConfirmation?.whatsappUrl}
+                  >
+                    Falar no WhatsApp
+                  </button>
+                </>
+              )}
+            </div>
+          </form>
+        ) : null}
       </section>
       ) : null}
 
@@ -1845,6 +2453,33 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
             </div>
           ) : null}
         </div>
+
+        {isSchedulingEnabled && !isEmergencyMode ? (
+          <div className="guidance-inline-cta schedule-inline-cta">
+            <p className="guidance-inline-cta-copy">
+              Se quiser, já posso te direcionar para marcar um horário.
+            </p>
+            <div className="persona-toggle-row">
+              <button
+                type="button"
+                className="persona-toggle selected guidance-submit-button"
+                onClick={() => {
+                  setIsScheduleFormOpen(true)
+                  setMobileSection('chat')
+                  setScheduleForm((currentForm) => ({
+                    ...currentForm,
+                    service:
+                      currentForm.service ||
+                      persona?.schedulingConfig?.serviceOptions?.[0] ||
+                      '',
+                  }))
+                }}
+              >
+                Agendar atendimento
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         <section className="chat-panel customer-chat-panel">
           <ChatList messages={messages} assistantLabel={null} />

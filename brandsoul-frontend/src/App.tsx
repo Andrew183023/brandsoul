@@ -13,6 +13,7 @@ import { getBusinessStatus } from './lib/businessStatus'
 import { buildContentActions, type ContentAction } from './lib/contentActions'
 import { fetchSpark, saveSpark } from './lib/sparkApi'
 import { createCatalogItem, deleteCatalogItem, fetchCatalogItems, updateCatalogItem } from './lib/catalogApi'
+import { fetchAdminBookings, type AdminScheduleBookingItem } from './lib/scheduleApi'
 import { readFileAsDataUrl, readFilesAsDataUrls } from './lib/media'
 import { sanitizeWhatsAppInput } from './lib/whatsapp'
 import {
@@ -80,6 +81,7 @@ type SparkState = 'idle' | 'thinking' | 'speaking'
 type ChannelSparkState = SparkState
 type ChannelMode = 'web' | 'instagram_dm' | 'instagram_comment'
 type ContextMode = 'customer' | 'admin'
+type AdminWorkspaceMode = 'operation' | 'customer' | 'scheduling'
 
 interface SuggestionPersonaContext {
   brandName: string
@@ -173,7 +175,7 @@ function createDefaultFeatures(businessModel: BusinessModelOption): BrandFeature
     return {
       products: false,
       services: true,
-      scheduling: false,
+      scheduling: true,
       emergency: true,
     }
   }
@@ -195,9 +197,66 @@ function createEmptyServiceOffers(): ServiceOffer[] {
 
 function createEmptySchedulingConfig(): SchedulingConfig {
   return {
+    enabled: false,
     title: '',
     description: '',
+    serviceOptions: [],
+    durationMinutes: 60,
+    weeklyAvailability: {
+      monday: { enabled: true, start: '09:00', end: '18:00' },
+      tuesday: { enabled: true, start: '09:00', end: '18:00' },
+      wednesday: { enabled: true, start: '09:00', end: '18:00' },
+      thursday: { enabled: true, start: '09:00', end: '18:00' },
+      friday: { enabled: true, start: '09:00', end: '18:00' },
+      saturday: { enabled: false, start: '09:00', end: '13:00' },
+      sunday: { enabled: false, start: '09:00', end: '13:00' },
+    },
+    availableDays: [],
+    availableHours: [],
+    blockedDates: [],
+    blockedSlots: [],
+    slotIntervalMinutes: 30,
+    attendanceMode: 'presencial',
+    attendanceModes: {
+      presencial: true,
+      online: false,
+      domicilio: false,
+    },
+    whatsappNotificationEnabled: false,
+    whatsappNumber: '',
+    whatsappMessageTemplate:
+      'Novo agendamento pelo BrandSoul:\nNome: {nome}\nTelefone: {telefone}\nServiço: {servico}\nModalidade: {modalidade}\nData: {data}\nHorário: {horario}\nObservação: {observacao}\nLocal de atendimento: {local}',
+    manualConfirmation: true,
   }
+}
+
+const WEEKLY_AVAILABILITY_LABELS: Array<{ key: keyof NonNullable<SchedulingConfig['weeklyAvailability']>; label: string; shortLabel: string }> = [
+  { key: 'monday', label: 'Segunda-feira', shortLabel: 'Seg' },
+  { key: 'tuesday', label: 'Terça-feira', shortLabel: 'Ter' },
+  { key: 'wednesday', label: 'Quarta-feira', shortLabel: 'Qua' },
+  { key: 'thursday', label: 'Quinta-feira', shortLabel: 'Qui' },
+  { key: 'friday', label: 'Sexta-feira', shortLabel: 'Sex' },
+  { key: 'saturday', label: 'Sábado', shortLabel: 'Sáb' },
+  { key: 'sunday', label: 'Domingo', shortLabel: 'Dom' },
+]
+
+const ATTENDANCE_MODE_LABELS: Record<'presencial' | 'online' | 'domicilio', string> = {
+  presencial: 'Presencial',
+  online: 'Online',
+  domicilio: 'Em domicílio',
+}
+
+function getEnabledAttendanceModes(config?: SchedulingConfig): Array<'presencial' | 'online' | 'domicilio'> {
+  const configuredModes = config?.attendanceModes
+  const enabledModes = (Object.keys(ATTENDANCE_MODE_LABELS) as Array<'presencial' | 'online' | 'domicilio'>).filter(
+    (modeKey) => configuredModes?.[modeKey] === true,
+  )
+
+  if (enabledModes.length > 0) {
+    return enabledModes
+  }
+
+  return config?.attendanceMode ? [config.attendanceMode] : []
 }
 
 function createEmptyProfessionalData(): ProfessionalPageData {
@@ -775,6 +834,7 @@ export default function App() {
   )
   const [ctaConfig, setCtaConfig] = useState<CtaConfig>(savedPersona?.ctaConfig ?? createDefaultCtaConfig())
   const [contextMode, setContextMode] = useState<ContextMode>(initialContextMode)
+  const [adminWorkspaceMode, setAdminWorkspaceMode] = useState<AdminWorkspaceMode>(initialContextMode === 'customer' ? 'customer' : 'operation')
   const [channelMode, setChannelMode] = useState<ChannelMode>(initialChannelMode)
   const [instagramUsername, setInstagramUsername] = useState(loadInstagramUsername())
   const [detectedIntent, setDetectedIntent] = useState('unknown')
@@ -791,6 +851,9 @@ export default function App() {
   const [openAdminSections, setOpenAdminSections] = useState<AdminConfigSectionsState>(() => createCollapsedAdminSections())
   const [currentTenant, setCurrentTenant] = useState<AuthTenant | null>(() => loadCurrentTenant())
   const [currentUser] = useState<AuthUser | null>(savedSession?.user ?? null)
+  const [adminBookings, setAdminBookings] = useState<AdminScheduleBookingItem[]>([])
+  const [isBookingsLoading, setIsBookingsLoading] = useState(false)
+  const [bookingsStatus, setBookingsStatus] = useState('')
   const contentHistoryStorageKey = useMemo(
     () =>
       getContentHistoryStorageKey({
@@ -939,6 +1002,7 @@ export default function App() {
   const shouldShowContentActions = contextMode === 'admin' && !isLoading && message.trim().length === 0 && contentActions.length > 0
   const memorySummary = useMemo(() => buildSparkMemorySummary(sparkMemory), [sparkMemory])
   const catalogSummary = useMemo(() => buildCatalogSummary(catalogItems), [catalogItems])
+  const canUseSchedulingModule = businessModel === 'service' || businessModel === 'professional'
   const locationSummary = useMemo(() => {
     const trimmedAddress = address.trim()
     const trimmedCity = city.trim()
@@ -1029,7 +1093,7 @@ export default function App() {
       emergencyMode,
       ctaConfig,
       serviceOffers: features.services ? serviceOffers : undefined,
-      schedulingConfig: features.scheduling ? schedulingConfig : undefined,
+      schedulingConfig: canUseSchedulingModule ? schedulingConfig : undefined,
       professionalData: brandType === 'professional' ? professionalData : undefined,
       businessDescription: businessDescription.trim() || undefined,
       institutionalImage: institutionalImage || undefined,
@@ -1063,6 +1127,7 @@ export default function App() {
       actMode,
       address,
       businessModel,
+      canUseSchedulingModule,
       brandType,
       brandHighlight,
       brandName,
@@ -1134,7 +1199,27 @@ export default function App() {
         }
       : undefined,
     service_offers: currentPersona.serviceOffers,
-    scheduling_config: currentPersona.schedulingConfig,
+    scheduling_config: currentPersona.schedulingConfig
+      ? {
+          enabled: currentPersona.schedulingConfig.enabled,
+          title: currentPersona.schedulingConfig.title,
+          description: currentPersona.schedulingConfig.description,
+          service_options: currentPersona.schedulingConfig.serviceOptions,
+          duration_minutes: currentPersona.schedulingConfig.durationMinutes,
+          available_days: currentPersona.schedulingConfig.availableDays,
+          available_hours: currentPersona.schedulingConfig.availableHours,
+          weekly_availability: currentPersona.schedulingConfig.weeklyAvailability,
+          blocked_dates: currentPersona.schedulingConfig.blockedDates,
+          blocked_slots: currentPersona.schedulingConfig.blockedSlots,
+          slot_interval_minutes: currentPersona.schedulingConfig.slotIntervalMinutes,
+          attendance_mode: currentPersona.schedulingConfig.attendanceMode,
+          attendance_modes: currentPersona.schedulingConfig.attendanceModes,
+          whatsapp_notification_enabled: currentPersona.schedulingConfig.whatsappNotificationEnabled,
+          whatsapp_number: currentPersona.schedulingConfig.whatsappNumber,
+          whatsapp_message_template: currentPersona.schedulingConfig.whatsappMessageTemplate,
+          manual_confirmation: currentPersona.schedulingConfig.manualConfirmation,
+        }
+      : undefined,
     professional_data:
       currentPersona.brandType === 'professional'
         ? {
@@ -1490,8 +1575,22 @@ export default function App() {
     setIsLoading(false)
     setIsIntroPulseActive(false)
     setMemoryStatus('Nova resposta')
+    setAdminWorkspaceMode(nextContextMode === 'admin' ? 'operation' : 'customer')
     lastShownSuggestionsKeyRef.current = ''
     void startConversation(true, nextContextMode, channelMode, instagramUsername)
+  }
+
+  const handleAdminWorkspaceChange = (nextMode: AdminWorkspaceMode) => {
+    setAdminWorkspaceMode(nextMode)
+
+    if (nextMode === 'operation' && contextMode !== 'admin') {
+      handleContextModeChange('admin')
+      return
+    }
+
+    if (nextMode === 'customer' && contextMode !== 'customer') {
+      handleContextModeChange('customer')
+    }
   }
 
   const handleEditCentelha = () => {
@@ -1566,11 +1665,14 @@ export default function App() {
   const publicBrandProgress = buildSectionProgress([Boolean(currentTenant?.name || brandName), Boolean(currentTenant?.slug)])
   const visualStyleProgress = buildSectionProgress([hasText(themePrimaryColor), hasText(themeSecondaryColor)])
   const serviceScheduleProgress = buildSectionProgress([
-    hasText(openingStart),
-    hasText(openingEnd),
-    hasText(serviceRegion),
-    hasText(businessHours),
-    hasText(brandHighlight),
+    schedulingConfig.enabled === true,
+    hasText(schedulingConfig.title),
+    hasText(schedulingConfig.description),
+    hasItems(schedulingConfig.serviceOptions),
+    WEEKLY_AVAILABILITY_LABELS.some(({ key }) => schedulingConfig.weeklyAvailability?.[key]?.enabled),
+    Boolean(schedulingConfig.durationMinutes),
+    Boolean(schedulingConfig.slotIntervalMinutes),
+    getEnabledAttendanceModes(schedulingConfig).length > 0,
   ])
   const catalogProgress = buildSectionProgress([catalogItems.length > 0])
   const servicesProgress = buildSectionProgress([
@@ -1591,6 +1693,26 @@ export default function App() {
     ctaConfig.showAfterEvidence,
     ctaConfig.showOnCompletion,
   ])
+  const adminSchedulingSummary = useMemo(
+    () => ({
+      activeDays: WEEKLY_AVAILABILITY_LABELS.filter(({ key }) => schedulingConfig.weeklyAvailability?.[key]?.enabled).map(({ label }) => label),
+      attendanceModes: getEnabledAttendanceModes(schedulingConfig).map((mode) => ATTENDANCE_MODE_LABELS[mode]),
+      activeHours: Array.from(
+        new Set(
+          WEEKLY_AVAILABILITY_LABELS.flatMap(({ key }) => {
+            const entry = schedulingConfig.weeklyAvailability?.[key]
+            if (!entry?.enabled || !entry.start || !entry.end) {
+              return []
+            }
+            return [`${entry.start} - ${entry.end}`]
+          }),
+        ),
+      ),
+      pendingBookings: adminBookings.filter((booking) => booking.status === 'pending'),
+      bookedSlots: adminBookings.map((booking) => `${booking.date} • ${booking.time}`),
+    }),
+    [adminBookings, schedulingConfig.attendanceMode, schedulingConfig.attendanceModes, schedulingConfig.weeklyAvailability],
+  )
 
   const renderAdminSectionTitle = (title: string, summary: string, isOpen: boolean, progress: { status: string; label: string }) => (
     <>
@@ -1646,6 +1768,24 @@ export default function App() {
     navigateTo('/login')
   }
 
+  const loadAdminBookings = useCallback(async () => {
+    setIsBookingsLoading(true)
+    setBookingsStatus('')
+    try {
+      const bookings = await fetchAdminBookings()
+      setAdminBookings(bookings)
+    } catch (error) {
+      console.error(error)
+      if (isUnauthorizedError(error)) {
+        handleExpiredSession()
+        return
+      }
+      setBookingsStatus('Não consegui carregar as marcações agora.')
+    } finally {
+      setIsBookingsLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     let isMounted = true
 
@@ -1677,6 +1817,14 @@ export default function App() {
 
     console.log('🎨 persona atual:', currentPersona)
   }, [currentPersona])
+
+  useEffect(() => {
+    if (adminWorkspaceMode !== 'scheduling' || !canUseSchedulingModule) {
+      return
+    }
+
+    void loadAdminBookings()
+  }, [adminWorkspaceMode, canUseSchedulingModule, loadAdminBookings])
 
   const handleInstitutionalImageChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0]
@@ -2009,6 +2157,10 @@ export default function App() {
       emergency: nextEmergencyMode.enabled,
     })
     setEmergencyMode(nextEmergencyMode)
+    setSchedulingConfig((currentConfig) => ({
+      ...currentConfig,
+      enabled: nextFeatures.scheduling,
+    }))
 
     if (nextBusinessModel === 'professional') {
       focusAdminSection('professionalProfile')
@@ -2825,43 +2977,47 @@ export default function App() {
             </div>
           </details>
 
-          {businessModel === 'service' ? (
+          {canUseSchedulingModule ? (
           <details className="admin-config-section" open={openAdminSections.serviceSchedule} onToggle={(event) => handleAdminSectionToggle('serviceSchedule', event.currentTarget.open)}>
-            <summary className="admin-config-section-title">{renderAdminSectionTitle('Agenda e disponibilidade', 'Horários, região, atendimento e disponibilidade da operação', openAdminSections.serviceSchedule, serviceScheduleProgress)}</summary>
+            <summary className="admin-config-section-title">{renderAdminSectionTitle('Agendamento', 'Ativação rápida e atalho para o módulo operacional', openAdminSections.serviceSchedule, serviceScheduleProgress)}</summary>
             <div className="admin-config-section-body">
-            <p className="admin-config-section-intro">Quando e como essa operação atende, agenda ou responde por região.</p>
+            <p className="admin-config-section-intro">Deixe aqui só a ativação essencial. A rotina diária de horários e marcações agora fica no módulo operacional acima do chat.</p>
+            <HintBox compact icon="📅" title="Módulo operacional" description="Use o painel de Agendamento para ver horários, marcações recebidas e ajustar a disponibilidade sem misturar isso com a identidade da Centelha." />
             <div className="admin-config-grid">
-              <label className="persona-field">
-                <span className="persona-label">Abertura</span>
-                <input className="persona-input" type="time" value={openingStart} onChange={(event) => setOpeningStart(event.target.value)} />
-              </label>
-              <label className="persona-field">
-                <span className="persona-label">Fechamento</span>
-                <input className="persona-input" type="time" value={openingEnd} onChange={(event) => setOpeningEnd(event.target.value)} />
-              </label>
-              <label className="persona-field">
-                <span className="persona-label">Região</span>
-                <input className="persona-input" value={serviceRegion} onChange={(event) => setServiceRegion(event.target.value)} placeholder="Belo Horizonte" />
-              </label>
-              <label className="persona-field">
-                <span className="persona-label">Horário</span>
-                <input className="persona-input" value={businessHours} onChange={(event) => setBusinessHours(event.target.value)} placeholder="18h às 23h" />
-              </label>
-              <label className="persona-field">
-                <span className="persona-label">Diferencial</span>
-                <input className="persona-input" value={brandHighlight} onChange={(event) => setBrandHighlight(event.target.value)} placeholder="Sabor autoral e atendimento ágil" />
-              </label>
               <div className="persona-field admin-checkbox-field">
-                <span className="persona-label">Delivery</span>
+                <span className="persona-label">Ativar agendamento</span>
                 <div className="persona-toggle-row">
-                  <button type="button" className={`persona-toggle ${deliveryAvailable === true ? 'selected' : ''}`} onClick={() => setDeliveryAvailable(true)}>
-                    Sim
+                  <button type="button" className={`persona-toggle ${schedulingConfig.enabled ? 'selected' : ''}`} onClick={() => {
+                    setSchedulingConfig((currentConfig) => ({ ...currentConfig, enabled: true }))
+                    setFeatures((currentFeatures) => ({ ...currentFeatures, scheduling: true }))
+                    setModes((currentModes) => ({ ...currentModes, scheduling: true }))
+                  }}>
+                    Ativar
                   </button>
-                  <button type="button" className={`persona-toggle ${deliveryAvailable === false ? 'selected' : ''}`} onClick={() => setDeliveryAvailable(false)}>
-                    Não
+                  <button type="button" className={`persona-toggle subtle ${!schedulingConfig.enabled ? 'selected' : ''}`} onClick={() => {
+                    setSchedulingConfig((currentConfig) => ({ ...currentConfig, enabled: false }))
+                    setFeatures((currentFeatures) => ({ ...currentFeatures, scheduling: false }))
+                    setModes((currentModes) => ({ ...currentModes, scheduling: false }))
+                  }}>
+                    Desativar
                   </button>
-                  <button type="button" className={`persona-toggle subtle ${deliveryAvailable === undefined ? 'selected' : ''}`} onClick={() => setDeliveryAvailable(undefined)}>
-                    Ainda não
+                </div>
+              </div>
+              <div className="persona-field">
+                <span className="persona-label">Resumo atual</span>
+                <div className="admin-config-actions">
+                  <span className="chat-session-chip">{schedulingConfig.enabled ? 'Agendamento ativo' : 'Agendamento inativo'}</span>
+                  {getEnabledAttendanceModes(schedulingConfig).length > 0 ? (
+                    <span className="chat-session-chip">Modalidade: {getEnabledAttendanceModes(schedulingConfig).map((mode) => ATTENDANCE_MODE_LABELS[mode]).join(' · ')}</span>
+                  ) : null}
+                  {schedulingConfig.whatsappNotificationEnabled ? <span className="chat-session-chip">WhatsApp ligado</span> : null}
+                </div>
+              </div>
+              <div className="persona-field admin-config-grid-span">
+                <span className="persona-label">Abrir módulo operacional</span>
+                <div className="admin-config-actions">
+                  <button type="button" className="persona-toggle selected" onClick={() => setAdminWorkspaceMode('scheduling')}>
+                    Ir para Agendamento
                   </button>
                 </div>
               </div>
@@ -3067,38 +3223,6 @@ export default function App() {
                   </label>
                 </div>
               ))}
-
-              {businessModel === 'service' ? (
-                <div className="admin-inline-subsection">
-                  <HintBox
-                    compact
-                    icon="📅"
-                    title="Agenda dentro de serviços"
-                    description="Explique como o agendamento funciona sem abrir um fluxo separado."
-                  />
-                  <div className="admin-config-grid">
-                    <label className="persona-field">
-                      <span className="persona-label">Título da agenda</span>
-                      <input
-                        className="persona-input"
-                        value={schedulingConfig.title ?? ''}
-                        onChange={(event) => setSchedulingConfig((currentConfig) => ({ ...currentConfig, title: event.target.value }))}
-                        placeholder="Ex.: Vamos organizar seu atendimento"
-                      />
-                    </label>
-                    <label className="persona-field admin-config-grid-span">
-                      <span className="persona-label">Descrição da agenda</span>
-                      <textarea
-                        className="persona-input persona-textarea"
-                        value={schedulingConfig.description ?? ''}
-                        onChange={(event) => setSchedulingConfig((currentConfig) => ({ ...currentConfig, description: event.target.value }))}
-                        placeholder="Explique como funciona o agendamento, quais informações você precisa e como conduz o próximo passo."
-                        rows={3}
-                      />
-                    </label>
-                  </div>
-                </div>
-              ) : null}
             </div>
           </details>
           ) : null}
@@ -3273,6 +3397,340 @@ export default function App() {
         ) : null}
       </section>
 
+      {adminWorkspaceMode === 'scheduling' ? (
+      <section className="chat-card scheduling-ops-card">
+        <header className="chat-card-header">
+          <div className="chat-card-header-main">
+            <div className="chat-card-title">Agendamento</div>
+            <div className="chat-card-subtitle">
+              Ferramenta operacional para disponibilidade, horários ocupados e marcações recebidas.
+            </div>
+          </div>
+
+          <div className="channel-selector-row context-mode-row admin-context-switch" role="tablist" aria-label="Selecione o módulo principal">
+            <button type="button" className="channel-mode-button" onClick={() => handleAdminWorkspaceChange('operation')}>
+              <strong>Operação</strong>
+              <span>Conteúdo, rotina e leitura interna</span>
+            </button>
+            <button type="button" className="channel-mode-button" onClick={() => handleAdminWorkspaceChange('customer')}>
+              <strong>Atendimento</strong>
+              <span>Cliente, orientação e próximo passo</span>
+            </button>
+            <button type="button" className="channel-mode-button active" onClick={() => setAdminWorkspaceMode('scheduling')}>
+              <strong>Agendamento</strong>
+              <span>Horários, disponibilidade e confirmações</span>
+            </button>
+          </div>
+
+          <div className="chat-session-header">
+            <div className="chat-session-meta">
+              <span className="chat-session-brand">{brandName}</span>
+              <span className="chat-session-chip">Modelo: {businessModel === 'professional' ? 'Profissional' : businessModel === 'service' ? 'Serviços' : 'Produtos'}</span>
+              <span className="chat-session-chip">{schedulingConfig.enabled ? 'Agendamento ativo' : 'Agendamento inativo'}</span>
+              <span className="chat-session-memory">{isBookingsLoading ? 'Atualizando marcações...' : `${adminBookings.length} marcações registradas`}</span>
+            </div>
+
+            <div className="chat-session-actions">
+              <button type="button" className="chat-header-button" onClick={handleSaveBrandConfiguration}>
+                Salvar agendamento
+              </button>
+              <button type="button" className="chat-header-button subtle" onClick={() => void loadAdminBookings()}>
+                Atualizar marcações
+              </button>
+              <button type="button" className="chat-header-button subtle" onClick={handleLogout}>
+                Sair
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {canUseSchedulingModule ? (
+          <div className="scheduling-ops-layout">
+            <section className="customer-highlight-section scheduling-ops-section">
+              <div className="customer-section-heading">
+                <span className="catalog-kicker">Disponibilidade</span>
+                <h2>Defina quando a operação atende e quais slots aparecem para o público.</h2>
+              </div>
+              <div className="admin-config-grid">
+                <div className="persona-field admin-checkbox-field">
+                  <span className="persona-label">Ativar agendamento</span>
+                  <div className="persona-toggle-row">
+                    <button type="button" className={`persona-toggle ${schedulingConfig.enabled ? 'selected' : ''}`} onClick={() => {
+                      setSchedulingConfig((currentConfig) => ({ ...currentConfig, enabled: true }))
+                      setFeatures((currentFeatures) => ({ ...currentFeatures, scheduling: true }))
+                      setModes((currentModes) => ({ ...currentModes, scheduling: true }))
+                    }}>
+                      Ativar
+                    </button>
+                    <button type="button" className={`persona-toggle subtle ${!schedulingConfig.enabled ? 'selected' : ''}`} onClick={() => {
+                      setSchedulingConfig((currentConfig) => ({ ...currentConfig, enabled: false }))
+                      setFeatures((currentFeatures) => ({ ...currentFeatures, scheduling: false }))
+                      setModes((currentModes) => ({ ...currentModes, scheduling: false }))
+                    }}>
+                      Desativar
+                    </button>
+                  </div>
+                </div>
+                <label className="persona-field">
+                  <span className="persona-label">Título público</span>
+                  <input className="persona-input" value={schedulingConfig.title ?? ''} onChange={(event) => setSchedulingConfig((currentConfig) => ({ ...currentConfig, title: event.target.value }))} placeholder="Ex.: Agende seu atendimento" />
+                </label>
+                <label className="persona-field admin-config-grid-span">
+                  <span className="persona-label">Descrição curta</span>
+                  <textarea className="persona-input persona-textarea" value={schedulingConfig.description ?? ''} onChange={(event) => setSchedulingConfig((currentConfig) => ({ ...currentConfig, description: event.target.value }))} placeholder="Explique como o agendamento funciona." rows={3} />
+                </label>
+                <label className="persona-field admin-config-grid-span">
+                  <span className="persona-label">Serviços ou profissionais</span>
+                  <input className="persona-input" value={formatCommaSeparatedList(schedulingConfig.serviceOptions)} onChange={(event) => setSchedulingConfig((currentConfig) => ({ ...currentConfig, serviceOptions: parseCommaSeparatedList(event.target.value) }))} placeholder="Consulta inicial, retorno, avaliação" />
+                </label>
+                <label className="persona-field">
+                  <span className="persona-label">Duração padrão (min)</span>
+                  <input className="persona-input" type="number" min="5" step="5" value={schedulingConfig.durationMinutes ?? 60} onChange={(event) => setSchedulingConfig((currentConfig) => ({ ...currentConfig, durationMinutes: Number(event.target.value) || 60 }))} />
+                </label>
+                <label className="persona-field">
+                  <span className="persona-label">Intervalo entre horários (min)</span>
+                  <input className="persona-input" type="number" min="5" step="5" value={schedulingConfig.slotIntervalMinutes ?? 30} onChange={(event) => setSchedulingConfig((currentConfig) => ({ ...currentConfig, slotIntervalMinutes: Number(event.target.value) || 30 }))} />
+                </label>
+                <div className="persona-field admin-config-grid-span">
+                  <span className="persona-label">Disponibilidade padrão da semana</span>
+                  <span className="persona-field-hint">Dias sem atendimento ficam indisponíveis no calendário.</span>
+                  <div className="weekly-availability-grid">
+                    {WEEKLY_AVAILABILITY_LABELS.map(({ key, label, shortLabel }) => {
+                      const entry = schedulingConfig.weeklyAvailability?.[key] ?? { enabled: false, start: '09:00', end: '18:00' }
+                      return (
+                        <article key={key} className={`weekly-availability-card ${entry.enabled ? 'active' : ''}`}>
+                          <div className="weekly-availability-header">
+                            <strong>{shortLabel}</strong>
+                            <span>{label}</span>
+                          </div>
+                          <div className="persona-toggle-row">
+                            <button
+                              type="button"
+                              className={`persona-toggle ${entry.enabled ? 'selected' : ''}`}
+                              onClick={() =>
+                                setSchedulingConfig((currentConfig) => ({
+                                  ...currentConfig,
+                                  weeklyAvailability: {
+                                    ...(currentConfig.weeklyAvailability ?? {}),
+                                    [key]: {
+                                      ...(currentConfig.weeklyAvailability?.[key] ?? { start: '09:00', end: '18:00' }),
+                                      enabled: true,
+                                    },
+                                  },
+                                }))
+                              }
+                            >
+                              Ativo
+                            </button>
+                            <button
+                              type="button"
+                              className={`persona-toggle subtle ${!entry.enabled ? 'selected' : ''}`}
+                              onClick={() =>
+                                setSchedulingConfig((currentConfig) => ({
+                                  ...currentConfig,
+                                  weeklyAvailability: {
+                                    ...(currentConfig.weeklyAvailability ?? {}),
+                                    [key]: {
+                                      ...(currentConfig.weeklyAvailability?.[key] ?? { start: '09:00', end: '18:00' }),
+                                      enabled: false,
+                                    },
+                                  },
+                                }))
+                              }
+                            >
+                              Sem atendimento
+                            </button>
+                          </div>
+                          <div className="weekly-availability-times">
+                            <label className="persona-field">
+                              <span>Início</span>
+                              <input
+                                className="persona-input"
+                                type="time"
+                                value={entry.start ?? '09:00'}
+                                disabled={!entry.enabled}
+                                onChange={(event) =>
+                                  setSchedulingConfig((currentConfig) => ({
+                                    ...currentConfig,
+                                    weeklyAvailability: {
+                                      ...(currentConfig.weeklyAvailability ?? {}),
+                                      [key]: {
+                                        ...(currentConfig.weeklyAvailability?.[key] ?? { enabled: entry.enabled, end: '18:00' }),
+                                        start: event.target.value,
+                                      },
+                                    },
+                                  }))
+                                }
+                              />
+                            </label>
+                            <label className="persona-field">
+                              <span>Fim</span>
+                              <input
+                                className="persona-input"
+                                type="time"
+                                value={entry.end ?? '18:00'}
+                                disabled={!entry.enabled}
+                                onChange={(event) =>
+                                  setSchedulingConfig((currentConfig) => ({
+                                    ...currentConfig,
+                                    weeklyAvailability: {
+                                      ...(currentConfig.weeklyAvailability ?? {}),
+                                      [key]: {
+                                        ...(currentConfig.weeklyAvailability?.[key] ?? { enabled: entry.enabled, start: '09:00' }),
+                                        end: event.target.value,
+                                      },
+                                    },
+                                  }))
+                                }
+                              />
+                            </label>
+                          </div>
+                        </article>
+                      )
+                    })}
+                  </div>
+                </div>
+                <label className="persona-field">
+                  <span className="persona-label">Datas bloqueadas</span>
+                  <input className="persona-input" value={formatCommaSeparatedList(schedulingConfig.blockedDates)} onChange={(event) => setSchedulingConfig((currentConfig) => ({ ...currentConfig, blockedDates: parseCommaSeparatedList(event.target.value) }))} placeholder="2026-04-21, 2026-04-22" />
+                </label>
+                <label className="persona-field">
+                  <span className="persona-label">Bloqueios pontuais</span>
+                  <input className="persona-input" value={formatCommaSeparatedList(schedulingConfig.blockedSlots)} onChange={(event) => setSchedulingConfig((currentConfig) => ({ ...currentConfig, blockedSlots: parseCommaSeparatedList(event.target.value) }))} placeholder="2026-04-03T09:00, 2026-04-03T09:30" />
+                </label>
+              </div>
+              <div className="scheduling-week-grid">
+                {adminSchedulingSummary.activeDays.length > 0 ? adminSchedulingSummary.activeDays.map((day) => (
+                  <article key={day} className="professional-card">
+                    <span className="professional-label">{day}</span>
+                    <p>{adminSchedulingSummary.activeHours.join(' · ') || 'Sem janela definida'}</p>
+                    {adminSchedulingSummary.attendanceModes.length > 0 ? <p>{adminSchedulingSummary.attendanceModes.join(' · ')}</p> : null}
+                  </article>
+                )) : (
+                  <article className="professional-card">
+                    <span className="professional-label">Disponibilidade</span>
+                    <p>Defina dias e horários para começar a operar o agendamento.</p>
+                  </article>
+                )}
+              </div>
+            </section>
+
+            <section className="customer-highlight-section scheduling-ops-section">
+              <div className="customer-section-heading">
+                <span className="catalog-kicker">Marcações</span>
+                <h2>Acompanhe pedidos recebidos e os horários já ocupados.</h2>
+              </div>
+              {bookingsStatus ? <p className="guidance-submit-feedback">{bookingsStatus}</p> : null}
+              <div className="scheduling-bookings-list">
+                {adminBookings.length > 0 ? adminBookings.map((booking) => (
+                  <article key={booking.id} className="professional-card">
+                    <span className="professional-label">{booking.status === 'pending' ? 'Pendente' : booking.status}</span>
+                    <strong>{booking.name}</strong>
+                    <p>{booking.service}</p>
+                    <p>{ATTENDANCE_MODE_LABELS[booking.attendance_mode] ?? booking.attendance_mode}</p>
+                    <p>{booking.date} às {booking.time}</p>
+                    <p>{booking.phone}</p>
+                    {booking.location_details ? <p>{booking.location_details}</p> : null}
+                    {booking.note ? <p>{booking.note}</p> : null}
+                  </article>
+                )) : (
+                  <article className="professional-card">
+                    <span className="professional-label">Agenda vazia</span>
+                    <p>Nenhuma marcação recebida ainda. Assim que um cliente pedir horário, ela aparece aqui.</p>
+                  </article>
+                )}
+              </div>
+            </section>
+
+            <section className="customer-highlight-section scheduling-ops-section">
+              <div className="customer-section-heading">
+                <span className="catalog-kicker">Configurações</span>
+                <h2>Defina como a operação confirma e recebe cada novo agendamento.</h2>
+              </div>
+              <div className="admin-config-grid">
+                <div className="persona-field admin-config-grid-span">
+                  <span className="persona-label">Modalidade de atendimento</span>
+                  <span className="persona-field-hint">Escolha como esse atendimento pode acontecer na prática.</span>
+                  <div className="persona-toggle-row">
+                    {(Object.keys(ATTENDANCE_MODE_LABELS) as Array<'presencial' | 'online' | 'domicilio'>).map((modeKey) => {
+                      const isSelected = schedulingConfig.attendanceModes?.[modeKey] === true
+                      return (
+                        <button
+                          key={modeKey}
+                          type="button"
+                          className={`persona-toggle ${isSelected ? 'selected' : 'subtle'}`}
+                          onClick={() =>
+                            setSchedulingConfig((currentConfig) => {
+                              const currentModes = currentConfig.attendanceModes ?? {
+                                presencial: currentConfig.attendanceMode === 'presencial',
+                                online: currentConfig.attendanceMode === 'online',
+                                domicilio: currentConfig.attendanceMode === 'domicilio',
+                              }
+                              const nextAttendanceModes = {
+                                ...currentModes,
+                                [modeKey]: !isSelected,
+                              }
+                              const nextPrimaryMode = (Object.keys(ATTENDANCE_MODE_LABELS) as Array<'presencial' | 'online' | 'domicilio'>).find(
+                                (key) => nextAttendanceModes[key] === true,
+                              )
+
+                              return {
+                                ...currentConfig,
+                                attendanceModes: nextAttendanceModes,
+                                attendanceMode: nextPrimaryMode,
+                              }
+                            })
+                          }
+                        >
+                          {ATTENDANCE_MODE_LABELS[modeKey]}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+                <div className="persona-field admin-checkbox-field">
+                  <span className="persona-label">Confirmação do horário</span>
+                  <div className="persona-toggle-row">
+                    <button type="button" className={`persona-toggle ${schedulingConfig.manualConfirmation ? 'selected' : ''}`} onClick={() => setSchedulingConfig((currentConfig) => ({ ...currentConfig, manualConfirmation: true }))}>
+                      Manual
+                    </button>
+                    <button type="button" className={`persona-toggle subtle ${!schedulingConfig.manualConfirmation ? 'selected' : ''}`} onClick={() => setSchedulingConfig((currentConfig) => ({ ...currentConfig, manualConfirmation: false }))}>
+                      Automática
+                    </button>
+                  </div>
+                </div>
+                <div className="persona-field admin-checkbox-field">
+                  <span className="persona-label">Notificação no WhatsApp</span>
+                  <div className="persona-toggle-row">
+                    <button type="button" className={`persona-toggle ${schedulingConfig.whatsappNotificationEnabled ? 'selected' : ''}`} onClick={() => setSchedulingConfig((currentConfig) => ({ ...currentConfig, whatsappNotificationEnabled: true }))}>
+                      Ativar
+                    </button>
+                    <button type="button" className={`persona-toggle subtle ${!schedulingConfig.whatsappNotificationEnabled ? 'selected' : ''}`} onClick={() => setSchedulingConfig((currentConfig) => ({ ...currentConfig, whatsappNotificationEnabled: false }))}>
+                      Desativar
+                    </button>
+                  </div>
+                </div>
+                <label className="persona-field">
+                  <span className="persona-label">WhatsApp da operação</span>
+                  <input className="persona-input" value={schedulingConfig.whatsappNumber ?? ''} onChange={(event) => setSchedulingConfig((currentConfig) => ({ ...currentConfig, whatsappNumber: sanitizeWhatsAppInput(event.target.value) }))} placeholder="Ex: +5531999999999" />
+                </label>
+                <label className="persona-field admin-config-grid-span">
+                  <span className="persona-label">Mensagem de notificação</span>
+                  <textarea className="persona-input persona-textarea" value={schedulingConfig.whatsappMessageTemplate ?? ''} onChange={(event) => setSchedulingConfig((currentConfig) => ({ ...currentConfig, whatsappMessageTemplate: event.target.value }))} placeholder="Novo agendamento pelo BrandSoul..." rows={4} />
+                </label>
+              </div>
+            </section>
+          </div>
+        ) : (
+          <section className="customer-highlight-section scheduling-ops-section">
+            <div className="customer-section-heading">
+              <span className="catalog-kicker">Agendamento indisponível</span>
+              <h2>Esse módulo aparece para negócios de serviço ou perfil profissional.</h2>
+            </div>
+          </section>
+        )}
+      </section>
+      ) : (
       <section className="chat-card">
         <header className="chat-card-header">
           <div className="chat-card-header-main">
@@ -3289,22 +3747,20 @@ export default function App() {
           </div>
 
           <div className="channel-selector-row context-mode-row admin-context-switch" role="tablist" aria-label="Selecione o modo de contexto">
-            <button
-              type="button"
-              className={`channel-mode-button ${contextMode === 'admin' ? 'active' : ''}`}
-              onClick={() => handleContextModeChange('admin')}
-            >
+            <button type="button" className={`channel-mode-button ${adminWorkspaceMode === 'operation' ? 'active' : ''}`} onClick={() => handleAdminWorkspaceChange('operation')}>
               <strong>Operação</strong>
               <span>Conteúdo, rotina e leitura interna</span>
             </button>
-            <button
-              type="button"
-              className={`channel-mode-button ${contextMode === 'customer' ? 'active' : ''}`}
-              onClick={() => handleContextModeChange('customer')}
-            >
+            <button type="button" className={`channel-mode-button ${adminWorkspaceMode === 'customer' ? 'active' : ''}`} onClick={() => handleAdminWorkspaceChange('customer')}>
               <strong>Atendimento</strong>
               <span>Cliente, orientação e próximo passo</span>
             </button>
+            {canUseSchedulingModule ? (
+              <button type="button" className="channel-mode-button" onClick={() => setAdminWorkspaceMode('scheduling')}>
+                <strong>Agendamento</strong>
+                <span>Horários, disponibilidade e confirmações</span>
+              </button>
+            ) : null}
           </div>
 
           {contextMode === 'customer' ? (
@@ -3365,16 +3821,13 @@ export default function App() {
           <div className="chat-session-header">
             <div className="chat-session-meta">
               <span className="chat-session-brand">{brandName}</span>
-              <span className="chat-session-chip">{tone}</span>
               {contextMode === 'admin' ? (
                 <>
-                  <span className="chat-session-chip">{voiceStyleLabel}</span>
-                  <span className="chat-session-chip">{actModeLabel}</span>
-                  <span className="chat-session-chip">{businessGoalLabel}</span>
+                  <span className="chat-session-chip">Modelo: {businessModel === 'professional' ? 'Profissional' : businessModel === 'service' ? 'Serviços' : 'Produtos'}</span>
+                  <span className="chat-session-chip">Atuação: {actModeLabel}</span>
                 </>
               ) : (
                 <>
-                  <span className="chat-session-chip">{power}</span>
                   <span className="chat-session-chip">Canal: {channelContext.channelLabel}</span>
                   <span className="chat-session-chip">Origem: {channelContext.sourceLabel}</span>
                   {channelContext.usernameLabel ? <span className="chat-session-chip">Usuario: {channelContext.usernameLabel}</span> : null}
@@ -3454,6 +3907,7 @@ export default function App() {
           </div>
         </form>
       </section>
+      )}
     </main>
   )
 }

@@ -65,9 +65,46 @@ export interface ServiceOffer {
   label?: string
 }
 
+export interface WeeklyAvailabilityDayConfig {
+  enabled: boolean
+  start?: string
+  end?: string
+}
+
+export interface WeeklyAvailabilityConfig {
+  monday?: WeeklyAvailabilityDayConfig
+  tuesday?: WeeklyAvailabilityDayConfig
+  wednesday?: WeeklyAvailabilityDayConfig
+  thursday?: WeeklyAvailabilityDayConfig
+  friday?: WeeklyAvailabilityDayConfig
+  saturday?: WeeklyAvailabilityDayConfig
+  sunday?: WeeklyAvailabilityDayConfig
+}
+
+export interface AttendanceModesConfig {
+  presencial: boolean
+  online: boolean
+  domicilio: boolean
+}
+
 export interface SchedulingConfig {
+  enabled?: boolean
   title?: string
   description?: string
+  serviceOptions?: string[]
+  durationMinutes?: number
+  availableDays?: string[]
+  availableHours?: string[]
+  weeklyAvailability?: WeeklyAvailabilityConfig
+  blockedDates?: string[]
+  blockedSlots?: string[]
+  slotIntervalMinutes?: number
+  attendanceMode?: 'presencial' | 'online' | 'domicilio'
+  attendanceModes?: AttendanceModesConfig
+  whatsappNotificationEnabled?: boolean
+  whatsappNumber?: string
+  whatsappMessageTemplate?: string
+  manualConfirmation?: boolean
 }
 
 export interface ProfessionalCase {
@@ -672,13 +709,175 @@ function normalizeSchedulingConfig(value?: SchedulingConfig): SchedulingConfig |
   }
 
   const title = normalizeTextValue(value.title, 80)
-  const description = normalizeTextValue(value.description, 140)
+  const description = normalizeTextValue(value.description, 180)
+  const serviceOptions = normalizeStringList(value.serviceOptions, 8, 80)
+  const durationMinutes = typeof value.durationMinutes === 'number' && value.durationMinutes > 0 ? value.durationMinutes : undefined
+  const availableDays = normalizeStringList(value.availableDays, 7, 20)
+  const availableHours = normalizeStringList(value.availableHours, 12, 40)
+  const weeklyAvailability = normalizeWeeklyAvailability(value.weeklyAvailability, availableDays, availableHours)
+  const blockedDates = normalizeStringList(value.blockedDates, 32, 20)
+  const blockedSlots = normalizeStringList(value.blockedSlots, 64, 80)
+  const slotIntervalMinutes = typeof value.slotIntervalMinutes === 'number' && value.slotIntervalMinutes > 0 ? value.slotIntervalMinutes : undefined
+  const attendanceMode =
+    value.attendanceMode === 'online' || value.attendanceMode === 'domicilio' || value.attendanceMode === 'presencial'
+      ? value.attendanceMode
+      : undefined
+  const attendanceModes = normalizeAttendanceModesConfig(value.attendanceModes, attendanceMode)
+  const whatsappNotificationEnabled = value.whatsappNotificationEnabled === true
+  const whatsappNumber = normalizeWhatsAppNumber(value.whatsappNumber)
+  const whatsappMessageTemplate = normalizeTextValue(value.whatsappMessageTemplate, 320)
+  const manualConfirmation = value.manualConfirmation === true
+  const enabled = value.enabled === true
 
-  if (!title && !description) {
+  if (
+    !enabled &&
+    !title &&
+    !description &&
+    !serviceOptions &&
+    !durationMinutes &&
+    !availableDays &&
+    !availableHours &&
+    !weeklyAvailability &&
+    !blockedDates &&
+    !blockedSlots &&
+    !slotIntervalMinutes &&
+    !attendanceMode &&
+    !attendanceModes &&
+    !whatsappNotificationEnabled &&
+    !whatsappNumber &&
+    !whatsappMessageTemplate &&
+    !manualConfirmation
+  ) {
     return undefined
   }
 
-  return { title, description }
+  return {
+    enabled,
+    title,
+    description,
+    serviceOptions,
+    durationMinutes,
+    availableDays,
+    availableHours,
+    weeklyAvailability,
+    blockedDates,
+    blockedSlots,
+    slotIntervalMinutes,
+    attendanceMode,
+    attendanceModes,
+    whatsappNotificationEnabled,
+    whatsappNumber,
+    whatsappMessageTemplate,
+    manualConfirmation,
+  }
+}
+
+function normalizeAttendanceModesConfig(
+  value?: AttendanceModesConfig,
+  fallbackMode?: SchedulingConfig['attendanceMode'],
+): AttendanceModesConfig | undefined {
+  const normalizedValue: AttendanceModesConfig = {
+    presencial: value?.presencial === true,
+    online: value?.online === true,
+    domicilio: value?.domicilio === true,
+  }
+
+  if (fallbackMode === 'presencial') {
+    normalizedValue.presencial = true
+  } else if (fallbackMode === 'online') {
+    normalizedValue.online = true
+  } else if (fallbackMode === 'domicilio') {
+    normalizedValue.domicilio = true
+  }
+
+  if (!normalizedValue.presencial && !normalizedValue.online && !normalizedValue.domicilio) {
+    return undefined
+  }
+
+  return normalizedValue
+}
+
+function normalizeWeeklyAvailability(
+  value?: WeeklyAvailabilityConfig,
+  fallbackDays?: string[],
+  fallbackHours?: string[],
+): WeeklyAvailabilityConfig | undefined {
+  const weekdayKeys: Array<keyof WeeklyAvailabilityConfig> = [
+    'monday',
+    'tuesday',
+    'wednesday',
+    'thursday',
+    'friday',
+    'saturday',
+    'sunday',
+  ]
+
+  const normalizedEntries = weekdayKeys.reduce<WeeklyAvailabilityConfig>((result, key) => {
+    const entry = value?.[key]
+    if (!entry) {
+      return result
+    }
+
+    const normalizedEntry: WeeklyAvailabilityDayConfig = {
+      enabled: entry.enabled === true,
+      start: normalizeTimeValue(entry.start),
+      end: normalizeTimeValue(entry.end),
+    }
+
+    if (!normalizedEntry.enabled && !normalizedEntry.start && !normalizedEntry.end) {
+      return result
+    }
+
+    result[key] = normalizedEntry
+    return result
+  }, {})
+
+  if (Object.keys(normalizedEntries).length > 0) {
+    return normalizedEntries
+  }
+
+  if (!fallbackDays?.length) {
+    return undefined
+  }
+
+  const defaultStart = normalizeTimeValue(fallbackHours?.[0]) ?? '09:00'
+  const defaultEnd = normalizeTimeValue(fallbackHours?.[fallbackHours.length - 1]) ?? '18:00'
+  const dayMap: Record<string, keyof WeeklyAvailabilityConfig> = {
+    segunda: 'monday',
+    terca: 'tuesday',
+    terça: 'tuesday',
+    quarta: 'wednesday',
+    quinta: 'thursday',
+    sexta: 'friday',
+    sabado: 'saturday',
+    sábado: 'saturday',
+    domingo: 'sunday',
+  }
+
+  const fallbackConfig = fallbackDays.reduce<WeeklyAvailabilityConfig>((result, item) => {
+    const normalizedKey = dayMap[item.trim().toLowerCase()]
+    if (!normalizedKey) {
+      return result
+    }
+
+    result[normalizedKey] = {
+      enabled: true,
+      start: defaultStart,
+      end: defaultEnd,
+    }
+    return result
+  }, {})
+
+  return Object.keys(fallbackConfig).length > 0 ? fallbackConfig : undefined
+}
+
+function normalizeTimeValue(value?: string) {
+  if (!value) {
+    return undefined
+  }
+
+  const trimmedValue = value.trim()
+  return /^\d{2}:\d{2}$/.test(trimmedValue) ? trimmedValue : undefined
 }
 
 function normalizeProfessionalOperationMode(value?: string): ProfessionalOperationMode | null {

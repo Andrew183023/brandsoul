@@ -48,8 +48,33 @@ class ServiceOffer(BaseModel):
 
 
 class SchedulingConfig(BaseModel):
+    class WeeklyAvailabilityDay(BaseModel):
+        enabled: bool = False
+        start: str | None = Field(default=None, max_length=5)
+        end: str | None = Field(default=None, max_length=5)
+
+    class AttendanceModes(BaseModel):
+        presencial: bool = False
+        online: bool = False
+        domicilio: bool = False
+
+    enabled: bool = False
     title: str | None = Field(default=None, max_length=100)
     description: str | None = Field(default=None, max_length=200)
+    service_options: list[str] = Field(default_factory=list)
+    duration_minutes: int | None = Field(default=None, ge=5, le=480)
+    available_days: list[str] = Field(default_factory=list)
+    available_hours: list[str] = Field(default_factory=list)
+    weekly_availability: dict[str, WeeklyAvailabilityDay] = Field(default_factory=dict)
+    blocked_dates: list[str] = Field(default_factory=list)
+    blocked_slots: list[str] = Field(default_factory=list)
+    slot_interval_minutes: int | None = Field(default=None, ge=5, le=240)
+    attendance_mode: Literal["presencial", "online", "domicilio"] | None = None
+    attendance_modes: AttendanceModes = Field(default_factory=AttendanceModes)
+    whatsapp_notification_enabled: bool = False
+    whatsapp_number: str | None = Field(default=None, max_length=40)
+    whatsapp_message_template: str | None = Field(default=None, max_length=400)
+    manual_confirmation: bool = False
 
 
 class ProfessionalCase(BaseModel):

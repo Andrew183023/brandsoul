@@ -54,8 +54,33 @@ class SparkServiceOffer(BaseModel):
 
 
 class SparkSchedulingConfig(BaseModel):
+    class SparkWeeklyAvailabilityDay(BaseModel):
+        enabled: bool = False
+        start: str | None = None
+        end: str | None = None
+
+    class SparkAttendanceModes(BaseModel):
+        presencial: bool = False
+        online: bool = False
+        domicilio: bool = False
+
+    enabled: bool = False
     title: str | None = None
     description: str | None = None
+    serviceOptions: list[str] = Field(default_factory=list)
+    durationMinutes: int | None = None
+    availableDays: list[str] = Field(default_factory=list)
+    availableHours: list[str] = Field(default_factory=list)
+    weeklyAvailability: dict[str, SparkWeeklyAvailabilityDay] = Field(default_factory=dict)
+    blockedDates: list[str] = Field(default_factory=list)
+    blockedSlots: list[str] = Field(default_factory=list)
+    slotIntervalMinutes: int | None = None
+    attendanceMode: str | None = None
+    attendanceModes: SparkAttendanceModes = Field(default_factory=SparkAttendanceModes)
+    whatsappNotificationEnabled: bool = False
+    whatsappNumber: str | None = None
+    whatsappMessageTemplate: str | None = None
+    manualConfirmation: bool = False
 
 
 class SparkProfessionalCase(BaseModel):

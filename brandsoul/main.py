@@ -9,6 +9,8 @@ from models.catalog import CatalogItemPayload
 from models.channel import ChannelMessage, ChannelResponse, ChatRequest, ChatResponse
 from models.interaction import InteractionRequest, InteractionResponse
 from models.public_brand import PublicBrandResponse
+from models.schedule import AdminScheduleBookingItem, PublicScheduleAvailabilityResponse, ScheduleBookingRequest, ScheduleBookingResponse
+from services.admin_schedule_service import list_tenant_schedule_bookings
 from models.spark import SparkPayload
 from services.auth_service import (
     get_current_tenant,
@@ -32,6 +34,7 @@ from services.catalog_service import (
 from services.case_service import submit_case
 from services.interaction_service import simulate_interaction
 from services.public_brand_service import fetch_public_brand
+from services.schedule_service import fetch_public_schedule_availability, submit_schedule_booking
 from services.spark_service import fetch_tenant_spark, save_tenant_spark
 
 
@@ -164,6 +167,11 @@ def admin_catalog_delete(item_id: int, current_tenant: dict = Depends(get_curren
     return {"status": "ok"}
 
 
+@app.get("/admin/bookings", response_model=list[AdminScheduleBookingItem])
+def admin_bookings(current_tenant: dict = Depends(get_current_tenant)) -> list[AdminScheduleBookingItem]:
+    return list_tenant_schedule_bookings(current_tenant)
+
+
 @app.get("/public/brands/{slug}", response_model=PublicBrandResponse)
 def public_brand(slug: str) -> PublicBrandResponse:
     return fetch_public_brand(slug)
@@ -172,6 +180,16 @@ def public_brand(slug: str) -> PublicBrandResponse:
 @app.post("/case/submit", response_model=CaseSubmitResponse)
 def case_submit(payload: CaseSubmitRequest) -> CaseSubmitResponse:
     return submit_case(payload)
+
+
+@app.post("/schedule/booking", response_model=ScheduleBookingResponse)
+def schedule_booking(payload: ScheduleBookingRequest) -> ScheduleBookingResponse:
+    return submit_schedule_booking(payload)
+
+
+@app.get("/public/brands/{slug}/schedule", response_model=PublicScheduleAvailabilityResponse)
+def public_schedule_availability(slug: str) -> PublicScheduleAvailabilityResponse:
+    return fetch_public_schedule_availability(slug)
 
 
 @app.post("/channel/message", response_model=ChannelResponse)

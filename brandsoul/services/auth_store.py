@@ -167,7 +167,34 @@ def initialize_database(connection: sqlite3.Connection, database_key: str) -> No
 
         CREATE INDEX IF NOT EXISTS idx_case_submissions_tenant_id
         ON case_submissions(tenant_id);
+
+        CREATE TABLE IF NOT EXISTS schedule_bookings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tenant_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            phone TEXT NOT NULL,
+            service TEXT NOT NULL,
+            attendance_mode TEXT NOT NULL DEFAULT 'presencial',
+            date TEXT NOT NULL,
+            time TEXT NOT NULL,
+            note TEXT,
+            location_details TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_schedule_bookings_tenant_id
+        ON schedule_bookings(tenant_id);
         """
+    )
+    ensure_table_columns(
+        connection,
+        "schedule_bookings",
+        {
+            "attendance_mode": "TEXT NOT NULL DEFAULT 'presencial'",
+            "location_details": "TEXT",
+        },
     )
     ensure_table_columns(
         connection,
@@ -687,3 +714,52 @@ def create_case_submission(
             (cursor.lastrowid,),
         ).fetchone()
         return {**(row_to_dict(row) or {}), "already_submitted": False}
+
+
+def create_schedule_booking(
+    *,
+    tenant_id: int,
+    name: str,
+    phone: str,
+    service: str,
+    attendance_mode: str,
+    date: str,
+    time: str,
+    note: str | None,
+    location_details: str | None,
+) -> dict:
+    now = utcnow_iso()
+    with get_connection() as connection:
+        cursor = connection.execute(
+            """
+            INSERT INTO schedule_bookings (
+                tenant_id, name, phone, service, attendance_mode, date, time, note, location_details, status, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+            """,
+            (tenant_id, name, phone, service, attendance_mode, date, time, note, location_details, now),
+        )
+        connection.commit()
+        row = connection.execute(
+            "SELECT * FROM schedule_bookings WHERE id = ?",
+            (cursor.lastrowid,),
+        ).fetchone()
+        return row_to_dict(row) or {}
+
+
+def list_schedule_bookings_by_tenant_id(tenant_id: int, *, connection: sqlite3.Connection | None = None) -> list[dict]:
+    owns_connection = connection is None
+    connection = connection or get_connection()
+    try:
+        rows = connection.execute(
+            """
+            SELECT * FROM schedule_bookings
+            WHERE tenant_id = ?
+            ORDER BY date ASC, time ASC, id DESC
+            """,
+            (tenant_id,),
+        ).fetchall()
+        return [row_to_dict(row) or {} for row in rows]
+    finally:
+        if owns_connection:
+            connection.close()

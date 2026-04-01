@@ -6,7 +6,7 @@ from services.auth_store import get_spark_by_tenant_id, upsert_spark
 
 def build_default_features(business_model: str, brand_type: str) -> dict[str, bool]:
     if business_model == "professional" or brand_type == "professional":
-        return {"products": False, "services": True, "scheduling": False, "emergency": True}
+        return {"products": False, "services": True, "scheduling": True, "emergency": True}
 
     if business_model == "service":
         return {"products": False, "services": True, "scheduling": True, "emergency": False}
