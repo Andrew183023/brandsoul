@@ -2,7 +2,9 @@
 // This page is kept only for backward compatibility with /brands/:slug.
 // New public product work must happen in /entity/:id via EntityPublicPage.
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CSSProperties, FormEvent } from 'react'
+import React, { type CSSProperties, type FormEvent } from 'react'
+
+void React
 import axios from 'axios'
 
 import brandsoulLogo from '../assets/brandsoul-logo-original.jpeg'

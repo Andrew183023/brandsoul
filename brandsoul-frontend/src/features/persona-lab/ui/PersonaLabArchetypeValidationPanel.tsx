@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import React, { type ReactNode } from 'react'
 
 import type { VisualArchetype } from '../../../domain/visual-archetype/contracts/VisualArchetype'
 import type { VisualBodyPlan } from '../../../domain/visual-archetype/contracts/VisualBodyPlan'

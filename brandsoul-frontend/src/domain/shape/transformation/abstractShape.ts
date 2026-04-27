@@ -92,6 +92,18 @@ function blendContours(basePoints: ShapePoint[], transformedPoints: ShapePoint[]
   })
 }
 
+function applySemanticFinish(points: ShapePoint[], source: ExtractedShapeSource) {
+  if (source.signature.type === 'organico' || source.signature.curvatureRatio >= 0.7) {
+    return chaikin(points, 1)
+  }
+
+  if (source.signature.type === 'geometrico' || source.signature.angularity >= 0.72) {
+    return snapToGrid(simplifyPoints(points, 2), 8)
+  }
+
+  return points
+}
+
 function averageRadius(points: ShapePoint[], centroid: ShapePoint) {
   if (!points.length) {
     return 0
@@ -163,8 +175,8 @@ function applySemanticMorphology(points: ShapePoint[], anchor: ShapePoint, sourc
     const circularizedRadius = distanceFromAnchor + (circularRadius - distanceFromAnchor) * profile.circularityBlend
     const apertureRadius = circularizedRadius * (1 + axisAlignment * profile.openness * 0.18 - (1 - axisAlignment) * profile.compression * 0.08)
     const scaledRadius = apertureRadius * (1 + profile.expansion * 0.08 - profile.cohesion * 0.06)
-    let x = Math.cos(workingAngle) * scaledRadius * (1 + profile.elongationX * 0.42)
-    let y = Math.sin(workingAngle) * scaledRadius * (1 + profile.elongationY * 0.42)
+    let x = Math.cos(workingAngle) * scaledRadius * (1 + profile.elongationX * 0.68 + axisAlignment * profile.elongationX * 0.14)
+    let y = Math.sin(workingAngle) * scaledRadius * (1 + profile.elongationY * 0.68 + axisAlignment * profile.elongationY * 0.14)
 
     const centerBias = 1 - clamp(Math.hypot(normalizedX, normalizedY) / 1.35, 0, 1)
     const cohesionScale = 1 - profile.cohesion * centerBias * 0.18
@@ -256,7 +268,7 @@ export function abstractShape(source: ExtractedShapeSource, mode: ManifestationM
       )
       const preserveFactor = clamp(basePreserveFactor - semanticIntensity, typographicProtection ? 0.82 : 0.44, 0.94)
 
-  const preservedAbstracted = blendContours(basePoints, abstractedPoints, preserveFactor)
+  const preservedAbstracted = applySemanticFinish(blendContours(basePoints, abstractedPoints, preserveFactor), source)
   const normalizedAbstracted = simplifyPoints(normalizePoints(preservedAbstracted), 2)
   const abstractedCentroid = computeCentroid(normalizedAbstracted)
   const abstractedBoundingBox = computeBoundingBox(normalizedAbstracted)

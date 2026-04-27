@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
-import type { FormEvent } from 'react'
+import React, { type FormEvent } from 'react'
+
+void React
 
 import { resetPassword } from '../lib/auth'
 import { navigateTo } from '../lib/persona'

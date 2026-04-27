@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import React, { type ReactNode } from 'react'
 
 import '../styles/publicShell.css'
 
@@ -8,6 +8,8 @@ type PublicShellProps = {
 }
 
 export default function PublicShell({ children, isAuthenticated = false }: PublicShellProps) {
+  void React
+
   return (
     <main className="public-shell">
       <header className="public-shell__topbar">

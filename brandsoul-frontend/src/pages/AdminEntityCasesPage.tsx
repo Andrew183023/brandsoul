@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import type { FormEvent } from 'react'
+import React, { type FormEvent } from 'react'
+
+void React
 
 import {
   assignCase,

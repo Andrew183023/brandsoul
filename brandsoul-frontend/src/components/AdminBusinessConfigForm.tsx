@@ -1,4 +1,6 @@
-import type { ChangeEvent, FormEvent } from 'react'
+import React, { type ChangeEvent, type FormEvent } from 'react'
+
+void React
 
 import type { EntityBusinessConfig, EntityBusinessType } from '../backend-bridge/api/adminApi'
 

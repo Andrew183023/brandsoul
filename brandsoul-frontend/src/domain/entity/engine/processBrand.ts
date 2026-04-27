@@ -386,14 +386,28 @@ function buildBehaviorProfile(args: {
   amplitudeMultiplier?: number
   speedMultiplier?: number
 }): EntityBehaviorProfile {
+  const runtimeVisual = args.spec.runtime.defaultVisual
+  const legacySpec = args.spec as ManifestationSpec & {
+    motion?: {
+      rhythm?: string
+      speed?: number
+    }
+    lighting?: {
+      glow?: number
+    }
+  }
+  const rhythm = legacySpec.motion?.rhythm ?? runtimeVisual.motion
+  const speed = legacySpec.motion?.speed ?? (runtimeVisual.motion === 'pulse' ? 1 : runtimeVisual.motion === 'float' ? 0.76 : 0.62)
+  const amplitude = legacySpec.lighting?.glow ?? (runtimeVisual.glow === 'bold' ? 0.88 : runtimeVisual.glow === 'focused' ? 0.74 : 0.58)
+
   return {
     id: args.id,
     family: args.family,
     mode: args.mode,
     intensity: args.manifestation.intensity,
-    rhythm: args.spec.motion.rhythm,
-    speed: args.spec.motion.speed * (args.speedMultiplier ?? 1),
-    amplitude: args.spec.lighting.glow * (args.amplitudeMultiplier ?? 1),
+    rhythm,
+    speed: speed * (args.speedMultiplier ?? 1),
+    amplitude: amplitude * (args.amplitudeMultiplier ?? 1),
   }
 }
 
@@ -415,6 +429,23 @@ function buildBehavior(context: EntityDecisionContext, morphology: EntityMorphol
   const { manifestation, personaDNA } = context
   const dnaModulators = resolvePersonaDNAModulators(personaDNA)
   const signature = morphology.processedShape?.signature
+  const runtimeVisual = manifestation.spec.runtime.defaultVisual
+  const legacySpec = manifestation.spec as ManifestationSpec & {
+    motion?: {
+      rhythm?: string
+      speed?: number
+    }
+    lighting?: {
+      glow?: number
+    }
+    particleSystem?: {
+      density?: number
+    }
+  }
+  const baseRhythm = legacySpec.motion?.rhythm ?? runtimeVisual.motion
+  const baseSpeed = legacySpec.motion?.speed ?? (runtimeVisual.motion === 'pulse' ? 1 : runtimeVisual.motion === 'float' ? 0.76 : 0.62)
+  const basePulse = legacySpec.lighting?.glow ?? (runtimeVisual.glow === 'bold' ? 0.88 : runtimeVisual.glow === 'focused' ? 0.74 : 0.58)
+  const baseVariance = legacySpec.particleSystem?.density ?? (runtimeVisual.density === 'compact' ? 0.78 : runtimeVisual.density === 'airy' ? 0.34 : 0.56)
   const speedMultiplier =
     (morphology.typographicProtection ? 0.82 : morphology.structuralComplexity > 0.72 ? 0.92 : 1) *
     (signature?.massDistribution === 'spread' ? 1.06 : 0.96) *
@@ -435,11 +466,11 @@ function buildBehavior(context: EntityDecisionContext, morphology: EntityMorphol
     },
     stabilize: buildBehaviorProfile({ id: 'stabilize', family: 'stabilize', mode: manifestation.behavior.stabilize, manifestation, spec: manifestation.spec, speedMultiplier: 0.76, amplitudeMultiplier: 0.58 }),
     rhythm: {
-      base: manifestation.spec.motion.rhythm,
-      speed: manifestation.spec.motion.speed * speedMultiplier,
-      pulse: manifestation.spec.lighting.glow * amplitudeMultiplier * (1 + dnaModulators.corePulseBias),
+      base: baseRhythm,
+      speed: baseSpeed * speedMultiplier,
+      pulse: basePulse * amplitudeMultiplier * (1 + dnaModulators.corePulseBias),
       variance:
-        manifestation.spec.particleSystem.density *
+        baseVariance *
         (morphology.typographicProtection ? 0.5 : 0.76) *
         ((signature?.fragmentation ?? 0.4) > 0.6 ? 1.18 : (signature?.symmetry ?? 0.5) > 0.72 ? 0.86 : 1) *
         (1 + personaDNA.wildness * 0.18 - personaDNA.stability * 0.12),

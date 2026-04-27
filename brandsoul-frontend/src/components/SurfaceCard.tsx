@@ -1,4 +1,6 @@
-import type { ElementType, ReactNode } from 'react'
+import React, { type ElementType, type ReactNode } from 'react'
+
+void React
 
 import './designSystem.css'
 

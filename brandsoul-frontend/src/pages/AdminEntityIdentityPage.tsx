@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import type { ChangeEvent, FormEvent } from 'react'
+import React, { type ChangeEvent, type FormEvent } from 'react'
+
+void React
 
 import { getEntityBusinessConfig, saveEntityBusinessConfig } from '../backend-bridge/api/adminApi'
 import AdminBusinessConfigForm, {

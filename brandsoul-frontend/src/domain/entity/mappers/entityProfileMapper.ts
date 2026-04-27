@@ -47,14 +47,25 @@ function buildBehaviorProfile(args: {
   mode: string
   manifestation: EntityManifestation
 }): EntityBehaviorProfile {
+  const runtimeVisual = args.manifestation.spec.runtime.defaultVisual
+  const legacySpec = args.manifestation.spec as EntityManifestation['spec'] & {
+    motion?: {
+      rhythm?: string
+      speed?: number
+    }
+    lighting?: {
+      glow?: number
+    }
+  }
+
   return {
     id: args.id,
     family: args.family,
     mode: args.mode,
     intensity: args.manifestation.intensity,
-    rhythm: args.manifestation.spec.motion.rhythm,
-    speed: args.manifestation.spec.motion.speed,
-    amplitude: args.manifestation.spec.lighting.glow,
+    rhythm: legacySpec.motion?.rhythm ?? runtimeVisual.motion,
+    speed: legacySpec.motion?.speed ?? (runtimeVisual.motion === 'pulse' ? 1 : runtimeVisual.motion === 'float' ? 0.76 : 0.62),
+    amplitude: legacySpec.lighting?.glow ?? (runtimeVisual.glow === 'bold' ? 0.88 : runtimeVisual.glow === 'focused' ? 0.74 : 0.58),
   }
 }
 
@@ -172,6 +183,20 @@ export function buildEntityMorphology(args: {
 }
 
 export function buildEntityBehavior(manifestation: EntityManifestation): EntityBehavior {
+  const runtimeVisual = manifestation.spec.runtime.defaultVisual
+  const legacySpec = manifestation.spec as EntityManifestation['spec'] & {
+    motion?: {
+      rhythm?: string
+      speed?: number
+    }
+    lighting?: {
+      glow?: number
+    }
+    particleSystem?: {
+      density?: number
+    }
+  }
+
   return {
     idle: buildBehaviorProfile({ id: 'idle', family: 'idle', mode: manifestation.behavior.idle, manifestation }),
     hover: buildBehaviorProfile({ id: 'hover', family: 'hover', mode: manifestation.behavior.hover, manifestation }),
@@ -182,10 +207,10 @@ export function buildEntityBehavior(manifestation: EntityManifestation): EntityB
     },
     stabilize: buildBehaviorProfile({ id: 'stabilize', family: 'stabilize', mode: manifestation.behavior.stabilize, manifestation }),
     rhythm: {
-      base: manifestation.spec.motion.rhythm,
-      speed: manifestation.spec.motion.speed,
-      pulse: manifestation.spec.lighting.glow,
-      variance: manifestation.spec.particleSystem.density,
+      base: legacySpec.motion?.rhythm ?? runtimeVisual.motion,
+      speed: legacySpec.motion?.speed ?? (runtimeVisual.motion === 'pulse' ? 1 : runtimeVisual.motion === 'float' ? 0.76 : 0.62),
+      pulse: legacySpec.lighting?.glow ?? (runtimeVisual.glow === 'bold' ? 0.88 : runtimeVisual.glow === 'focused' ? 0.74 : 0.58),
+      variance: legacySpec.particleSystem?.density ?? (runtimeVisual.density === 'compact' ? 0.78 : runtimeVisual.density === 'airy' ? 0.34 : 0.56),
     },
     intensityRules: buildIntensityRules(manifestation),
   }

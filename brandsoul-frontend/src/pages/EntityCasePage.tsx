@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
+import React, { type FormEvent } from 'react'
+
+void React
 
 import type { AdminLegalCase, AdminLegalCaseMessage } from '../backend-bridge/api/adminApi'
 import { ConversationThread, type ConversationThreadMessage } from '../app/components/ConversationThread'

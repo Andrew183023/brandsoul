@@ -302,7 +302,7 @@ describe('resolveBrandSoulDecisionWithState', () => {
     expect(result.nextCognitiveState.stability).toBeLessThanOrEqual(0.78)
   })
 
-  it('lets a stable support-oriented cognitive state bias an ambiguous decision without touching the base resolver', () => {
+  it('keeps adaptive-core semantics stable while still applying support-oriented presentation bias', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-04-15T12:25:00.000Z'))
 
@@ -319,19 +319,16 @@ describe('resolveBrandSoulDecisionWithState', () => {
       },
     })
 
-    expect(result.decision.intent).toBe('support')
-    expect(result.decision.action).toBe('support')
-    expect(result.decision.responsePlan.kind).toBe('policy')
-    expect(result.decision.responsePlan.optionalCloseStyle).toBe('safe-guidance')
+    expect(result.decision.intent).toBe('general')
+    expect(result.decision.action).toBe('inform')
+    expect(result.decision.responsePlan.kind).toBe('general')
+    expect(result.decision.responsePlan.optionalCloseStyle).toBe('contextual-clarity')
     expect(result.decision.confidence).toBeGreaterThan(0.46)
     expect(result.decision.cognitiveStateInfluence?.applied).toBe(true)
-    expect(result.decision.cognitiveStateInfluence?.impact.intent).toEqual({
-      before: 'general',
-      after: 'support',
-    })
+    expect(result.decision.cognitiveStateInfluence?.impact.intent).toBeUndefined()
   })
 
-  it('applies explicit policy before cognitive and strategy layers while keeping the base resolver sovereign', () => {
+  it('keeps the base semantic contract when policy runs under adaptive-core sovereignty', () => {
     const result = resolveBrandSoulDecisionWithState({
       context: buildContext(),
       userMessage: 'me explica melhor',
@@ -348,9 +345,9 @@ describe('resolveBrandSoulDecisionWithState', () => {
       historicalSignals: buildHistoricalSignals(),
     })
 
-    expect(result.decision.intent).toBe('support')
-    expect(result.decision.action).toBe('support')
-    expect(result.decision.responsePlan.kind).toBe('policy')
+    expect(result.decision.intent).toBe('general')
+    expect(result.decision.action).toBe('inform')
+    expect(result.decision.responsePlan.kind).toBe('general')
     expect(result.nextPolicyProfile.intentPriorityOverrides.support).toBeGreaterThan(0.5)
     expect(result.nextHistoricalSignals.totalInteractions).toBe(4)
   })

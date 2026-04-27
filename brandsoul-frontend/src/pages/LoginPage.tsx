@@ -1,5 +1,7 @@
 import { useState } from 'react'
-import type { FormEvent } from 'react'
+import React, { type FormEvent } from 'react'
+
+void React
 
 import { loginAccount } from '../lib/auth'
 import { finalizePendingEntityBirth, loadEntityBirthDraft } from '../lib/entityBirth.ts'
