@@ -1,6 +1,7 @@
 import axios from 'axios'
 
-import { buildApiHeaders, buildApiUrl } from './api'
+import { buildApiUrl } from './api'
+import { buildApiHeaders } from './auth'
 
 export interface ScheduleBookingPayload {
   tenant_slug: string
@@ -50,7 +51,7 @@ export async function createScheduleBooking(payload: ScheduleBookingPayload) {
 
 export async function fetchAdminBookings() {
   const response = await axios.get<AdminScheduleBookingItem[]>(buildApiUrl('/admin/bookings'), {
-    headers: buildApiHeaders('admin'),
+    headers: await buildApiHeaders('admin'),
   })
   return response.data
 }

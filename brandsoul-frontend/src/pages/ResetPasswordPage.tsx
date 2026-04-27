@@ -3,7 +3,6 @@ import type { FormEvent } from 'react'
 
 import { resetPassword } from '../lib/auth'
 import { navigateTo } from '../lib/persona'
-import '../App.css'
 
 const REDIRECT_DELAY_MS = 1400
 

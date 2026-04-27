@@ -1,0 +1,228 @@
+.case-shell {
+  min-height: 100vh;
+  padding: clamp(24px, 4vw, 32px);
+  background: var(--bg);
+  color: var(--text-primary);
+  display: grid;
+  gap: 1.5rem;
+}
+
+.case-shell > * {
+  width: min(var(--page-max-width), 100%);
+  margin: 0 auto;
+}
+
+.case-shell__header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: flex-start;
+  padding: 1.5rem;
+  border-radius: 12px;
+  background: var(--bg-soft);
+  border: 1px solid var(--card-border);
+}
+
+.case-shell__header-copy {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.case-shell__header-copy h1 {
+  margin: 0;
+  font-size: clamp(1.6rem, 3.4vw, 2.4rem);
+  line-height: 1.02;
+  letter-spacing: -0.04em;
+}
+
+.case-shell__header-copy p {
+  margin: 0;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.case-shell__status {
+  width: fit-content;
+}
+
+.case-shell__header-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.case-shell__feedback {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.case-shell__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.5rem;
+  min-height: 0;
+}
+
+.case-shell__layout:not(.case-shell__layout--with-details) .case-shell__thread-panel {
+  grid-template-rows: auto;
+  min-height: clamp(150px, 24vh, 220px);
+}
+
+.case-shell__layout:not(.case-shell__layout--with-details) .case-shell__thread-scroll {
+  max-height: none;
+  align-content: start;
+  padding: 1.15rem;
+}
+
+.case-shell__layout--with-details {
+  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.8fr);
+  align-items: start;
+}
+
+.case-shell__thread-panel,
+.case-shell__details {
+  min-height: 0;
+  border-radius: 12px;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+}
+
+.case-shell__thread-panel {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  overflow: hidden;
+}
+
+.case-shell__thread-scroll {
+  min-height: 0;
+  max-height: calc(100vh - 15rem);
+  overflow-y: auto;
+  padding: 1rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.case-shell__composer {
+  position: sticky;
+  bottom: 0;
+  padding: 1rem;
+  background: var(--bg-soft);
+  border-top: 1px solid var(--card-border);
+}
+
+.case-shell__details {
+  padding: 1rem;
+  display: grid;
+  gap: 1rem;
+  max-height: calc(100vh - 12rem);
+  overflow-y: auto;
+}
+
+.case-shell .admin-card,
+.case-shell .entity-public-card {
+  background: var(--card);
+  border-color: var(--card-border);
+  box-shadow: none;
+  color: var(--text-primary);
+}
+
+.case-shell .admin-card-header span,
+.case-shell .admin-field span,
+.case-shell .admin-domain-card p,
+.case-shell .admin-domain-card span,
+.case-shell .admin-case-message p,
+.case-shell .admin-case-message__meta span,
+.case-shell .admin-feedback,
+.case-shell .entity-public-copy {
+  color: var(--text-secondary);
+}
+
+.case-shell .admin-feedback {
+  background: var(--bg-soft);
+}
+
+.case-shell .admin-feedback--error {
+  background: rgba(175, 62, 37, 0.18);
+  color: #ffd8cf;
+}
+
+.case-shell .admin-domain-card,
+.case-shell .admin-case-message,
+.case-shell .admin-case-timeline-item,
+.case-shell .entity-case-empty {
+  background: var(--bg-soft);
+  border-color: var(--card-border);
+}
+
+.case-shell .admin-case-message--lawyer {
+  background: #161b24;
+}
+
+.case-shell .admin-case-message--user {
+  background: #1c1512;
+  border-color: rgba(249, 115, 22, 0.3);
+}
+
+.case-shell .admin-case-message--system {
+  background: #12161c;
+}
+
+.case-shell .admin-field input,
+.case-shell .admin-field select,
+.case-shell .admin-field textarea {
+  background: #0f1115;
+  border-color: #2a2f3a;
+  color: var(--text-primary);
+}
+
+.case-shell .admin-button,
+.case-shell .entity-public-button {
+  min-height: 2.9rem;
+}
+
+.case-shell .entity-public-button,
+.case-shell .admin-button {
+  background: var(--accent);
+  color: #fff;
+  box-shadow: none;
+}
+
+.case-shell .entity-public-button--ghost,
+.case-shell .admin-button--ghost {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--card-border);
+}
+
+@media (max-width: 980px) {
+  .case-shell__layout--with-details {
+    grid-template-columns: 1fr;
+  }
+
+  .case-shell__thread-scroll,
+  .case-shell__details {
+    max-height: none;
+  }
+
+  .case-shell__header {
+    position: static;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 760px) {
+  .case-shell {
+    padding: 0.85rem;
+  }
+
+  .case-shell__header,
+  .case-shell__thread-scroll,
+  .case-shell__details,
+  .case-shell__composer {
+    padding-left: 0.9rem;
+    padding-right: 0.9rem;
+  }
+}

@@ -187,6 +187,8 @@ EMAIL_FROM=noreply@yourdomain.com
 PASSWORD_RESET_URL_BASE=http://localhost:5173/reset-password
 ```
 
+For the TypeScript backend in [backend](c:/flow_core_group/backend), copy [backend/.env.example](c:/flow_core_group/backend/.env.example) to `.env` or `.env.local` before running `npm run dev`.
+
 ---
 
 ## Roadmap

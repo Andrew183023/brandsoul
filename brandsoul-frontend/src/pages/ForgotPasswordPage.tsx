@@ -3,7 +3,6 @@ import type { FormEvent } from 'react'
 
 import { requestPasswordReset } from '../lib/auth'
 import { navigateTo } from '../lib/persona'
-import '../App.css'
 
 const SUCCESS_MESSAGE = 'Se existir uma conta com este email, enviamos instruções.'
 

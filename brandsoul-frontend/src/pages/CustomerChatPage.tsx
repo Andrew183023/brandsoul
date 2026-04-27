@@ -1,3 +1,6 @@
+// LEGACY PUBLIC FLOW
+// This page is kept only for backward compatibility with /brands/:slug.
+// New public product work must happen in /entity/:id via EntityPublicPage.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, FormEvent } from 'react'
 import axios from 'axios'
@@ -27,7 +30,6 @@ import {
   type SparkMemory,
 } from '../lib/sparkMemory'
 import type { CatalogItem } from '../types/catalog'
-import '../App.css'
 
 type SparkState = 'idle' | 'thinking' | 'speaking'
 type CustomerMode = 'sales' | 'service' | 'scheduling' | 'emergency'
@@ -182,6 +184,8 @@ interface ScheduleConfirmationState {
   whatsappUrl?: string | null
 }
 
+const SCHEDULE_AVAILABILITY_TTL_MS = 3 * 60 * 1000
+
 function createEmptyGuidanceProgress(): GuidanceProgress {
   return {
     contexto: 'pendente',
@@ -199,6 +203,14 @@ function buildGuidanceProgressLabel(status: GuidanceProgress[keyof GuidanceProgr
     return 'Em andamento'
   }
   return 'Pendente'
+}
+
+function hasScheduleAvailabilityExpired(fetchedAt: number | null, now = Date.now()) {
+  if (fetchedAt === null) {
+    return false
+  }
+
+  return now - fetchedAt > SCHEDULE_AVAILABILITY_TTL_MS
 }
 
 function triggerEvidencePanelHighlight(
@@ -817,6 +829,7 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
   const [scheduleSubmitMessage, setScheduleSubmitMessage] = useState<string | null>(null)
   const [scheduleConfirmation, setScheduleConfirmation] = useState<ScheduleConfirmationState | null>(null)
   const [scheduleAvailability, setScheduleAvailability] = useState<{ blocked_dates: string[]; blocked_slots: string[]; booked_slots: string[] } | null>(null)
+  const [scheduleAvailabilityFetchedAt, setScheduleAvailabilityFetchedAt] = useState<number | null>(null)
   const [scheduleDisplayMonth, setScheduleDisplayMonth] = useState(() => new Date())
   const [scheduleForm, setScheduleForm] = useState<ScheduleFormState>({
     name: '',
@@ -899,7 +912,8 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
   const isGuidanceActive = isProfessionalGuidanceMode && (guidanceConsentState === 'accepted' || isEmergencyMode || isGuidanceFlowClosed || isCaseSubmitted)
   const showOrientationConsent = isProfessionalGuidanceMode && isEmergencyMode && guidanceConsentState === 'pending'
   const showGuidancePanels = isGuidanceActive
-  const guidanceNeedsConsent = isProfessionalGuidanceMode && guidanceConsentState === 'pending'
+  const guidanceNeedsConsent = isProfessionalGuidanceMode && isEmergencyMode && guidanceConsentState === 'pending'
+  const showGuidancePendingBanner = isProfessionalGuidanceMode && guidanceConsentState === 'pending' && !isEmergencyMode
   const showProductsSection = activeFeatures.products && !isProfessionalBrand && !isEmergencyMode
   const showServicesSection = activeFeatures.services && !isProfessionalBrand && !isEmergencyMode
   const isSchedulingEnabled = (businessModel === 'service' || businessModel === 'professional') && persona?.schedulingConfig?.enabled === true
@@ -944,6 +958,7 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
     persona?.professionalData?.presentation ||
     'Atuação técnica com presença clara, responsável e orientada ao próximo passo.'
   const flowReadyForSubmission = (caseProgress.readyForSubmission || isGuidanceFlowClosed) && !isCaseSubmitted
+  const isCaseSubmitReady = flowReadyForSubmission && !isCaseSubmitting
   const selectedDateEntry = useMemo(() => {
     if (!scheduleForm.date || !persona?.schedulingConfig?.weeklyAvailability) {
       return undefined
@@ -1084,6 +1099,7 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
         setPersona(publicBrand.spark)
         setCatalogItems(publicBrand.catalog)
         setScheduleAvailability(availability)
+        setScheduleAvailabilityFetchedAt(availability ? Date.now() : null)
         setActiveMode(getDefaultMode(publicBrand.spark))
         setPublicBrandStatus('ready')
       } catch (error) {
@@ -1095,6 +1111,7 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
         setPersona(null)
         setCatalogItems([])
         setScheduleAvailability(null)
+        setScheduleAvailabilityFetchedAt(null)
         setPublicBrandStatus('not-found')
       }
     }
@@ -1105,6 +1122,30 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
       isMounted = false
     }
   }, [brandSlug])
+
+  const refreshScheduleAvailability = async () => {
+    if (!brandSlug) {
+      return null
+    }
+
+    const availability = await fetchPublicScheduleAvailability(brandSlug)
+    setScheduleAvailability(availability)
+    setScheduleAvailabilityFetchedAt(Date.now())
+    return availability
+  }
+
+  const recoverFromStaleScheduleAvailability = async () => {
+    handleScheduleFieldChange('time', '')
+    setCurrentScheduleStep('time')
+    setScheduleSubmitMessage('Esse horário ficou desatualizado. Atualizei a agenda para você escolher outro horário.')
+
+    try {
+      await refreshScheduleAvailability()
+    } catch (error) {
+      console.error(error)
+      setScheduleSubmitMessage('Esse horário expirou e não consegui atualizar a agenda agora. Tente novamente em instantes.')
+    }
+  }
 
   useEffect(() => {
     if (brandSlug) {
@@ -1462,6 +1503,33 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
     setActiveMode(mode)
   }
 
+  const acceptGuidanceConsent = () => {
+    setGuidanceConsentState('accepted')
+    if (messages.length === 0) {
+      hasBootstrappedRef.current = true
+      void startConversation(true)
+    }
+  }
+
+  const declineGuidanceConsent = () => {
+    setGuidanceConsentState('declined')
+    setMobileSection('chat')
+  }
+
+  const exitPendingGuidanceMode = () => {
+    setMobileSection('chat')
+    setActiveMode(getDefaultMode(persona))
+  }
+
+  const resumePendingGuidanceMode = () => {
+    if (!emergencyEnabled) {
+      return
+    }
+
+    setMobileSection('chat')
+    setActiveMode('emergency')
+  }
+
   const handleEmergencyMode = () => {
     if (!emergencyEnabled) {
       return
@@ -1700,6 +1768,11 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
     resetScheduleWizard()
   }
 
+  const closeScheduleWizard = () => {
+    setIsScheduleFormOpen(false)
+    resetScheduleWizard()
+  }
+
   const goToPreviousScheduleStep = () => {
     const currentIndex = scheduleSteps.indexOf(currentScheduleStep)
     if (currentIndex <= 0) {
@@ -1777,6 +1850,11 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
       return
     }
 
+    if (hasScheduleAvailabilityExpired(scheduleAvailabilityFetchedAt)) {
+      await recoverFromStaleScheduleAvailability()
+      return
+    }
+
     setIsScheduleSubmitting(true)
     try {
       const result = await createScheduleBooking({
@@ -1840,6 +1918,18 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
 
   return (
     <main className={`customer-shell spark-${sparkState}`} style={customerThemeStyle}>
+      {brandSlug ? (
+        <section className="customer-legacy-notice" aria-label="Fluxo legado">
+          <strong>Fluxo legado</strong>
+          <span>
+            Esta rota existe apenas por compatibilidade. Novas capacidades publicas da BrandSoul devem nascer em
+            {' '}
+            <code>/entity/:id</code>
+            .
+          </span>
+        </section>
+      ) : null}
+
       <section className="customer-hero">
         {persona.institutionalImage ? (
           <div className="customer-hero-media">
@@ -1939,18 +2029,15 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
                 <button
                   type="button"
                   className="persona-toggle"
-                  onClick={() => {
-                    setGuidanceConsentState('accepted')
-                    if (messages.length === 0) {
-                      hasBootstrappedRef.current = true
-                      void startConversation(true)
-                    }
-                  }}
+                  onClick={acceptGuidanceConsent}
                 >
                   Aceitar orientação
                 </button>
-                <button type="button" className="persona-toggle subtle" onClick={() => setGuidanceConsentState('declined')}>
+                <button type="button" className="persona-toggle subtle" onClick={declineGuidanceConsent}>
                   Continuar sem orientação
+                </button>
+                <button type="button" className="persona-toggle subtle" onClick={exitPendingGuidanceMode}>
+                  Sair do modo
                 </button>
               </div>
             </article>
@@ -2285,7 +2372,11 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
                         key={hourOption}
                         type="button"
                         className={`schedule-choice-card ${scheduleForm.time === hourOption ? 'active' : ''}`}
-                        onClick={() => {
+                        onClick={async () => {
+                          if (hasScheduleAvailabilityExpired(scheduleAvailabilityFetchedAt)) {
+                            await recoverFromStaleScheduleAvailability()
+                            return
+                          }
                           handleScheduleFieldChange('time', hourOption)
                           setCurrentScheduleStep('form')
                         }}
@@ -2347,6 +2438,7 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
                   <span className="professional-label">{scheduleProgressLabel}</span>
                   <strong>Agendamento solicitado com sucesso</strong>
                 </div>
+                <p className="schedule-empty-copy">Seu pedido foi concluído. Você pode encerrar por aqui ou iniciar um novo agendamento agora.</p>
                 <div className="schedule-confirm-summary">
                   <p><strong>Serviço:</strong> {scheduleForm.service}</p>
                   <p><strong>Modalidade:</strong> {SCHEDULE_ATTENDANCE_MODE_LABELS[effectiveScheduleAttendanceMode as 'presencial' | 'online' | 'domicilio']}</p>
@@ -2377,16 +2469,20 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
                   <button
                     type="button"
                     className="persona-toggle subtle"
-                    onClick={() => {
-                      setIsScheduleFormOpen(false)
-                      resetScheduleWizard()
-                    }}
+                    onClick={closeScheduleWizard}
                   >
-                    Voltar ao início
+                    Sair do agendamento
                   </button>
                   <button
                     type="button"
                     className="persona-toggle selected guidance-submit-button"
+                    onClick={openScheduleWizard}
+                  >
+                    Iniciar novo agendamento
+                  </button>
+                  <button
+                    type="button"
+                    className="persona-toggle subtle"
                     onClick={() => {
                       if (scheduleConfirmation?.whatsappUrl) {
                         window.open(scheduleConfirmation.whatsappUrl, '_blank', 'noopener,noreferrer')
@@ -2434,9 +2530,27 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
           {isProfessionalGuidanceMode && guidanceConsentState === 'accepted' && messages.length > 0 ? (
             <p className="brand-subtext">
               {isGuidanceFlowClosed
-                ? 'Fluxo inicial concluído. Agora você pode encaminhar o resumo ou seguir a conversa em modo normal.'
+                ? 'Resumo inicial pronto. O caso ainda não foi enviado para análise profissional.'
                 : 'Estou te guiando com base em diretrizes profissionais para te ajudar neste momento.'}
             </p>
+          ) : null}
+          {showGuidancePendingBanner ? (
+            <div className="guidance-inline-cta" aria-live="polite">
+              <p className="guidance-inline-cta-copy">
+                Existe uma orientação inicial pendente. Você pode retomar o fluxo crítico, aceitar agora ou seguir sem orientação.
+              </p>
+              <div className="persona-toggle-row">
+                <button type="button" className="persona-toggle selected guidance-submit-button" onClick={resumePendingGuidanceMode}>
+                  Retomar orientação
+                </button>
+                <button type="button" className="persona-toggle subtle" onClick={acceptGuidanceConsent}>
+                  Aceitar orientação
+                </button>
+                <button type="button" className="persona-toggle subtle" onClick={declineGuidanceConsent}>
+                  Continuar sem orientação
+                </button>
+              </div>
+            </div>
           ) : null}
           {availableModes.length > 1 ? (
             <div className="customer-mode-row">
@@ -2508,8 +2622,29 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
           <section className="customer-highlight-section guidance-dossier-panel" aria-label="Dossiê do caso">
             <div className="customer-section-heading">
               <span className="catalog-kicker">Dossiê do caso</span>
-              <h2>{isGuidanceFlowClosed ? 'As principais informações do caso já estão organizadas.' : 'À medida que conversamos, vou organizar aqui os pontos principais.'}</h2>
+              <h2>{isGuidanceFlowClosed ? 'As principais informações do caso já estão organizadas, mas o envio ainda depende da sua confirmação.' : 'À medida que conversamos, vou organizar aqui os pontos principais.'}</h2>
             </div>
+            {isCaseSubmitReady ? (
+              <div className="guidance-inline-cta" aria-live="polite">
+                <p className="guidance-inline-cta-copy">
+                  <strong>Caso pronto para envio.</strong> O resumo foi organizado, mas ainda não foi enviado para análise profissional.
+                </p>
+                <div className="persona-toggle-row">
+                  <button type="button" className="persona-toggle selected guidance-submit-button" onClick={() => setIsSubmitConfirmOpen(true)}>
+                    Enviar caso
+                  </button>
+                  <button
+                    type="button"
+                    className="persona-toggle subtle"
+                    onClick={() => {
+                      setMobileSection('chat')
+                    }}
+                  >
+                    Revisar antes de enviar
+                  </button>
+                </div>
+              </div>
+            ) : null}
             <div className="professional-grid professional-grid--guidance">
               <article className="professional-card">
                 <span className="professional-label">Situação identificada</span>
@@ -2539,9 +2674,9 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
             </div>
             {caseSummary ? (
               <div className="persona-toggle-row">
-                {flowReadyForSubmission && hasConfiguredWhatsApp && persona?.ctaConfig?.showOnCompletion !== false ? (
+                {isCaseSubmitReady ? (
                   <button type="button" className="persona-toggle selected guidance-submit-button" onClick={() => setIsSubmitConfirmOpen(true)}>
-                    {ctaPrimaryText}
+                    Enviar caso
                   </button>
                 ) : null}
                 <button type="button" className="persona-toggle subtle" disabled>
@@ -2572,7 +2707,7 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
               </div>
             ) : null}
             {caseSubmitMessage ? <p className="guidance-submit-feedback">{caseSubmitMessage}</p> : null}
-            {guidanceCtaState.showWhatsAppCta && hasConfiguredWhatsApp ? (
+            {!isCaseSubmitReady && guidanceCtaState.showWhatsAppCta && hasConfiguredWhatsApp ? (
               <div className="guidance-inline-cta" aria-live="polite">
                 <p className="guidance-inline-cta-copy">
                   {ctaSecondaryText}
@@ -2667,11 +2802,13 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
             </div>
             <article className="professional-card">
               <p>
-                {caseProgress.readyForSubmission
-                  ? 'O caso já tem base suficiente para encaminhamento profissional.'
+                {isCaseSubmitted
+                  ? 'O caso já foi enviado para análise profissional.'
+                  : caseProgress.readyForSubmission
+                    ? 'O caso já tem base suficiente para encaminhamento, mas ainda não foi enviado.'
                   : caseProgress.isPartiallyReady
-                    ? `Já organizei ${caseProgress.completedCount} de 4 etapas principais do caso.`
-                    : 'Estou verificando os pontos essenciais para estruturar o caso com segurança.'}
+                      ? `Já organizei ${caseProgress.completedCount} de 4 etapas principais do caso.`
+                      : 'Estou verificando os pontos essenciais para estruturar o caso com segurança.'}
               </p>
               <ul className="guidance-progress-list">
                 <li>
@@ -2713,17 +2850,18 @@ export default function CustomerChatPage({ brandSlug }: { brandSlug?: string }) 
             </button>
             <div className="product-modal-copy">
               <span className="product-modal-section-label">Confirmação</span>
-              <h3>Seu caso será enviado com:</h3>
+              <h3>Seu caso ainda não foi enviado.</h3>
+              <p>Ao confirmar, vou encaminhar para análise profissional com:</p>
               <ul className="customer-summary-list">
                 <li>resumo organizado</li>
                 <li>evidências anexadas</li>
                 <li>informações do ocorrido</li>
               </ul>
-              <p>Deseja encaminhar para análise profissional?</p>
+              <p>Deseja enviar o caso agora?</p>
             </div>
             <div className="persona-toggle-row">
               <button type="button" className="persona-toggle selected guidance-submit-button" onClick={handleCaseSubmit} disabled={isCaseSubmitting}>
-                {isCaseSubmitting ? 'Encaminhando...' : 'Confirmar'}
+                {isCaseSubmitting ? 'Enviando caso...' : 'Confirmar envio do caso'}
               </button>
               <button type="button" className="persona-toggle subtle" onClick={() => setIsSubmitConfirmOpen(false)} disabled={isCaseSubmitting}>
                 Cancelar

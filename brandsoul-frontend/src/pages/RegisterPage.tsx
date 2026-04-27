@@ -3,9 +3,13 @@ import type { FormEvent } from 'react'
 import axios from 'axios'
 
 import { registerAccount } from '../lib/auth'
+import {
+  clearEntityBirthContinuationPending,
+  finalizePendingEntityBirth,
+  loadEntityBirthDraft,
+} from '../lib/entityBirth.ts'
 import { navigateTo } from '../lib/persona'
 import { saveSession } from '../lib/session'
-import '../App.css'
 
 export default function RegisterPage() {
   const [name, setName] = useState('')
@@ -46,6 +50,8 @@ export default function RegisterPage() {
     setErrorMessage('')
 
     try {
+      const hasBirthDraft = Boolean(loadEntityBirthDraft())
+
       const session = await registerAccount({
         name: normalizedName,
         email: normalizedEmail,
@@ -54,9 +60,26 @@ export default function RegisterPage() {
         business_model: businessModel,
       })
       saveSession(session)
+
+      if (hasBirthDraft) {
+        try {
+          const payload = await finalizePendingEntityBirth()
+          if (payload) {
+            navigateTo(`/admin/entity/${payload.entityId}/identity`)
+            return
+          }
+        } catch (error) {
+          console.error(error)
+          setErrorMessage('Sua conta foi criada, mas não conseguimos concluir o nascimento da Centelha. Tente novamente.')
+          return
+        }
+      }
+
+      clearEntityBirthContinuationPending()
       navigateTo('/admin')
     } catch (error) {
       console.error(error)
+      clearEntityBirthContinuationPending()
       if (axios.isAxiosError(error)) {
         const detail = error.response?.data?.detail
         if (Array.isArray(detail) && detail.length > 0) {
@@ -97,7 +120,7 @@ export default function RegisterPage() {
         <div className="auth-copy">
           <div className="eyebrow">Criar conta</div>
           <h1>Comece sua operação no BrandSoul.</h1>
-          <p>Crie seu acesso, abra seu tenant e siga para o admin da marca.</p>
+          <p>Sua conta será criada e a primeira Centelha nascerá em seguida.</p>
         </div>
 
         <form className="auth-form" onSubmit={handleSubmit}>

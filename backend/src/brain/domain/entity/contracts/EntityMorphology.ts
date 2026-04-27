@@ -1,0 +1,1 @@
+export type EntityMorphology = Record<string, unknown>

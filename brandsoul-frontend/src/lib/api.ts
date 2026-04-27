@@ -1,47 +1,51 @@
-import { getAuthToken } from './session'
-
-type ContextMode = 'customer' | 'admin'
-
-const LOCAL_DEV_API_URL = 'http://localhost:8000'
+const LOCAL_DEV_TYPESCRIPT_API_URL = 'http://127.0.0.1:3001'
 
 function normalizeBaseUrl(url: string) {
   return url.trim().replace(/\/+$/, '')
 }
 
-function readConfiguredApiBaseUrl() {
-  const configuredBaseUrl = import.meta.env.VITE_API_URL?.trim()
+function readConfiguredBaseUrl(envValue: string | undefined, localDevFallback: string, missingMessage: string) {
+  const configuredBaseUrl = envValue?.trim()
   if (configuredBaseUrl) {
     return normalizeBaseUrl(configuredBaseUrl)
   }
 
   if (import.meta.env.DEV) {
-    return LOCAL_DEV_API_URL
+    return localDevFallback
   }
 
-  const message = 'VITE_API_URL is required in production.'
+  const message = missingMessage
   console.error(message)
   throw new Error(message)
 }
 
-export function buildApiUrl(path: string) {
-  const normalizedPath = path.startsWith('/') ? path : `/${path}`
-  return `${readConfiguredApiBaseUrl()}${normalizedPath}`
+export function readPythonApiBaseUrl() {
+  return readConfiguredBaseUrl(
+    import.meta.env.VITE_API_URL || import.meta.env.VITE_AUTH_API_URL,
+    LOCAL_DEV_TYPESCRIPT_API_URL,
+    'VITE_API_URL or VITE_AUTH_API_URL is required in production.',
+  )
 }
 
-export function buildApiHeaders(contextMode: ContextMode) {
-  const token = getAuthToken()
-  const headers: Record<string, string> = {}
+export function readTypeScriptApiBaseUrl() {
+  return readConfiguredBaseUrl(import.meta.env.VITE_AUTH_API_URL, LOCAL_DEV_TYPESCRIPT_API_URL, 'VITE_AUTH_API_URL is required in production.')
+}
 
-  if (token) {
-    headers.Authorization = `Bearer ${token}`
+export function buildApiUrl(path: string) {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  return `${readPythonApiBaseUrl()}${normalizedPath}`
+}
+
+export function buildAuthApiUrl(path: string) {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  return `${readTypeScriptApiBaseUrl()}${normalizedPath}`
+}
+
+export function readBackendBridgeBaseUrl() {
+  const override = (globalThis as { __BRANDSOUL_BACKEND_URL__?: string }).__BRANDSOUL_BACKEND_URL__?.trim()
+  if (override) {
+    return normalizeBaseUrl(override)
   }
 
-  if (contextMode === 'admin') {
-    const adminAccessKey = import.meta.env.VITE_ADMIN_ACCESS_KEY?.trim()
-    if (adminAccessKey) {
-      headers['x-admin-key'] = adminAccessKey
-    }
-  }
-
-  return Object.keys(headers).length > 0 ? headers : undefined
+  return readTypeScriptApiBaseUrl()
 }

@@ -2,9 +2,9 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 
 import { loginAccount } from '../lib/auth'
+import { finalizePendingEntityBirth, loadEntityBirthDraft } from '../lib/entityBirth.ts'
 import { navigateTo } from '../lib/persona'
 import { saveSession } from '../lib/session'
-import '../App.css'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -20,6 +20,21 @@ export default function LoginPage() {
     try {
       const session = await loginAccount({ email, password })
       saveSession(session)
+
+      if (loadEntityBirthDraft()) {
+        try {
+          const payload = await finalizePendingEntityBirth()
+          if (payload) {
+            navigateTo(`/admin/entity/${payload.entityId}/identity`)
+            return
+          }
+        } catch (error) {
+          console.error(error)
+          setErrorMessage('Sua conta foi criada, mas não conseguimos concluir o nascimento da Centelha. Tente novamente.')
+          return
+        }
+      }
+
       navigateTo('/admin')
     } catch (error) {
       console.error(error)
@@ -35,7 +50,7 @@ export default function LoginPage() {
         <div className="auth-copy">
           <div className="eyebrow">Acesso BrandSoul</div>
           <h1>Entre para operar sua marca por dentro.</h1>
-          <p>Use sua conta para abrir o admin, conversar com a Centelha e seguir de onde parou.</p>
+          <p>Use sua conta para abrir o admin, conversar com a Centelha e concluir o nascimento se ele estiver pendente.</p>
         </div>
 
         <form className="auth-form" onSubmit={handleSubmit}>

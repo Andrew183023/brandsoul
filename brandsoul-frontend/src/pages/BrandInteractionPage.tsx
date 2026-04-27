@@ -20,7 +20,6 @@ import {
   type ToneOption,
 } from '../lib/persona'
 import { inferInteractionProfilePreview, type BusinessProfile } from '../lib/interactionProfilePreview'
-import '../App.css'
 
 type SparkState = 'idle' | 'thinking' | 'speaking'
 type InteractionExecutionState = 'idle' | 'running' | 'done'

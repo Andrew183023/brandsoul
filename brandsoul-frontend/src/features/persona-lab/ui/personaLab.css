@@ -1,0 +1,4738 @@
+.persona-lab-shell {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem;
+  position: relative;
+  z-index: 1;
+  background:
+    radial-gradient(circle at 15% 18%, rgba(255, 148, 96, 0.12), transparent 24%),
+    radial-gradient(circle at 82% 12%, rgba(110, 134, 255, 0.14), transparent 24%),
+    linear-gradient(180deg, #05070d, #090d16 42%, #05070d);
+}
+
+.persona-lab-panel {
+  width: min(100%, 1240px);
+  display: grid;
+  gap: 1.5rem;
+  padding: 2.4rem clamp(1.2rem, 4vw, 3rem);
+  border-radius: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(circle at top, rgba(143, 107, 255, 0.14), transparent 30%),
+    radial-gradient(circle at 78% 22%, rgba(255, 148, 96, 0.1), transparent 22%),
+    linear-gradient(180deg, rgba(8, 11, 16, 0.82), rgba(6, 8, 12, 0.96));
+  box-shadow: 0 26px 90px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(20px);
+  overflow: hidden;
+}
+
+.persona-lab-topbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.persona-lab-header {
+  display: grid;
+  gap: 1rem;
+  align-content: start;
+}
+
+.persona-lab-hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.persona-lab-title {
+  margin: 0;
+  max-width: 11ch;
+  font-family: var(--font-display);
+  font-size: clamp(2.4rem, 6vw, 4.6rem);
+  line-height: 0.92;
+  letter-spacing: -0.04em;
+}
+
+.persona-lab-subtitle {
+  margin: 0;
+  max-width: 44rem;
+  color: var(--text-soft);
+  line-height: 1.65;
+}
+
+.persona-lab-stage-intro {
+  display: grid;
+  gap: 0.45rem;
+  padding: 1rem 1.1rem;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02)),
+    radial-gradient(circle at top right, rgba(255, 148, 96, 0.09), transparent 38%);
+}
+
+.persona-lab-stage-intro__index {
+  color: rgba(255, 228, 198, 0.72);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 0.74rem;
+}
+
+.persona-lab-stage-intro strong {
+  font-family: var(--font-display);
+  font-size: clamp(1.1rem, 1.8vw, 1.45rem);
+  letter-spacing: -0.02em;
+}
+
+.persona-lab-stage-intro p {
+  margin: 0;
+  color: rgba(234, 240, 255, 0.76);
+  line-height: 1.6;
+}
+
+.persona-lab-stage-rail {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.persona-lab-stage-pill {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.9rem 0.95rem;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  text-align: left;
+  color: rgba(229, 236, 248, 0.86);
+}
+
+.persona-lab-stage-pill span {
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(255, 226, 202, 0.64);
+}
+
+.persona-lab-stage-pill strong {
+  font-size: 0.95rem;
+  line-height: 1.35;
+}
+
+.persona-lab-stage-pill.active {
+  border-color: rgba(255, 164, 120, 0.32);
+  background:
+    radial-gradient(circle at top right, rgba(255, 148, 96, 0.16), transparent 46%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 0 1px rgba(255, 148, 96, 0.06);
+}
+
+.persona-lab-live-panel {
+  position: sticky;
+  top: 1.5rem;
+  display: grid;
+  gap: 1rem;
+  padding: 1.1rem;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(circle at top, rgba(255, 148, 96, 0.12), transparent 32%),
+    radial-gradient(circle at 78% 18%, rgba(110, 134, 255, 0.16), transparent 28%),
+    linear-gradient(180deg, rgba(12, 16, 28, 0.92), rgba(8, 10, 16, 0.96));
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.3);
+}
+
+.persona-lab-live-panel__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.persona-lab-live-panel__header strong {
+  display: block;
+  margin-top: 0.25rem;
+  font-family: var(--font-display);
+  font-size: clamp(1.1rem, 2.3vw, 1.5rem);
+  letter-spacing: -0.03em;
+}
+
+.persona-lab-live-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.62rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(243, 247, 255, 0.88);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.persona-lab-live-preview {
+  min-height: 360px;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(circle at 50% 28%, rgba(255, 255, 255, 0.08), transparent 30%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.015));
+  overflow: hidden;
+}
+
+.persona-lab-live-preview .persona-lab-preview-visual,
+.persona-lab-live-preview .persona-lab-pixi-runtime {
+  width: 100%;
+}
+
+.persona-lab-live-logo-shell,
+.persona-lab-live-empty {
+  width: 100%;
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  text-align: center;
+}
+
+.persona-lab-live-logo-shell .persona-lab-logo-image {
+  max-width: 78%;
+  max-height: 220px;
+}
+
+.persona-lab-live-empty {
+  gap: 0.65rem;
+  align-content: center;
+  padding: 1rem;
+}
+
+.persona-lab-live-empty p {
+  margin: 0;
+  color: rgba(235, 240, 250, 0.72);
+}
+
+.persona-lab-live-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.persona-lab-live-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.38rem 0.68rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(243, 247, 255, 0.82);
+  font-size: 0.78rem;
+}
+
+.persona-lab-live-insights {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.persona-lab-live-insight {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.9rem 0.95rem;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.persona-lab-live-insight strong {
+  color: rgba(246, 248, 255, 0.96);
+}
+
+.persona-lab-live-insight p {
+  margin: 0;
+  color: rgba(234, 240, 255, 0.74);
+  line-height: 1.55;
+}
+
+.persona-lab-live-list {
+  display: grid;
+  gap: 0.28rem;
+  color: rgba(234, 240, 255, 0.76);
+}
+
+.persona-lab-upgrade-banner {
+  width: min(100%, 46rem);
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.9rem 1rem;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 191, 102, 0.28);
+  background: rgba(255, 191, 102, 0.08);
+  text-align: left;
+}
+
+.persona-lab-upgrade-banner--soft {
+  border-color: rgba(132, 196, 255, 0.24);
+  background: rgba(132, 196, 255, 0.08);
+}
+
+.persona-lab-upgrade-banner strong {
+  color: rgba(255, 244, 227, 0.96);
+}
+
+.persona-lab-upgrade-banner p {
+  margin: 0;
+  color: rgba(242, 245, 255, 0.82);
+  line-height: 1.5;
+}
+
+.persona-lab-progress {
+  display: flex;
+  justify-content: center;
+  gap: 0.55rem;
+}
+
+.persona-lab-progress-dot {
+  width: 42px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.persona-lab-progress-dot.active {
+  background: linear-gradient(90deg, rgba(255, 148, 96, 0.96), rgba(143, 107, 255, 0.92));
+}
+
+.persona-lab-stage {
+  display: grid;
+}
+
+.persona-lab-card {
+  display: grid;
+  gap: 1rem;
+  padding: 1.5rem;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(circle at top right, rgba(255, 148, 96, 0.08), transparent 24%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.persona-lab-card h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 4vw, 2.4rem);
+}
+
+.persona-lab-card p {
+  margin: 0;
+  color: rgba(241, 244, 255, 0.8);
+  line-height: 1.6;
+}
+
+.persona-lab-upload {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  position: relative;
+  border-radius: 26px;
+  border: 1px dashed rgba(255, 194, 141, 0.34);
+  background: linear-gradient(180deg, rgba(255, 148, 96, 0.08), rgba(110, 134, 255, 0.06));
+  text-align: center;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.persona-lab-upload input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.persona-lab-upload span {
+  padding: 0 1rem;
+  color: rgba(249, 249, 255, 0.94);
+  font-weight: 600;
+}
+
+.persona-lab-form {
+  display: grid;
+  gap: 1rem;
+}
+
+.persona-lab-logo-preview {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 1rem;
+  align-items: center;
+  padding: 1rem;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.persona-lab-logo-preview.compact {
+  grid-template-columns: 96px minmax(0, 1fr);
+}
+
+.persona-lab-logo-image {
+  width: 100%;
+  max-height: 132px;
+  object-fit: contain;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 0.8rem;
+}
+
+.persona-lab-logo-image.compact {
+  max-height: 96px;
+}
+
+.persona-lab-palette-summary {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.persona-lab-comparison-panel {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem 1.1rem;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(circle at top right, rgba(255, 148, 96, 0.08), transparent 38%),
+    rgba(255, 255, 255, 0.03);
+}
+
+.persona-lab-comparison-copy {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.persona-lab-comparison-copy strong {
+  color: rgba(255, 247, 238, 0.95);
+}
+
+.persona-lab-comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.persona-lab-comparison-card {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.8rem;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.persona-lab-comparison-runtime {
+  display: grid;
+  place-items: center;
+  min-height: 240px;
+}
+
+.persona-lab-comparison-runtime .persona-lab-preview-visual {
+  width: 100%;
+}
+
+.persona-lab-comparison-runtime .persona-lab-pixi-runtime,
+.persona-lab-shape-stage-preview.final .persona-lab-pixi-runtime,
+.persona-lab-selected-preview .persona-lab-pixi-runtime,
+.persona-lab-birth-visual .persona-lab-pixi-runtime {
+  width: 100%;
+}
+
+.persona-lab-comparison-meta {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.persona-lab-comparison-meta strong {
+  color: rgba(255, 247, 238, 0.96);
+}
+
+.persona-lab-comparison-meta span {
+  color: rgba(255, 230, 209, 0.68);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.74rem;
+}
+
+.persona-lab-shape-compare-panel {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem 1.1rem;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(circle at top left, rgba(110, 134, 255, 0.08), transparent 38%),
+    rgba(255, 255, 255, 0.03);
+}
+
+.persona-lab-archetype-validation-panel {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 1rem 1.1rem;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(circle at top right, rgba(126, 241, 176, 0.08), transparent 34%),
+    radial-gradient(circle at left, rgba(124, 200, 255, 0.08), transparent 28%),
+    rgba(255, 255, 255, 0.03);
+}
+
+.persona-lab-archetype-checklist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.persona-lab-archetype-checklist span,
+.persona-lab-archetype-card__chips span,
+.persona-lab-archetype-card__focus span,
+.persona-lab-archetype-card__metrics span,
+.persona-lab-archetype-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.36rem 0.62rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(242, 246, 255, 0.82);
+  font-size: 0.74rem;
+}
+
+.persona-lab-archetype-validation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.persona-lab-archetype-card {
+  display: grid;
+  gap: 0.85rem;
+  padding: 0.9rem;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.persona-lab-archetype-card__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: flex-start;
+}
+
+.persona-lab-archetype-card__header strong {
+  display: block;
+  margin-top: 0.2rem;
+  color: rgba(255, 247, 238, 0.96);
+  text-transform: capitalize;
+}
+
+.persona-lab-archetype-badge.match {
+  border-color: rgba(126, 241, 176, 0.2);
+  color: rgba(211, 255, 228, 0.92);
+}
+
+.persona-lab-archetype-badge.mismatch {
+  border-color: rgba(255, 179, 108, 0.22);
+  color: rgba(255, 225, 196, 0.92);
+}
+
+.persona-lab-archetype-card__preview-grid {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 0.75rem;
+}
+
+.persona-lab-archetype-card__logo-shell,
+.persona-lab-archetype-card__runtime {
+  min-height: 220px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.05), transparent 34%),
+    rgba(10, 14, 22, 0.88);
+  overflow: hidden;
+}
+
+.persona-lab-archetype-card__runtime .persona-lab-preview-visual,
+.persona-lab-archetype-card__runtime .persona-lab-pixi-runtime {
+  width: 100%;
+}
+
+.persona-lab-archetype-card__summary {
+  margin: 0;
+  color: rgba(234, 240, 255, 0.76);
+  line-height: 1.55;
+}
+
+.persona-lab-archetype-card__anatomy-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(220px, 0.92fr);
+  gap: 0.75rem;
+}
+
+.persona-lab-archetype-card__anatomy-view,
+.persona-lab-archetype-card__anatomy-panel {
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.78rem;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.04), transparent 34%),
+    rgba(8, 12, 18, 0.82);
+}
+
+.persona-lab-archetype-anatomy-svg {
+  width: 100%;
+  min-height: 220px;
+}
+
+.persona-lab-archetype-anatomy-bounds {
+  fill: transparent;
+  stroke: rgba(195, 214, 255, 0.18);
+  stroke-width: 2;
+  stroke-dasharray: 7 5;
+}
+
+.persona-lab-archetype-anatomy-envelope {
+  fill: color-mix(in srgb, #89d5ff 10%, transparent);
+  stroke: rgba(132, 211, 255, 0.72);
+  stroke-width: 2.4;
+  stroke-linejoin: round;
+}
+
+.persona-lab-archetype-anatomy-cavity {
+  fill: color-mix(in srgb, #7effb0 14%, transparent);
+  stroke: rgba(126, 255, 176, 0.56);
+  stroke-width: 1.8;
+}
+
+.persona-lab-archetype-anatomy-segment {
+  stroke: rgba(255, 211, 141, 0.76);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.persona-lab-archetype-anatomy-anchor {
+  stroke-width: 1.6;
+}
+
+.persona-lab-archetype-anatomy-anchor.core,
+.persona-lab-archetype-anatomy-core {
+  fill: rgba(255, 173, 112, 0.22);
+  stroke: rgba(255, 177, 116, 0.94);
+}
+
+.persona-lab-archetype-anatomy-anchor.axis {
+  fill: rgba(143, 204, 255, 0.3);
+  stroke: rgba(143, 204, 255, 0.94);
+}
+
+.persona-lab-archetype-anatomy-anchor.edge {
+  fill: rgba(206, 213, 255, 0.22);
+  stroke: rgba(214, 222, 255, 0.88);
+}
+
+.persona-lab-archetype-anatomy-anchor.emission {
+  fill: rgba(126, 255, 176, 0.24);
+  stroke: rgba(126, 255, 176, 0.94);
+}
+
+.persona-lab-archetype-anatomy-core {
+  stroke-width: 2.4;
+}
+
+.persona-lab-archetype-anatomy-legend,
+.persona-lab-archetype-card__anatomy-roles,
+.persona-lab-archetype-card__anatomy-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+}
+
+.persona-lab-archetype-anatomy-legend span,
+.persona-lab-archetype-card__anatomy-roles span,
+.persona-lab-archetype-card__anatomy-list span {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.32rem 0.56rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(242, 246, 255, 0.8);
+  font-size: 0.72rem;
+}
+
+.persona-lab-archetype-card__anatomy-panel strong {
+  color: rgba(248, 250, 255, 0.96);
+}
+
+.persona-lab-archetype-card__metrics--dense {
+  gap: 0.38rem;
+}
+
+@media (max-width: 1080px) {
+  .persona-lab-archetype-card__anatomy-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.persona-lab-archetype-card__chips,
+.persona-lab-archetype-card__metrics,
+.persona-lab-archetype-card__focus {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.persona-lab-shape-compare-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.persona-lab-shape-stage-card {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.persona-lab-shape-stage-preview {
+  position: relative;
+  min-height: 220px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background:
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.06), transparent 36%),
+    rgba(10, 14, 22, 0.88);
+  overflow: hidden;
+}
+
+.persona-lab-shape-stage-preview.original,
+.persona-lab-shape-stage-preview.final {
+  display: grid;
+  place-items: center;
+}
+
+.persona-lab-shape-stage-preview.original .persona-lab-logo-image.compact {
+  max-width: 70%;
+  max-height: 120px;
+}
+
+.persona-lab-shape-diagnostic-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.persona-lab-shape-diagnostic-base {
+  fill: color-mix(in srgb, #7bd3ff 14%, transparent);
+  stroke: #7bd3ff;
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+}
+
+.persona-lab-shape-diagnostic-abstracted {
+  fill: color-mix(in srgb, #7effb0 14%, transparent);
+  stroke: #7effb0;
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+}
+
+.persona-lab-palette-summary p {
+  margin: 0;
+}
+
+.persona-lab-question-stack {
+  display: grid;
+  gap: 1rem;
+}
+
+.persona-lab-question {
+  display: grid;
+  gap: 0.7rem;
+  padding: 1rem;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.024);
+}
+
+.persona-lab-question strong {
+  color: rgba(249, 250, 255, 0.96);
+  font-size: 1rem;
+}
+
+.persona-lab-choice-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.persona-lab-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.persona-lab-choice {
+  display: grid;
+  gap: 0.3rem;
+  min-height: 92px;
+  padding: 0.95rem;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(247, 250, 255, 0.94);
+  text-align: left;
+  transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.persona-lab-choice:hover {
+  transform: translateY(-1px);
+  border-color: rgba(255, 176, 116, 0.28);
+}
+
+.persona-lab-choice.active {
+  border-color: rgba(255, 175, 117, 0.38);
+  background: linear-gradient(180deg, rgba(255, 150, 84, 0.18), rgba(143, 107, 255, 0.1));
+}
+
+.persona-lab-choice span {
+  font-weight: 600;
+}
+
+.persona-lab-choice small {
+  color: rgba(241, 244, 255, 0.66);
+  line-height: 1.45;
+}
+
+.persona-lab-preview-grid,
+.persona-lab-final-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.persona-lab-preview-card,
+.persona-lab-selected-preview,
+.persona-lab-final-card {
+  --persona-lab-accent: #ff9460;
+  display: grid;
+  gap: 0.65rem;
+  padding: 1.05rem;
+  border-radius: 24px;
+  border: 1px solid color-mix(in srgb, var(--persona-lab-accent) 36%, rgba(255, 255, 255, 0.08));
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--persona-lab-accent) 18%, transparent), transparent 38%),
+    rgba(255, 255, 255, 0.03);
+  text-align: left;
+  color: rgba(247, 250, 255, 0.94);
+}
+
+.persona-lab-relational-card {
+  border-color: rgba(143, 215, 255, 0.24);
+  background:
+    radial-gradient(circle at top right, rgba(143, 215, 255, 0.11), transparent 42%),
+    rgba(255, 255, 255, 0.028);
+}
+
+.persona-lab-relational-card strong {
+  color: rgba(244, 249, 255, 0.96);
+  font-family: var(--font-display);
+  font-size: clamp(1.05rem, 1.8vw, 1.28rem);
+  letter-spacing: -0.02em;
+}
+
+.persona-lab-relational-strip {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.55rem;
+  margin-top: -0.15rem;
+  max-width: 560px;
+}
+
+.persona-lab-relational-strip span {
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 999px;
+  padding: 0.34rem 0.72rem;
+  background: rgba(255, 255, 255, 0.032);
+  color: rgba(236, 244, 255, 0.76);
+  font-size: 0.76rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+
+.persona-lab-social-layer {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.25rem;
+  padding: 1.15rem;
+  border: 1px solid rgba(130, 205, 255, 0.18);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at top left, rgba(130, 205, 255, 0.11), transparent 36%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018));
+}
+
+.persona-lab-social-layer-copy {
+  display: grid;
+  gap: 0.45rem;
+  max-width: 680px;
+}
+
+.persona-lab-social-layer-copy h3 {
+  margin: 0;
+  color: rgba(247, 250, 255, 0.98);
+  font-family: var(--font-display);
+  font-size: clamp(1.35rem, 2.3vw, 2rem);
+  letter-spacing: -0.04em;
+}
+
+.persona-lab-social-layer-copy p,
+.persona-lab-social-entity-card p {
+  margin: 0;
+  color: rgba(233, 241, 255, 0.72);
+  line-height: 1.55;
+}
+
+.persona-lab-social-entity-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.persona-lab-social-entity-card {
+  display: grid;
+  gap: 0.6rem;
+  padding: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 22px;
+  background: rgba(7, 10, 20, 0.24);
+}
+
+.persona-lab-social-entity-card strong {
+  display: block;
+  margin-top: 0.18rem;
+  color: rgba(248, 251, 255, 0.96);
+  font-family: var(--font-display);
+  font-size: clamp(1rem, 1.5vw, 1.2rem);
+  letter-spacing: -0.02em;
+}
+
+.persona-lab-social-tags,
+.persona-lab-social-signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.persona-lab-social-tags span,
+.persona-lab-social-signals span {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 999px;
+  padding: 0.28rem 0.58rem;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(235, 244, 255, 0.72);
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.persona-lab-manifestation-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.manifestation-card {
+  min-height: 220px;
+}
+
+.persona-lab-mode-glyph {
+  min-height: 132px;
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--persona-lab-accent) 26%, transparent), transparent 30%),
+    rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  position: relative;
+  overflow: hidden;
+}
+
+.persona-lab-mode-glyph::before,
+.persona-lab-mode-glyph::after {
+  content: '';
+  position: absolute;
+  inset: auto;
+}
+
+.persona-lab-mode-glyph.mode-centelha::before,
+.persona-lab-mode-glyph.variant-fused-logo::before,
+.persona-lab-mode-glyph.variant-living-glow::before,
+.persona-lab-mode-glyph.variant-blinking-spark::before,
+.persona-lab-mode-glyph.variant-inspired-shape::before {
+  width: 84px;
+  height: 84px;
+  left: calc(50% - 42px);
+  top: calc(50% - 42px);
+  border-radius: 40% 60% 55% 45%;
+  background: radial-gradient(circle, rgba(255, 246, 225, 0.96), color-mix(in srgb, var(--persona-lab-accent) 72%, transparent) 68%);
+  box-shadow: 0 0 28px color-mix(in srgb, var(--persona-lab-accent) 22%, transparent);
+}
+
+.persona-lab-mode-glyph.mode-elemental::before,
+.persona-lab-mode-glyph.variant-agua::before,
+.persona-lab-mode-glyph.variant-fogo::before,
+.persona-lab-mode-glyph.variant-terra::before,
+.persona-lab-mode-glyph.variant-ar::before {
+  width: 90px;
+  height: 90px;
+  left: calc(50% - 45px);
+  top: calc(50% - 48px);
+  border-radius: 48% 52% 60% 40%;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--persona-lab-accent) 88%, white 12%), transparent);
+  transform: rotate(18deg);
+}
+
+.persona-lab-mode-glyph.mode-natureza::before,
+.persona-lab-mode-glyph.variant-folhas::before,
+.persona-lab-mode-glyph.variant-arvore::before,
+.persona-lab-mode-glyph.variant-fruto::before,
+.persona-lab-mode-glyph.variant-colheita::before,
+.persona-lab-mode-glyph.variant-energia-verde::before {
+  width: 96px;
+  height: 96px;
+  left: calc(50% - 48px);
+  top: calc(50% - 48px);
+  border-radius: 58% 42% 60% 40%;
+  background: radial-gradient(circle at 38% 32%, rgba(255, 249, 236, 0.92), color-mix(in srgb, var(--persona-lab-accent) 70%, transparent) 62%);
+}
+
+.persona-lab-mode-glyph.mode-robo-ia::before,
+.persona-lab-mode-glyph.variant-elegante::before,
+.persona-lab-mode-glyph.variant-industrial::before,
+.persona-lab-mode-glyph.variant-premium-tech::before {
+  width: 92px;
+  height: 92px;
+  left: calc(50% - 46px);
+  top: calc(50% - 46px);
+  border-radius: 24px;
+  background: linear-gradient(135deg, rgba(255, 247, 230, 0.84), color-mix(in srgb, var(--persona-lab-accent) 62%, transparent));
+  transform: rotate(12deg);
+}
+
+.persona-lab-mode-glyph::after {
+  width: 34px;
+  height: 34px;
+  left: calc(50% - 17px);
+  top: calc(50% - 17px);
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255, 248, 231, 0.98), rgba(255, 248, 231, 0));
+  box-shadow: 0 0 18px rgba(255, 248, 231, 0.42);
+}
+
+.persona-lab-fusion-stage {
+  display: grid;
+  gap: 1rem;
+  --persona-lab-fusion-rhythm: 1;
+  --persona-lab-fusion-fracture: 0.42;
+  --persona-lab-fusion-containment: 0.54;
+  --persona-lab-fusion-discipline: 0.58;
+  --persona-lab-fusion-coupling: 0.6;
+  --persona-lab-fusion-core-presence: 0.62;
+  --persona-lab-fusion-lift: 8;
+}
+
+.persona-lab-intensity-controls {
+  display: inline-flex;
+  gap: 0.55rem;
+  padding: 0.35rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.persona-lab-intensity-chip {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.45rem 0.85rem;
+  background: transparent;
+  color: rgba(247, 239, 228, 0.68);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.persona-lab-intensity-chip:hover {
+  transform: translateY(-1px);
+  color: rgba(255, 245, 233, 0.92);
+}
+
+.persona-lab-intensity-chip.active {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 247, 238, 0.98);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+}
+
+.persona-lab-fusion-logo {
+  display: grid;
+  place-items: center;
+  padding: 0.8rem;
+  border-radius: 20px;
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  transform: translateY(calc(var(--persona-lab-fusion-lift) * -0.18px)) scale(calc(0.96 + var(--persona-lab-fusion-coupling) * 0.1));
+  opacity: calc(0.72 + var(--persona-lab-fusion-containment) * 0.26);
+  animation: persona-lab-fusion-logo-drift calc(5.4s * var(--persona-lab-fusion-rhythm)) ease-in-out infinite;
+}
+
+.persona-lab-fusion-plus {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  margin-inline: auto;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  font-weight: 700;
+  color: rgba(255, 245, 233, 0.86);
+  transform: scale(calc(0.92 + var(--persona-lab-fusion-coupling) * 0.16));
+  opacity: calc(0.52 + var(--persona-lab-fusion-coupling) * 0.48);
+  box-shadow: 0 0 calc(12px + 24px * var(--persona-lab-fusion-core-presence)) color-mix(in srgb, var(--persona-lab-accent) 20%, transparent);
+  animation: persona-lab-fusion-plus-pulse calc(4.2s * var(--persona-lab-fusion-rhythm)) ease-in-out infinite;
+}
+
+.persona-lab-fusion-stage .persona-lab-selected-preview {
+  transform: translateY(calc(var(--persona-lab-fusion-lift) * -1px));
+  border-color: color-mix(in srgb, var(--persona-lab-accent) calc(8% + var(--persona-lab-fusion-discipline) * 18%), rgba(255, 255, 255, 0.08));
+  box-shadow:
+    0 16px 42px rgba(0, 0, 0, 0.16),
+    0 0 calc(18px + 30px * var(--persona-lab-fusion-coupling)) color-mix(in srgb, var(--persona-lab-accent) calc(4% + var(--persona-lab-fusion-coupling) * 12%), transparent);
+}
+
+.persona-lab-fusion-stage .persona-lab-preview-visual {
+  filter: saturate(calc(0.92 + var(--persona-lab-fusion-discipline) * 0.22)) contrast(calc(0.96 + var(--persona-lab-fusion-fracture) * 0.08));
+}
+
+.persona-lab-fusion-stage .persona-lab-entity-core-shell,
+.persona-lab-fusion-stage .persona-lab-entity-core,
+.persona-lab-fusion-stage .persona-lab-entity-core-glow,
+.persona-lab-fusion-stage .persona-lab-entity-core-ring {
+  opacity: calc(0.6 + var(--persona-lab-fusion-core-presence) * 0.45);
+}
+
+.persona-lab-fusion-stage .persona-lab-entity-aura,
+.persona-lab-fusion-stage .persona-lab-entity-aura-ring {
+  opacity: calc(0.32 + (1 - var(--persona-lab-fusion-containment)) * 0.42);
+}
+
+.persona-lab-fusion-stage .persona-lab-logo-body-shell {
+  transform: scale(calc(1 - var(--persona-lab-fusion-fracture) * 0.06));
+  filter: blur(calc(var(--persona-lab-fusion-fracture) * 1.8px));
+}
+
+.persona-lab-fusion-stage .persona-lab-entity-body,
+.persona-lab-fusion-stage .persona-lab-logo-body.primary {
+  stroke-width: calc(1.2px + var(--persona-lab-fusion-discipline) * 0.8px);
+}
+
+.persona-lab-fusion-meta {
+  width: min(100%, 900px);
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: 1rem;
+}
+
+.persona-lab-fusion-copy-card {
+  min-width: 0;
+  padding: 1rem 1.05rem 1.1rem;
+  text-align: left;
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
+    rgba(9, 11, 22, 0.44);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.persona-lab-fusion-copy-card--signal {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--persona-lab-accent) 8%, transparent), rgba(255, 255, 255, 0.02)),
+    rgba(9, 11, 22, 0.44);
+}
+
+.persona-lab-fusion-signal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-top: 0.5rem;
+}
+
+.persona-lab-fusion-signal-grid span {
+  padding: 0.58rem 0.68rem;
+  border-radius: 14px;
+  font-size: 0.84rem;
+  color: rgba(255, 243, 231, 0.82);
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.persona-lab-preview-card {
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease;
+}
+
+.persona-lab-preview-card:hover {
+  transform: translateY(-2px);
+}
+
+.persona-lab-preview-card.active {
+  border-color: color-mix(in srgb, var(--persona-lab-accent) 58%, rgba(255, 255, 255, 0.1));
+  box-shadow: 0 18px 48px color-mix(in srgb, var(--persona-lab-accent) 14%, transparent);
+}
+
+.persona-lab-preview-visual {
+  --persona-lab-secondary: #6e86ff;
+  --persona-lab-aura-opacity: 0.9;
+  --persona-lab-aura-scale: 1.04;
+  --persona-lab-glow-blur: 22px;
+  --persona-lab-glow-strength: 1;
+  --persona-lab-body-scale: 1;
+  --persona-lab-body-rotate: 0deg;
+  --persona-lab-body-skew: 0deg;
+  --persona-lab-body-breath-scale: 1.02;
+  --persona-lab-motion-duration: 4.8s;
+  --persona-lab-motion-amplitude: 0.5;
+  --persona-lab-core-scale: 0.96;
+  --persona-lab-core-opacity: 0.92;
+  --persona-lab-hover-scale: 1.03;
+  --persona-lab-hover-glow-boost: 1.12;
+  --persona-lab-zone-x: 50%;
+  --persona-lab-zone-y: 50%;
+  --persona-lab-zone-secondary-x: 78%;
+  --persona-lab-zone-secondary-y: 72%;
+  --persona-lab-ritual-speed: 1;
+  --persona-lab-ritual-scale: 1;
+  --persona-lab-ritual-particle-blur: 1px;
+  position: relative;
+  min-height: 150px;
+  border-radius: 20px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at var(--persona-lab-zone-x) calc(var(--persona-lab-zone-y) - 18%), color-mix(in srgb, var(--persona-lab-accent) 24%, transparent), transparent 32%),
+    radial-gradient(circle at var(--persona-lab-zone-secondary-x) var(--persona-lab-zone-secondary-y), color-mix(in srgb, var(--persona-lab-secondary) 20%, transparent), transparent 34%),
+    rgba(255, 255, 255, 0.03);
+}
+
+.persona-lab-preview-note {
+  color: rgba(255, 241, 226, 0.74);
+  letter-spacing: 0.02em;
+}
+
+.persona-lab-dev-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 18px;
+}
+
+.persona-lab-runtime-perf-panel {
+  display: grid;
+  gap: 0.85rem;
+  margin: 0 0 18px;
+  padding: 0.95rem 1rem;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(circle at top right, rgba(110, 134, 255, 0.08), transparent 36%),
+    rgba(255, 255, 255, 0.03);
+}
+
+.persona-lab-runtime-perf-head {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.persona-lab-runtime-perf-head strong {
+  color: rgba(255, 247, 238, 0.96);
+}
+
+.persona-lab-runtime-perf-head span:last-child {
+  color: rgba(255, 230, 209, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.72rem;
+}
+
+.persona-lab-runtime-perf-scenarios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.persona-lab-runtime-perf-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.persona-lab-runtime-perf-grid > div {
+  display: grid;
+  gap: 0.18rem;
+  padding: 0.8rem 0.85rem;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.persona-lab-runtime-perf-grid strong {
+  color: rgba(255, 247, 238, 0.95);
+}
+
+.persona-lab-runtime-perf-grid span:last-child {
+  color: rgba(255, 230, 209, 0.68);
+  font-size: 0.78rem;
+}
+
+
+.persona-lab-entity-aura,
+.persona-lab-entity-aura-ring,
+.persona-lab-entity-noise,
+.persona-lab-entity-svg,
+.persona-lab-engine-particles {
+  position: absolute;
+  inset: 0;
+}
+
+.persona-lab-engine-particles {
+  pointer-events: none;
+  z-index: 1;
+}
+
+.persona-lab-particle-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.persona-lab-field-layer,
+.persona-lab-field-layer > span {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.persona-lab-field-boundary-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+.persona-lab-field-boundary-path {
+  fill: none;
+  stroke: rgba(8, 10, 18, 0.88);
+  stroke-width: 14;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  opacity: 0.34;
+  filter: blur(2px);
+}
+
+.persona-lab-preview-visual.runtime-lite .persona-lab-entity-aura,
+.persona-lab-preview-visual.runtime-lite .persona-lab-entity-aura-ring,
+.persona-lab-preview-visual.runtime-lite .persona-lab-entity-noise {
+  filter: none !important;
+}
+
+.persona-lab-preview-visual.runtime-lite .persona-lab-field-layer,
+.persona-lab-preview-visual.runtime-lite .persona-lab-field-layer > span {
+  filter: none !important;
+  box-shadow: none !important;
+}
+
+.persona-lab-preview-visual.runtime-lite .persona-lab-entity-body,
+.persona-lab-preview-visual.runtime-lite .persona-lab-logo-body.primary,
+.persona-lab-preview-visual.runtime-lite .persona-lab-entity-shadow {
+  filter: none !important;
+}
+
+.persona-lab-preview-visual.runtime-lite .persona-lab-entity-core,
+.persona-lab-preview-visual.runtime-lite .persona-lab-entity-core-glow {
+  filter: none !important;
+}
+
+.persona-lab-preview-visual.runtime-lite .persona-lab-core-layer > span {
+  filter: none !important;
+  box-shadow: none !important;
+}
+
+.persona-lab-preview-visual.runtime-lite .persona-lab-particle-canvas {
+  filter: none !important;
+  opacity: 0.72;
+}
+
+.persona-lab-preview-visual.shape-only-mode,
+.persona-lab-preview-visual.shape-only-mode .persona-lab-logo-body-shell,
+.persona-lab-preview-visual.shape-only-mode .persona-lab-entity-svg {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.persona-lab-preview-visual.shape-only-mode .persona-lab-logo-body.secondary,
+.persona-lab-preview-visual.shape-only-mode .persona-lab-entity-inner,
+.persona-lab-preview-visual.shape-only-mode .persona-lab-entity-shadow {
+  display: none !important;
+}
+
+.persona-lab-preview-visual.shape-only-mode .persona-lab-logo-body.primary,
+.persona-lab-preview-visual.shape-only-mode .persona-lab-entity-body {
+  filter: none !important;
+  opacity: 1 !important;
+}
+
+.persona-lab-preview-visual.shape-only-mode .persona-lab-logo-body.line,
+.persona-lab-preview-visual.shape-only-mode .persona-lab-entity-line {
+  filter: none !important;
+  opacity: 1 !important;
+}
+
+.persona-lab-runtime-birth-logo {
+  z-index: 0;
+  pointer-events: none;
+}
+
+
+.persona-lab-core-layer,
+.persona-lab-core-layer > span {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+}
+
+.persona-lab-core-layer > span {
+  inset: 0;
+}
+
+.persona-lab-field-layer {
+  z-index: 0;
+}
+
+.persona-lab-field-centelha-bloom {
+  inset: 18% 20%;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 50% 46%, color-mix(in srgb, var(--persona-lab-accent) 54%, transparent), transparent 46%),
+    radial-gradient(circle at 50% 50%, rgba(255, 247, 232, 0.22), transparent 18%);
+  filter: blur(15px);
+}
+
+.persona-lab-field-centelha-flare {
+  inset: 12% 18%;
+  background:
+    conic-gradient(from 210deg at 50% 48%, transparent 0deg 120deg, color-mix(in srgb, var(--persona-lab-accent) 18%, transparent) 140deg 194deg, transparent 214deg 360deg);
+  filter: blur(7px);
+  transform: rotate(-6deg) scale(0.96);
+}
+
+.persona-lab-field-centelha-ignition {
+  inset: 22% 24%;
+  border-radius: 999px;
+  border: 1px dashed color-mix(in srgb, var(--persona-lab-accent) 22%, transparent);
+  opacity: 0.24;
+  transform: scale(0.92);
+}
+
+.persona-lab-field-shell-elemental {
+  mix-blend-mode: screen;
+}
+
+.persona-lab-field-elemental-base {
+  inset: 12% 12% 16%;
+  border-radius: 34% 66% 58% 42%;
+}
+
+.persona-lab-field-elemental-flow {
+  inset: 10% 14% 18%;
+}
+
+.persona-lab-field-elemental-atmosphere {
+  inset: 18% 18% 22%;
+}
+
+.persona-lab-field-shell-elemental.field-variant-agua .persona-lab-field-elemental-base {
+  background:
+    radial-gradient(circle at 42% 46%, color-mix(in srgb, #8dd7ff 34%, transparent), transparent 48%),
+    radial-gradient(circle at 62% 62%, color-mix(in srgb, var(--persona-lab-accent) 18%, transparent), transparent 56%);
+  filter: blur(14px);
+  transform: scale(1.04) translateY(4px);
+}
+
+.persona-lab-field-shell-elemental.field-variant-agua .persona-lab-field-elemental-flow {
+  background:
+    linear-gradient(180deg, transparent 0 18%, color-mix(in srgb, #d8f5ff 16%, transparent) 28%, transparent 46%),
+    radial-gradient(circle at 48% 72%, color-mix(in srgb, #7fd6ff 16%, transparent), transparent 38%);
+  filter: blur(10px);
+}
+
+.persona-lab-field-shell-elemental.field-variant-agua .persona-lab-field-elemental-atmosphere {
+  border-radius: 42% 58% 64% 36%;
+  border: 1px solid color-mix(in srgb, #b5e5ff 14%, transparent);
+  opacity: 0.16;
+}
+
+.persona-lab-field-shell-elemental.field-variant-fogo .persona-lab-field-elemental-base {
+  background:
+    radial-gradient(circle at 50% 66%, color-mix(in srgb, #ffb26b 22%, transparent), transparent 42%),
+    radial-gradient(circle at 50% 34%, color-mix(in srgb, var(--persona-lab-accent) 26%, transparent), transparent 48%);
+  filter: blur(11px);
+  transform: translateY(-8px) scaleY(1.08);
+}
+
+.persona-lab-field-shell-elemental.field-variant-fogo .persona-lab-field-elemental-flow {
+  background:
+    linear-gradient(180deg, transparent 0 12%, color-mix(in srgb, #ffd28f 18%, transparent) 22%, transparent 40%, color-mix(in srgb, #ff7b47 16%, transparent) 60%, transparent 82%);
+  filter: blur(6px);
+  transform: translateY(-12px) scaleY(1.14);
+}
+
+.persona-lab-field-shell-elemental.field-variant-fogo .persona-lab-field-elemental-atmosphere {
+  border-radius: 40% 60% 48% 52%;
+  box-shadow: inset 0 -10px 18px color-mix(in srgb, #ff6f42 14%, transparent);
+  opacity: 0.24;
+}
+
+.persona-lab-field-shell-elemental.field-variant-terra .persona-lab-field-elemental-base {
+  inset: 18% 14% 10%;
+  background:
+    radial-gradient(circle at 50% 72%, color-mix(in srgb, #a88b6e 22%, transparent), transparent 34%),
+    linear-gradient(180deg, transparent 0 54%, color-mix(in srgb, #6f573f 18%, transparent) 72%, transparent 100%);
+  filter: blur(4px);
+  border-radius: 20% 20% 14% 14%;
+}
+
+.persona-lab-field-shell-elemental.field-variant-terra .persona-lab-field-elemental-flow {
+  inset: 22% 16% 14%;
+  background: linear-gradient(180deg, transparent 0 60%, rgba(255, 246, 229, 0.06) 60% 62%, transparent 62% 100%);
+  opacity: 0.3;
+}
+
+.persona-lab-field-shell-elemental.field-variant-terra .persona-lab-field-elemental-atmosphere {
+  inset: 22% 18% 12%;
+  border-radius: 18%;
+  border: 1px solid color-mix(in srgb, #ccb090 12%, transparent);
+  opacity: 0.14;
+}
+
+.persona-lab-field-shell-elemental.field-variant-ar .persona-lab-field-elemental-base {
+  inset: 8% 8% 14%;
+  background:
+    radial-gradient(circle at 40% 40%, color-mix(in srgb, rgba(255, 255, 255, 0.72) 45%, transparent), transparent 42%),
+    radial-gradient(circle at 66% 54%, color-mix(in srgb, var(--persona-lab-secondary) 16%, transparent), transparent 48%);
+  filter: blur(18px);
+  transform: translateX(6px) scale(1.06);
+}
+
+.persona-lab-field-shell-elemental.field-variant-ar .persona-lab-field-elemental-flow {
+  background:
+    linear-gradient(140deg, transparent 0 18%, rgba(230, 240, 255, 0.12) 26%, transparent 42%, rgba(230, 240, 255, 0.08) 62%, transparent 78%);
+  filter: blur(12px);
+  transform: translateX(10px);
+}
+
+.persona-lab-field-shell-elemental.field-variant-ar .persona-lab-field-elemental-atmosphere {
+  inset: 14% 12%;
+  border-radius: 999px;
+  border: 1px dotted color-mix(in srgb, #ddecff 12%, transparent);
+  opacity: 0.12;
+}
+
+.persona-lab-field-natureza-bloom {
+  inset: 10% 12% 14%;
+  border-radius: 44% 56% 46% 54%;
+  background:
+    radial-gradient(circle at 46% 42%, color-mix(in srgb, #9ce6b9 26%, transparent), transparent 42%),
+    radial-gradient(circle at 58% 66%, color-mix(in srgb, var(--persona-lab-accent) 18%, transparent), transparent 58%);
+  filter: blur(18px);
+  transform: scale(1.06) translateY(3px);
+}
+
+.persona-lab-field-natureza-growth {
+  inset: 8% 16% 12%;
+  background:
+    radial-gradient(circle at 38% 70%, color-mix(in srgb, #c7f2d2 12%, transparent), transparent 18%),
+    linear-gradient(180deg, transparent 0 30%, rgba(190, 255, 210, 0.08) 42%, transparent 62%);
+  filter: blur(10px);
+  transform: rotate(-8deg);
+}
+
+.persona-lab-field-natureza-pollen {
+  inset: 14% 18% 18%;
+  background:
+    radial-gradient(circle at 32% 28%, rgba(255, 247, 214, 0.18), transparent 8%),
+    radial-gradient(circle at 68% 38%, rgba(255, 247, 214, 0.14), transparent 7%),
+    radial-gradient(circle at 58% 72%, color-mix(in srgb, #d9f1b0 16%, transparent), transparent 9%);
+  filter: blur(8px);
+  opacity: 0.72;
+}
+
+.persona-lab-field-robo-grid {
+  inset: 16% 16%;
+  background:
+    linear-gradient(180deg, transparent 0 18%, rgba(173, 198, 255, 0.08) 18% 19%, transparent 19% 38%, rgba(173, 198, 255, 0.08) 38% 39%, transparent 39% 100%),
+    linear-gradient(90deg, transparent 0 24%, rgba(173, 198, 255, 0.08) 24% 25%, transparent 25% 56%, rgba(173, 198, 255, 0.06) 56% 57%, transparent 57% 100%);
+  border-radius: 18%;
+  opacity: 0.32;
+}
+
+.persona-lab-field-robo-scan {
+  inset: 12% 14%;
+  background:
+    linear-gradient(180deg, transparent 0 18%, color-mix(in srgb, #d6e4ff 12%, transparent) 28%, transparent 44%, color-mix(in srgb, #8fb2ff 12%, transparent) 60%, transparent 76%);
+  filter: blur(6px);
+}
+
+.persona-lab-field-robo-interference {
+  inset: 18% 18%;
+  border-radius: 22%;
+  border: 1px solid color-mix(in srgb, #b8cbff 14%, transparent);
+  box-shadow: inset 0 0 0 1px rgba(190, 212, 255, 0.04);
+  opacity: 0.18;
+}
+
+.persona-lab-engine-particle {
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(0.8px);
+  mix-blend-mode: screen;
+  box-shadow: 0 0 10px currentcolor;
+}
+
+.persona-lab-engine-particles.elemental-particles .persona-lab-engine-particle {
+  box-shadow: 0 0 8px color-mix(in srgb, currentcolor 40%, transparent);
+}
+
+.persona-lab-engine-particles.fire-particles .persona-lab-engine-particle {
+  filter: blur(0.6px);
+  border-radius: 44% 56% 62% 38%;
+}
+
+.persona-lab-engine-particles.water-particles .persona-lab-engine-particle {
+  filter: blur(1.1px);
+  border-radius: 52% 48% 60% 40%;
+}
+
+.persona-lab-engine-particles.earth-particles .persona-lab-engine-particle {
+  filter: blur(0.2px);
+  border-radius: 20%;
+}
+
+.persona-lab-engine-particles.air-particles .persona-lab-engine-particle {
+  filter: blur(1.6px);
+  border-radius: 999px;
+}
+
+.persona-lab-engine-particles.pollen-particles .persona-lab-engine-particle {
+  filter: blur(1px);
+  border-radius: 44% 56% 52% 48%;
+}
+
+.persona-lab-engine-particles.scan-particles .persona-lab-engine-particle {
+  filter: blur(0.3px);
+  border-radius: 18%;
+}
+
+.persona-lab-logo-body-shell {
+  position: absolute;
+  inset: 12%;
+  transform-origin: center;
+}
+
+.persona-lab-logo-body {
+  position: absolute;
+  inset: 0;
+  display: block;
+  -webkit-mask-image: var(--persona-lab-logo-mask);
+  mask-image: var(--persona-lab-logo-mask);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+  transform-origin: center;
+}
+
+.persona-lab-logo-body.primary {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--persona-lab-secondary) 88%, white 12%), color-mix(in srgb, var(--persona-lab-accent) 86%, black 4%));
+  filter: blur(calc(var(--persona-lab-surface-blur, 0px) * 0.65)) drop-shadow(0 0 calc(12px * var(--persona-lab-glow-strength)) color-mix(in srgb, var(--persona-lab-accent) 14%, transparent));
+  opacity: calc(0.9 * var(--persona-lab-shape-opacity-factor, 1));
+  border-radius: 28%;
+}
+
+.persona-lab-logo-body-shell.shape-fill-solid .persona-lab-logo-body.primary,
+.persona-lab-entity-svg.shape-fill-solid .persona-lab-entity-body {
+  filter: none;
+}
+
+.persona-lab-logo-body-shell.shape-fill-edge-lit .persona-lab-logo-body.primary,
+.persona-lab-entity-svg.shape-fill-edge-lit .persona-lab-entity-body {
+  filter: blur(calc(var(--persona-lab-surface-blur, 0px) * 0.35)) drop-shadow(0 0 8px color-mix(in srgb, var(--persona-lab-accent) 16%, transparent));
+}
+
+.persona-lab-logo-body-shell.shape-fill-segmented .persona-lab-logo-body.secondary,
+.persona-lab-entity-svg.shape-fill-segmented .persona-lab-entity-inner {
+  mix-blend-mode: normal;
+  opacity: 0.1;
+}
+
+.persona-lab-logo-body-shell.shape-fill-textured .persona-lab-logo-body.secondary,
+.persona-lab-entity-svg.shape-fill-textured .persona-lab-entity-inner {
+  opacity: 0.18;
+}
+
+.persona-lab-logo-body.secondary {
+  inset: 8% 10%;
+  background:
+    radial-gradient(circle at 36% 30%, rgba(255, 247, 229, 0.92), transparent 32%),
+    linear-gradient(160deg, color-mix(in srgb, var(--persona-lab-accent) 72%, white 28%), color-mix(in srgb, var(--persona-lab-secondary) 56%, transparent));
+  mix-blend-mode: screen;
+  opacity: 0.56;
+  border-radius: 32%;
+}
+
+.persona-lab-logo-body.line {
+  background: linear-gradient(135deg, rgba(255, 248, 234, 0.88), rgba(255, 248, 234, 0.14));
+  opacity: 0.16;
+  filter: drop-shadow(0 0 4px rgba(255, 248, 234, 0.18));
+}
+
+.persona-lab-preview-visual.uses-core-symbol .persona-lab-logo-body-shell {
+  inset: 18% 20%;
+}
+
+.persona-lab-preview-visual.uses-core-symbol .persona-lab-logo-body.primary {
+  opacity: 0.94;
+  filter:
+    blur(0.2px)
+    drop-shadow(0 0 calc(16px * var(--persona-lab-glow-strength)) color-mix(in srgb, var(--persona-lab-accent) 26%, transparent));
+}
+
+.persona-lab-preview-visual.uses-core-symbol .persona-lab-logo-body.secondary {
+  inset: 10% 12%;
+  opacity: 0.76;
+}
+
+.persona-lab-preview-visual.uses-core-symbol .persona-lab-logo-body.line {
+  opacity: 0.16;
+}
+
+.persona-lab-entity-aura {
+  inset: 12% 14%;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at var(--persona-lab-zone-x) var(--persona-lab-zone-y), color-mix(in srgb, var(--persona-lab-accent) 46%, transparent), transparent 54%),
+    radial-gradient(circle at var(--persona-lab-zone-secondary-x) var(--persona-lab-zone-secondary-y), color-mix(in srgb, var(--persona-lab-secondary) 34%, transparent), transparent 58%);
+  filter: blur(calc(var(--persona-lab-glow-blur) * var(--persona-lab-aura-softness, 1)));
+  opacity: calc(var(--persona-lab-aura-opacity) * var(--persona-lab-core-presence, 1));
+  transform: scale(calc(var(--persona-lab-aura-scale) * var(--persona-lab-aura-scale-factor, 1)));
+}
+
+.persona-lab-entity-aura-ring {
+  inset: 14% 16%;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--persona-lab-accent) 18%, transparent);
+  opacity: calc(0.4 * var(--persona-lab-core-presence, 1));
+  filter: blur(1px);
+  transform: scale(calc(1.03 * var(--persona-lab-aura-scale-factor, 1)));
+}
+
+.persona-lab-entity-noise {
+  inset: 18% 20%;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 30% 28%, rgba(255, 248, 231, 0.16), transparent 14%),
+    radial-gradient(circle at 68% 42%, color-mix(in srgb, var(--persona-lab-secondary) 18%, transparent), transparent 18%),
+    radial-gradient(circle at 50% 72%, color-mix(in srgb, var(--persona-lab-accent) 12%, transparent), transparent 20%);
+  opacity: calc(0.42 * var(--persona-lab-field-noise-opacity, 1));
+  filter: blur(12px);
+  mix-blend-mode: screen;
+}
+
+.persona-lab-entity-svg {
+  width: 100%;
+  height: 100%;
+}
+
+.persona-lab-entity-shadow {
+  fill: color-mix(in srgb, var(--persona-lab-accent) 20%, transparent);
+  opacity: 0.24;
+  filter: blur(8px);
+  transform-origin: center;
+  transform: translateY(8px) scale(1.02);
+}
+
+.persona-lab-entity-body,
+.persona-lab-entity-inner,
+.persona-lab-entity-line,
+.persona-lab-entity-core,
+.persona-lab-entity-core-glow {
+  transform-origin: center;
+}
+
+.persona-lab-entity-body {
+  opacity: calc(0.9 * var(--persona-lab-shape-opacity-factor, 1));
+  filter: blur(calc(var(--persona-lab-surface-blur, 0px) * 0.6)) drop-shadow(0 0 calc(10px * var(--persona-lab-glow-strength)) color-mix(in srgb, var(--persona-lab-accent) 14%, transparent));
+}
+
+.persona-lab-entity-inner {
+  mix-blend-mode: screen;
+  opacity: calc(0.42 * var(--persona-lab-core-presence, 1));
+}
+
+.persona-lab-entity-line {
+  opacity: calc(0.58 * var(--persona-lab-line-opacity-factor, 1));
+}
+
+.persona-lab-entity-svg.shape-contrast-medium .persona-lab-entity-line,
+.persona-lab-logo-body-shell.shape-contrast-medium .persona-lab-logo-body.line {
+  opacity: 0.74;
+}
+
+.persona-lab-entity-svg.shape-contrast-variable .persona-lab-entity-line,
+.persona-lab-logo-body-shell.shape-contrast-variable .persona-lab-logo-body.line {
+  opacity: 0.82;
+}
+
+.persona-lab-entity-svg.shape-typographic-protected .persona-lab-entity-body,
+.persona-lab-logo-body-shell.shape-typographic-protected .persona-lab-logo-body.primary {
+  filter: none !important;
+}
+
+.persona-lab-entity-svg.shape-typographic-protected .persona-lab-entity-line,
+.persona-lab-logo-body-shell.shape-typographic-protected .persona-lab-logo-body.line {
+  opacity: 0.94 !important;
+}
+
+.persona-lab-entity-svg.shape-typographic-protected .persona-lab-entity-inner,
+.persona-lab-logo-body-shell.shape-typographic-protected .persona-lab-logo-body.secondary {
+  opacity: 0.06 !important;
+}
+
+.persona-lab-entity-svg.shape-mode-centelha .persona-lab-entity-body,
+.persona-lab-logo-body-shell.shape-mode-centelha .persona-lab-logo-body.primary {
+  filter: blur(calc(var(--persona-lab-surface-blur, 0px) * 0.45)) drop-shadow(0 0 10px color-mix(in srgb, var(--persona-lab-accent) 18%, transparent));
+}
+
+.persona-lab-entity-svg.shape-mode-centelha .persona-lab-entity-inner,
+.persona-lab-logo-body-shell.shape-mode-centelha .persona-lab-logo-body.secondary {
+  opacity: 0.3;
+}
+
+.persona-lab-entity-svg.shape-mode-centelha .persona-lab-entity-line {
+  opacity: 0.74;
+  stroke-dasharray: 3 4;
+}
+
+.persona-lab-entity-svg.shape-mode-elemental .persona-lab-entity-body,
+.persona-lab-logo-body-shell.shape-mode-elemental .persona-lab-logo-body.primary {
+  filter: none;
+}
+
+.persona-lab-entity-svg.shape-mode-elemental .persona-lab-entity-inner,
+.persona-lab-logo-body-shell.shape-mode-elemental .persona-lab-logo-body.secondary {
+  mix-blend-mode: normal;
+  opacity: 0.18;
+}
+
+.persona-lab-entity-svg.shape-mode-elemental .persona-lab-entity-line {
+  opacity: 0.42;
+}
+
+.persona-lab-entity-svg.shape-mode-natureza .persona-lab-entity-body,
+.persona-lab-logo-body-shell.shape-mode-natureza .persona-lab-logo-body.primary {
+  filter: blur(calc(var(--persona-lab-surface-blur, 0px) * 0.4));
+}
+
+.persona-lab-entity-svg.shape-mode-natureza .persona-lab-entity-inner,
+.persona-lab-logo-body-shell.shape-mode-natureza .persona-lab-logo-body.secondary {
+  opacity: 0.22;
+}
+
+.persona-lab-entity-svg.shape-mode-natureza .persona-lab-entity-line {
+  opacity: 0.34;
+  stroke-dasharray: 5 6;
+}
+
+.persona-lab-entity-svg.shape-mode-robo-ia .persona-lab-entity-body,
+.persona-lab-logo-body-shell.shape-mode-robo-ia .persona-lab-logo-body.primary {
+  filter: none;
+}
+
+.persona-lab-entity-svg.shape-mode-robo-ia .persona-lab-entity-inner,
+.persona-lab-logo-body-shell.shape-mode-robo-ia .persona-lab-logo-body.secondary {
+  mix-blend-mode: normal;
+  opacity: 0.12;
+}
+
+.persona-lab-entity-svg.shape-mode-robo-ia .persona-lab-entity-line {
+  opacity: 0.78;
+  stroke-dasharray: 10 4;
+  stroke-linejoin: bevel;
+}
+
+.persona-lab-entity-core {
+  fill: rgba(255, 247, 230, 0.94);
+  filter: drop-shadow(0 0 12px color-mix(in srgb, var(--persona-lab-accent) 40%, transparent));
+}
+
+.persona-lab-entity-core-glow {
+  fill: color-mix(in srgb, var(--persona-lab-accent) 22%, transparent);
+  filter: blur(10px);
+  opacity: 0.72;
+}
+
+.persona-lab-entity-core-shell {
+  position: absolute;
+  left: var(--persona-lab-zone-x);
+  top: var(--persona-lab-zone-y);
+  width: calc(42px * var(--persona-lab-core-size-factor, 1));
+  height: calc(42px * var(--persona-lab-core-size-factor, 1));
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.persona-lab-core-centelha-heart {
+  inset: 28%;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255, 248, 230, 0.98), color-mix(in srgb, var(--persona-lab-accent) 38%, white 8%) 56%, transparent 82%);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--persona-lab-accent) 34%, transparent);
+}
+
+.persona-lab-core-centelha-plasma {
+  inset: 14%;
+  border-radius: 999px;
+  background: radial-gradient(circle, color-mix(in srgb, var(--persona-lab-accent) 28%, transparent), transparent 72%);
+  filter: blur(8px);
+  opacity: 0.92;
+}
+
+.persona-lab-core-centelha-shell {
+  inset: 10%;
+  border-radius: 999px;
+  border: 1px dashed color-mix(in srgb, rgba(255, 247, 230, 0.74) 52%, transparent);
+  opacity: 0.42;
+}
+
+.persona-lab-core-elemental-source {
+  inset: 32%;
+  background: radial-gradient(circle, rgba(255, 244, 224, 0.62), transparent 78%);
+}
+
+.persona-lab-core-elemental-trace {
+  inset: 18%;
+  opacity: 0.28;
+}
+
+.persona-lab-core-elemental-shell {
+  inset: 14%;
+  opacity: 0.18;
+}
+
+.persona-lab-core-layer.core-elemental.core-variant-agua .persona-lab-core-elemental-source {
+  inset: 36% 22% 26% 30%;
+  border-radius: 44% 56% 62% 38%;
+  background: linear-gradient(180deg, rgba(235, 248, 255, 0.54), color-mix(in srgb, #8edcff 28%, transparent));
+  filter: blur(4px);
+}
+
+.persona-lab-core-layer.core-elemental.core-variant-agua .persona-lab-core-elemental-trace {
+  inset: 20% 12% 12%;
+  border-radius: 42% 58% 64% 36%;
+  background: radial-gradient(circle at 48% 72%, color-mix(in srgb, #aee8ff 14%, transparent), transparent 30%);
+  filter: blur(7px);
+}
+
+.persona-lab-core-layer.core-elemental.core-variant-agua .persona-lab-core-elemental-shell {
+  inset: 24% 18% 18%;
+  border: 1px solid color-mix(in srgb, #bfefff 12%, transparent);
+  border-radius: 48% 52% 58% 42%;
+}
+
+.persona-lab-core-layer.core-elemental.core-variant-fogo .persona-lab-core-elemental-source {
+  inset: 30% 30% 22%;
+  border-radius: 44% 56% 36% 64%;
+  background: radial-gradient(circle at 50% 72%, #fff1d4, color-mix(in srgb, #ff7b47 44%, transparent) 56%, transparent 76%);
+  box-shadow: 0 0 14px color-mix(in srgb, #ff6f42 26%, transparent);
+}
+
+.persona-lab-core-layer.core-elemental.core-variant-fogo .persona-lab-core-elemental-trace {
+  inset: 16% 26% 14%;
+  background: linear-gradient(180deg, transparent 0 18%, color-mix(in srgb, #ffb26b 18%, transparent) 30%, transparent 54%, color-mix(in srgb, #ff6f42 14%, transparent) 74%, transparent 100%);
+  filter: blur(5px);
+}
+
+.persona-lab-core-layer.core-elemental.core-variant-fogo .persona-lab-core-elemental-shell {
+  inset: 22% 28% 16%;
+  border-left: 1px solid color-mix(in srgb, #ffd2a2 16%, transparent);
+  border-right: 1px solid transparent;
+}
+
+.persona-lab-core-layer.core-elemental.core-variant-terra .persona-lab-core-elemental-source {
+  inset: 34% 26% 20%;
+  border-radius: 16%;
+  background: linear-gradient(180deg, #f0e3cf, color-mix(in srgb, #7a5d48 44%, transparent));
+  box-shadow: inset 0 -2px 0 rgba(72, 50, 33, 0.24);
+}
+
+.persona-lab-core-layer.core-elemental.core-variant-terra .persona-lab-core-elemental-trace {
+  inset: 20% 18% 14%;
+  border-radius: 18%;
+  background: linear-gradient(180deg, transparent 0 58%, rgba(255, 245, 230, 0.06) 58% 60%, transparent 60% 100%);
+  opacity: 0.18;
+}
+
+.persona-lab-core-layer.core-elemental.core-variant-terra .persona-lab-core-elemental-shell {
+  inset: 18% 16% 12%;
+  border: 1px solid color-mix(in srgb, #ccb090 12%, transparent);
+  border-radius: 20%;
+}
+
+.persona-lab-core-layer.core-elemental.core-variant-ar .persona-lab-core-elemental-source {
+  inset: 38% 20% 28% 34%;
+  border-radius: 999px;
+  background: linear-gradient(120deg, rgba(246, 250, 255, 0.46), transparent 72%);
+  filter: blur(5px);
+}
+
+.persona-lab-core-layer.core-elemental.core-variant-ar .persona-lab-core-elemental-trace {
+  inset: 16% 10% 18%;
+  background: linear-gradient(130deg, transparent 0 22%, rgba(236, 244, 255, 0.12) 36%, transparent 58%, rgba(236, 244, 255, 0.08) 74%, transparent 100%);
+  filter: blur(8px);
+}
+
+.persona-lab-core-layer.core-elemental.core-variant-ar .persona-lab-core-elemental-shell {
+  opacity: 0;
+}
+
+.persona-lab-core-natureza-seed {
+  inset: 34% 30% 24%;
+  border-radius: 48% 52% 58% 42%;
+  background: linear-gradient(180deg, #f5f0d7, color-mix(in srgb, #8bcf92 42%, transparent));
+}
+
+.persona-lab-core-natureza-sprout {
+  inset: 18% 36% 18% 28%;
+  background:
+    radial-gradient(circle at 48% 76%, color-mix(in srgb, #d2f6d1 18%, transparent), transparent 22%),
+    linear-gradient(180deg, transparent 0 34%, rgba(226, 255, 226, 0.18) 48%, transparent 72%);
+  filter: blur(5px);
+  transform: rotate(-10deg);
+}
+
+.persona-lab-core-natureza-husk {
+  inset: 18% 22% 14%;
+  border-radius: 42% 58% 48% 52%;
+  border: 1px solid color-mix(in srgb, #d8efc2 14%, transparent);
+  opacity: 0.18;
+}
+
+.persona-lab-core-robo-module {
+  inset: 30%;
+  border-radius: 16%;
+  background:
+    linear-gradient(180deg, rgba(241, 247, 255, 0.9), color-mix(in srgb, #8fb2ff 34%, transparent)),
+    linear-gradient(90deg, transparent 0 46%, rgba(12, 20, 36, 0.14) 46% 54%, transparent 54% 100%);
+  box-shadow: inset 0 0 0 1px rgba(232, 240, 255, 0.18);
+}
+
+.persona-lab-core-robo-scan {
+  inset: 18%;
+  background: linear-gradient(180deg, transparent 0 20%, color-mix(in srgb, #d6e4ff 12%, transparent) 34%, transparent 48%, color-mix(in srgb, #8fb2ff 12%, transparent) 68%, transparent 84%);
+  filter: blur(4px);
+  opacity: 0.42;
+}
+
+.persona-lab-core-robo-bracket {
+  inset: 12%;
+  border-radius: 18%;
+  border: 1px solid color-mix(in srgb, #b8cbff 14%, transparent);
+  box-shadow: inset 0 0 0 1px rgba(190, 212, 255, 0.04);
+  opacity: 0.28;
+}
+
+.persona-lab-entity-core-shell .persona-lab-entity-core,
+.persona-lab-entity-core-shell .persona-lab-entity-core-glow,
+.persona-lab-entity-core-shell .persona-lab-entity-core-ring {
+  position: absolute;
+  inset: 0;
+  display: block;
+  border-radius: 999px;
+}
+
+.persona-lab-entity-core-shell .persona-lab-entity-core {
+  inset: 12px;
+  background: radial-gradient(circle, rgba(255, 248, 230, 0.98), rgba(255, 230, 185, 0.82) 58%, rgba(255, 230, 185, 0));
+  opacity: calc(var(--persona-lab-core-opacity) * var(--persona-lab-core-presence, 1));
+  transform: scale(var(--persona-lab-core-scale));
+}
+
+.persona-lab-entity-core-shell .persona-lab-entity-core-glow {
+  background: radial-gradient(circle, color-mix(in srgb, var(--persona-lab-accent) 26%, transparent), transparent 70%);
+  filter: blur(10px);
+}
+
+.persona-lab-entity-core-shell .persona-lab-entity-core-ring {
+  inset: 8px;
+  border: 1px solid color-mix(in srgb, rgba(255, 247, 230, 0.7) 55%, transparent);
+  opacity: 0.42;
+}
+
+.persona-lab-preview-visual.motion-float .persona-lab-entity-body {
+  animation: persona-lab-float-entity var(--persona-lab-motion-duration) ease-in-out infinite;
+}
+
+.persona-lab-preview-visual.motion-float .persona-lab-entity-core,
+.persona-lab-preview-visual.motion-float .persona-lab-entity-core-glow {
+  animation: persona-lab-core-pulse 3.8s ease-in-out infinite;
+}
+
+.persona-lab-preview-visual.motion-float .persona-lab-entity-aura,
+.persona-lab-preview-visual.motion-float .persona-lab-entity-aura-ring {
+  animation: persona-lab-aura-breathe 6s ease-in-out infinite;
+}
+
+.persona-lab-preview-visual.motion-float .persona-lab-entity-noise {
+  animation: persona-lab-noise-drift 6.4s ease-in-out infinite;
+}
+
+.persona-lab-preview-visual.motion-float .persona-lab-logo-body.primary {
+  animation: persona-lab-logo-float var(--persona-lab-motion-duration) ease-in-out infinite;
+}
+
+.persona-lab-preview-visual.motion-float .persona-lab-logo-body.secondary {
+  animation: persona-lab-logo-sheen calc(var(--persona-lab-motion-duration) + 0.2s) ease-in-out infinite;
+}
+
+.persona-lab-preview-visual.motion-pulse .persona-lab-entity-body {
+  animation: persona-lab-pulse-entity var(--persona-lab-motion-duration) ease-in-out infinite;
+}
+
+.persona-lab-preview-visual.motion-pulse .persona-lab-entity-inner {
+  animation: persona-lab-pulse-inner-shift 3.1s ease-in-out infinite;
+}
+
+.persona-lab-preview-visual.motion-pulse .persona-lab-entity-core,
+.persona-lab-preview-visual.motion-pulse .persona-lab-entity-core-glow,
+.persona-lab-preview-visual.motion-pulse .persona-lab-entity-core-ring {
+  animation: persona-lab-core-pulse-strong 2.3s ease-in-out infinite;
+}
+
+.persona-lab-preview-visual.motion-pulse .persona-lab-entity-aura,
+.persona-lab-preview-visual.motion-pulse .persona-lab-entity-aura-ring {
+  animation: persona-lab-aura-throb 3.2s ease-in-out infinite;
+}
+
+.persona-lab-preview-visual.motion-pulse .persona-lab-entity-noise {
+  animation: persona-lab-noise-flicker 2.9s ease-in-out infinite;
+}
+
+.persona-lab-preview-visual.motion-pulse .persona-lab-logo-body.primary {
+  animation: persona-lab-logo-pulse var(--persona-lab-motion-duration) ease-in-out infinite;
+}
+
+.persona-lab-preview-visual.motion-pulse .persona-lab-logo-body.secondary {
+  animation: persona-lab-logo-flare calc(var(--persona-lab-motion-duration) + 0.3s) ease-in-out infinite;
+}
+
+.persona-lab-preview-visual.motion-drift .persona-lab-entity-body {
+  animation: persona-lab-drift-entity var(--persona-lab-motion-duration) ease-in-out infinite;
+}
+
+.persona-lab-preview-visual.motion-drift .persona-lab-entity-inner {
+  animation: persona-lab-drift-inner-breathe 4.8s ease-in-out infinite;
+}
+
+.persona-lab-preview-visual.motion-drift .persona-lab-entity-core,
+.persona-lab-preview-visual.motion-drift .persona-lab-entity-core-glow,
+.persona-lab-preview-visual.motion-drift .persona-lab-entity-core-ring {
+  animation: persona-lab-core-focus 4.6s ease-in-out infinite;
+}
+
+.persona-lab-preview-visual.motion-drift .persona-lab-entity-aura,
+.persona-lab-preview-visual.motion-drift .persona-lab-entity-aura-ring {
+  animation: persona-lab-aura-focus 5.8s ease-in-out infinite;
+}
+
+.persona-lab-preview-visual.motion-drift .persona-lab-entity-noise {
+  animation: persona-lab-noise-drift 7.2s ease-in-out infinite;
+}
+
+.persona-lab-preview-visual.motion-drift .persona-lab-logo-body.primary {
+  animation: persona-lab-logo-drift var(--persona-lab-motion-duration) ease-in-out infinite;
+}
+
+.persona-lab-preview-visual.motion-drift .persona-lab-logo-body.secondary {
+  animation: persona-lab-logo-sheen calc(var(--persona-lab-motion-duration) + 0.1s) ease-in-out infinite;
+}
+
+.persona-lab-particle-canvas {
+  opacity: var(--persona-lab-particle-opacity-factor, 1);
+  filter: saturate(calc(0.94 + var(--persona-lab-spec-contrast, 0.6) * 0.24));
+}
+
+.persona-lab-preview-visual.light-concentrated .persona-lab-entity-aura {
+  mix-blend-mode: screen;
+}
+
+.persona-lab-preview-visual.light-physical .persona-lab-entity-aura {
+  mix-blend-mode: normal;
+}
+
+.persona-lab-preview-visual.light-organic .persona-lab-entity-aura {
+  border-radius: 46% 54% 50% 50%;
+}
+
+.persona-lab-preview-visual.light-technical .persona-lab-entity-aura,
+.persona-lab-preview-visual.light-technical .persona-lab-entity-aura-ring {
+  border-radius: 18%;
+}
+
+.persona-lab-preview-visual.mass-centralized .persona-lab-entity-core-shell {
+  left: calc(var(--persona-lab-zone-x) - 1%);
+}
+
+.persona-lab-preview-visual.mass-material .persona-lab-entity-shadow {
+  transform: translateY(12px) scale(1.08);
+}
+
+.persona-lab-preview-visual.mass-growth .persona-lab-entity-shadow {
+  transform: translateY(8px) scale(1.02, 1.08);
+}
+
+.persona-lab-preview-visual.mass-modular .persona-lab-entity-shadow {
+  filter: blur(8px);
+}
+
+.persona-lab-preview-visual.texture-electric .persona-lab-entity-line {
+  stroke-dasharray: 2 4;
+}
+
+.persona-lab-preview-visual.texture-organic .persona-lab-entity-body,
+.persona-lab-preview-visual.texture-organic .persona-lab-logo-body.primary {
+  border-radius: 42% 58% 48% 52%;
+}
+
+.persona-lab-preview-visual.texture-technical .persona-lab-entity-line {
+  stroke-linejoin: bevel;
+}
+
+.persona-lab-preview-visual.contrast-high .persona-lab-entity-line {
+  opacity: calc(0.86 * var(--persona-lab-line-opacity-factor, 1));
+}
+
+.persona-lab-preview-visual.contrast-medium .persona-lab-entity-aura {
+  opacity: calc(0.78 * var(--persona-lab-core-presence, 1));
+}
+
+.persona-lab-preview-visual.shape-germinated .persona-lab-entity-core-shell {
+  top: calc(var(--persona-lab-zone-y) + 4%);
+}
+
+.persona-lab-preview-visual.shape-rebuilt .persona-lab-entity-core-shell {
+  width: calc(34px * var(--persona-lab-core-size-factor, 1));
+  height: calc(34px * var(--persona-lab-core-size-factor, 1));
+}
+
+.persona-lab-preview-visual.glow-soft {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 0 26px color-mix(in srgb, var(--persona-lab-accent) 8%, transparent);
+}
+
+.persona-lab-preview-visual.glow-bold {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 0 46px color-mix(in srgb, var(--persona-lab-accent) 16%, transparent);
+}
+
+.persona-lab-preview-visual.glow-focused {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 0 34px color-mix(in srgb, var(--persona-lab-secondary) 14%, transparent);
+}
+
+.persona-lab-preview-visual.variant-final {
+  min-height: 320px;
+  background:
+    radial-gradient(circle at 50% 24%, color-mix(in srgb, var(--persona-lab-accent) 16%, transparent), transparent 34%),
+    radial-gradient(circle at 62% 66%, color-mix(in srgb, var(--persona-lab-secondary) 14%, transparent), transparent 38%),
+    rgba(255, 255, 255, 0.025);
+}
+
+.persona-lab-preview-visual.variant-final .persona-lab-entity-aura {
+  inset: 6% 12%;
+  filter: blur(18px);
+  opacity: 0.74;
+}
+
+.persona-lab-preview-visual.variant-final .persona-lab-entity-aura-ring {
+  inset: 10% 15%;
+  opacity: 0.32;
+}
+
+.persona-lab-preview-visual.variant-final .persona-lab-entity-noise {
+  inset: 16% 18%;
+  opacity: 0.28;
+}
+
+.persona-lab-preview-visual.variant-final .persona-lab-entity-shadow {
+  opacity: 0.5;
+  transform: translateY(12px) scale(1.05);
+}
+
+.persona-lab-preview-visual.variant-final .persona-lab-entity-body {
+  filter: drop-shadow(0 0 16px color-mix(in srgb, var(--persona-lab-accent) 18%, transparent));
+}
+
+.persona-lab-preview-visual.variant-final .persona-lab-entity-core {
+  filter: drop-shadow(0 0 9px rgba(255, 248, 230, 0.95));
+}
+
+.persona-lab-preview-visual.variant-final .persona-lab-entity-core-glow {
+  opacity: 0.55;
+}
+
+.persona-lab-preview-visual.variant-final .persona-lab-logo-body-shell {
+  inset: 16% 18%;
+}
+
+.persona-lab-preview-visual.variant-final .persona-lab-entity-core-shell {
+  width: 28px;
+  height: 28px;
+}
+
+.persona-lab-preview-visual.archetype-formal .persona-lab-entity-aura,
+.persona-lab-preview-visual.archetype-formal .persona-lab-entity-aura-ring {
+  opacity: 0.72;
+}
+
+.persona-lab-preview-visual.archetype-formal .persona-lab-logo-body.primary,
+.persona-lab-preview-visual.archetype-formal .persona-lab-entity-body {
+  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--persona-lab-accent) 18%, transparent));
+}
+
+.persona-lab-preview-visual.archetype-luxury .persona-lab-entity-aura {
+  filter: blur(26px);
+  opacity: 0.96;
+}
+
+.persona-lab-preview-visual.archetype-luxury .persona-lab-logo-body.secondary,
+.persona-lab-preview-visual.archetype-luxury .persona-lab-entity-inner {
+  opacity: 0.94;
+}
+
+.persona-lab-preview-visual.archetype-warm .persona-lab-entity-aura {
+  background:
+    radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--persona-lab-accent) 54%, transparent), transparent 54%),
+    radial-gradient(circle at 54% 54%, color-mix(in srgb, #ffbb7d 38%, transparent), transparent 58%);
+}
+
+.persona-lab-preview-visual.archetype-vital .persona-lab-entity-aura {
+  background:
+    radial-gradient(circle at 50% 40%, color-mix(in srgb, #9ce6d0 34%, transparent), transparent 52%),
+    radial-gradient(circle at 55% 58%, color-mix(in srgb, var(--persona-lab-accent) 24%, transparent), transparent 56%);
+}
+
+.persona-lab-preview-visual.archetype-technical .persona-lab-entity-noise {
+  opacity: 0.24;
+}
+
+.persona-lab-preview-visual.archetype-technical .persona-lab-entity-aura-ring,
+.persona-lab-preview-visual.archetype-formal .persona-lab-entity-aura-ring {
+  border-radius: 34%;
+}
+
+.persona-lab-preview-visual.structure-organic .persona-lab-logo-body.primary,
+.persona-lab-preview-visual.structure-organic .persona-lab-entity-body {
+  border-radius: 36%;
+}
+
+.persona-lab-preview-visual.structure-angular .persona-lab-logo-body.primary,
+.persona-lab-preview-visual.structure-angular .persona-lab-entity-body {
+  border-radius: 18%;
+}
+
+.persona-lab-preview-visual.structure-angular .persona-lab-entity-aura-ring {
+  border-radius: 22%;
+}
+
+.persona-lab-preview-visual.structure-balanced .persona-lab-logo-body.primary,
+.persona-lab-preview-visual.structure-balanced .persona-lab-entity-body {
+  border-radius: 28%;
+}
+
+.persona-lab-preview-visual.composition-vertical .persona-lab-logo-body-shell,
+.persona-lab-preview-visual.composition-vertical .persona-lab-entity-svg {
+  transform: scale(0.9, 1.08);
+}
+
+.persona-lab-preview-visual.composition-vertical .persona-lab-entity-core-shell {
+  top: 44%;
+}
+
+.persona-lab-preview-visual.composition-spread .persona-lab-logo-body-shell,
+.persona-lab-preview-visual.composition-spread .persona-lab-entity-svg {
+  transform: scale(1.06, 0.94);
+}
+
+.persona-lab-preview-visual.composition-spread .persona-lab-entity-core-shell {
+  left: calc(var(--persona-lab-zone-x) + 2%);
+}
+
+.persona-lab-preview-visual.composition-centered .persona-lab-entity-core-shell {
+  top: 50%;
+}
+
+.persona-lab-preview-visual.intensity-soft {
+  --persona-lab-glow-strength: calc(var(--persona-lab-glow-strength) * 0.88);
+}
+
+.persona-lab-preview-visual.intensity-strong {
+  --persona-lab-glow-strength: calc(var(--persona-lab-glow-strength) * 1.16);
+}
+
+.persona-lab-preview-visual.temperature-warm .persona-lab-entity-aura {
+  background:
+    radial-gradient(circle at var(--persona-lab-zone-x) var(--persona-lab-zone-y), color-mix(in srgb, #ffb26b 44%, transparent), transparent 54%),
+    radial-gradient(circle at 54% 54%, color-mix(in srgb, var(--persona-lab-accent) 38%, transparent), transparent 58%);
+}
+
+.persona-lab-preview-visual.temperature-cool .persona-lab-entity-aura {
+  background:
+    radial-gradient(circle at var(--persona-lab-zone-x) var(--persona-lab-zone-y), color-mix(in srgb, #9fd0ff 34%, transparent), transparent 54%),
+    radial-gradient(circle at 54% 54%, color-mix(in srgb, var(--persona-lab-secondary) 34%, transparent), transparent 58%);
+}
+
+.persona-lab-preview-visual.variant-preview .persona-lab-entity-core-shell {
+  width: 38px;
+  height: 38px;
+}
+
+.persona-lab-preview-visual.ritual-intensity-soft {
+  --persona-lab-ritual-speed: 1.12;
+  --persona-lab-ritual-scale: 0.96;
+}
+
+.persona-lab-preview-visual.ritual-intensity-balanced {
+  --persona-lab-ritual-speed: 1;
+  --persona-lab-ritual-scale: 1;
+}
+
+.persona-lab-preview-visual.ritual-intensity-cinematic {
+  --persona-lab-ritual-speed: 0.88;
+  --persona-lab-ritual-scale: 1.08;
+}
+
+.persona-lab-preview-visual.mode-centelha {
+  --persona-lab-glow-blur: 26px;
+}
+
+.persona-lab-preview-visual.renderer-centelha .persona-lab-logo-body-shell,
+.persona-lab-preview-visual.renderer-centelha .persona-lab-entity-svg {
+  transform: scale(var(--persona-lab-centelha-shape-scale, 1));
+}
+
+.persona-lab-preview-visual.mode-centelha .persona-lab-entity-aura {
+  inset: 16% 18%;
+  background:
+    radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--persona-lab-accent) 60%, transparent), transparent 48%),
+    radial-gradient(circle at 50% 50%, rgba(255, 247, 231, 0.24), transparent 18%);
+}
+
+.persona-lab-preview-visual.mode-centelha .persona-lab-entity-aura-ring {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--persona-lab-accent) 32%, transparent);
+}
+
+.persona-lab-preview-visual.mode-centelha .persona-lab-entity-core-shell {
+  width: 34px;
+  height: 34px;
+  animation: persona-lab-centelha-core 2.2s cubic-bezier(0.33, 0, 0.2, 1) infinite;
+}
+
+.persona-lab-preview-visual .persona-lab-entity-core-shell.core-centelha {
+  opacity: 1;
+}
+
+.persona-lab-preview-visual .persona-lab-entity-aura.field-centelha {
+  transform: scale(calc(var(--persona-lab-aura-scale) * 0.84));
+}
+
+.persona-lab-preview-visual .persona-lab-entity-aura-ring.field-centelha {
+  inset: 18% 20%;
+  opacity: 0.22;
+}
+
+.persona-lab-preview-visual.mode-centelha .persona-lab-entity-noise {
+  background:
+    radial-gradient(circle at 48% 26%, rgba(255, 248, 231, 0.22), transparent 12%),
+    radial-gradient(circle at 36% 56%, color-mix(in srgb, var(--persona-lab-accent) 22%, transparent), transparent 18%),
+    radial-gradient(circle at 66% 42%, color-mix(in srgb, var(--persona-lab-secondary) 18%, transparent), transparent 16%);
+  animation-duration: calc(4.2s * var(--persona-lab-ritual-speed));
+}
+
+.persona-lab-preview-visual.renderer-centelha .persona-lab-engine-particles {
+  animation: persona-lab-centelha-field calc(4.8s * var(--persona-lab-ritual-speed)) ease-in-out infinite;
+}
+
+.persona-lab-preview-visual.renderer-centelha .persona-lab-engine-particle {
+  box-shadow:
+    0 0 12px color-mix(in srgb, var(--persona-lab-accent) 42%, transparent),
+    0 0 22px color-mix(in srgb, rgba(255, 248, 231, 0.42) 60%, transparent);
+}
+
+.persona-lab-preview-visual.mode-centelha .persona-lab-entity-body,
+.persona-lab-preview-visual.mode-centelha .persona-lab-logo-body.primary {
+  filter:
+    blur(var(--persona-lab-surface-blur, 0px))
+    drop-shadow(0 0 20px color-mix(in srgb, var(--persona-lab-accent) 24%, transparent));
+}
+
+.persona-lab-preview-visual.renderer-centelha.ritual-intensity-cinematic .persona-lab-engine-particles {
+  animation-duration: 3.2s;
+}
+
+.persona-lab-preview-visual.renderer-centelha.ritual-intensity-cinematic .persona-lab-engine-particle {
+  filter: blur(1.2px);
+}
+
+.persona-lab-preview-visual.mode-elemental .persona-lab-entity-core-shell {
+  width: 22px;
+  height: 22px;
+  opacity: 0.16;
+}
+
+.persona-lab-preview-visual .persona-lab-entity-core-shell.core-elemental {
+  width: calc(18px * var(--persona-lab-core-size-factor, 1));
+  height: calc(18px * var(--persona-lab-core-size-factor, 1));
+  opacity: 0.12;
+}
+
+.persona-lab-preview-visual .persona-lab-entity-aura.field-elemental {
+  inset: 10% 10% 16% 10%;
+  transform: scale(calc(var(--persona-lab-aura-scale) * var(--persona-lab-aura-scale-factor, 1) * 1.02));
+  opacity: calc(var(--persona-lab-aura-opacity) * 0.58);
+  border-radius: 32% 68% 58% 42%;
+}
+
+.persona-lab-preview-visual .persona-lab-entity-aura-ring.field-elemental {
+  inset: 12% 12% 18% 12%;
+  opacity: 0.18;
+  border-radius: 28% 72% 52% 48%;
+}
+
+.persona-lab-preview-visual .persona-lab-entity-noise.field-elemental {
+  opacity: 0.14;
+  mix-blend-mode: normal;
+}
+
+.persona-lab-preview-visual.renderer-elemental .persona-lab-entity-svg {
+  transform: scale(var(--persona-lab-elemental-shape-scale, 1));
+}
+
+.persona-lab-preview-visual.mode-elemental.manifestation-variant-agua .persona-lab-entity-aura {
+  background:
+    radial-gradient(circle at 44% 42%, color-mix(in srgb, #8dd7ff 44%, transparent), transparent 48%),
+    radial-gradient(circle at 58% 70%, color-mix(in srgb, var(--persona-lab-accent) 22%, transparent), transparent 56%);
+}
+
+.persona-lab-preview-visual .persona-lab-entity-core-shell.core-elemental.core-variant-agua .persona-lab-entity-core,
+.persona-lab-preview-visual .persona-lab-entity-core-shell.core-elemental.core-variant-agua .persona-lab-entity-core-glow {
+  opacity: 0.26;
+  filter: blur(6px);
+}
+
+.persona-lab-preview-visual.mode-elemental.manifestation-variant-agua .persona-lab-logo-body.primary,
+.persona-lab-preview-visual.mode-elemental.manifestation-variant-agua .persona-lab-entity-body {
+  border-radius: 42% 58% 60% 40%;
+}
+
+.persona-lab-preview-visual.renderer-elemental.elemental-water-engine .persona-lab-engine-particles {
+  animation: persona-lab-water-current 4.8s ease-in-out infinite;
+}
+
+.persona-lab-preview-visual.renderer-elemental.elemental-water-engine .persona-lab-entity-body {
+  opacity: 0.78;
+  filter:
+    blur(calc(var(--persona-lab-surface-blur, 0px) + 0.4px))
+    drop-shadow(0 0 18px color-mix(in srgb, #8edcff 18%, transparent));
+}
+
+.persona-lab-preview-visual.renderer-elemental.elemental-water-engine .persona-lab-entity-line {
+  opacity: 0.42;
+}
+
+.persona-lab-preview-visual.mode-elemental.manifestation-variant-fogo .persona-lab-entity-aura {
+  inset: 12% 14% 18% 14%;
+  background:
+    radial-gradient(circle at 48% 52%, color-mix(in srgb, #ffb26b 48%, transparent), transparent 44%),
+    radial-gradient(circle at 54% 36%, color-mix(in srgb, var(--persona-lab-accent) 34%, transparent), transparent 54%);
+}
+
+.persona-lab-preview-visual .persona-lab-entity-core-shell.core-elemental.core-variant-fogo .persona-lab-entity-core,
+.persona-lab-preview-visual .persona-lab-entity-core-shell.core-elemental.core-variant-fogo .persona-lab-entity-core-glow {
+  opacity: 0.48;
+  transform: scale(0.88);
+}
+
+.persona-lab-preview-visual.mode-elemental.manifestation-variant-fogo .persona-lab-entity-noise {
+  animation-duration: calc(2.3s * var(--persona-lab-ritual-speed));
+}
+
+.persona-lab-preview-visual.mode-elemental.manifestation-variant-fogo .persona-lab-logo-body.primary,
+.persona-lab-preview-visual.mode-elemental.manifestation-variant-fogo .persona-lab-entity-body {
+  border-radius: 32% 48% 60% 40%;
+}
+
+.persona-lab-preview-visual.renderer-elemental.elemental-fire-engine .persona-lab-engine-particles {
+  animation: persona-lab-fire-flicker 1.2s ease-in-out infinite;
+}
+
+.persona-lab-preview-visual.renderer-elemental.elemental-fire-engine .persona-lab-entity-body {
+  filter: drop-shadow(0 0 26px color-mix(in srgb, #ff6f42 28%, transparent));
+}
+
+.persona-lab-preview-visual.renderer-elemental.elemental-fire-engine .persona-lab-entity-line {
+  opacity: 0.84;
+  stroke-width: 2.6px;
+}
+
+.persona-lab-preview-visual.mode-elemental.manifestation-variant-terra .persona-lab-entity-aura {
+  inset: 18% 16% 12% 16%;
+  background:
+    radial-gradient(circle at 50% 56%, color-mix(in srgb, #bea27c 34%, transparent), transparent 42%),
+    radial-gradient(circle at 50% 76%, color-mix(in srgb, var(--persona-lab-accent) 22%, transparent), transparent 52%);
+}
+
+.persona-lab-preview-visual .persona-lab-entity-core-shell.core-elemental.core-variant-terra .persona-lab-entity-core,
+.persona-lab-preview-visual .persona-lab-entity-core-shell.core-elemental.core-variant-terra .persona-lab-entity-core-ring {
+  opacity: 0.18;
+  border-radius: 20%;
+}
+
+.persona-lab-preview-visual.mode-elemental.manifestation-variant-terra .persona-lab-entity-aura-ring {
+  border-radius: 18%;
+  border-color: color-mix(in srgb, #d2b48c 24%, transparent);
+}
+
+.persona-lab-preview-visual.mode-elemental.manifestation-variant-terra .persona-lab-logo-body.primary,
+.persona-lab-preview-visual.mode-elemental.manifestation-variant-terra .persona-lab-entity-body {
+  border-radius: 18%;
+}
+
+.persona-lab-preview-visual.renderer-elemental.elemental-earth-engine .persona-lab-engine-particles {
+  animation: persona-lab-earth-dust 6.4s ease-in-out infinite;
+}
+
+.persona-lab-preview-visual.renderer-elemental.elemental-earth-engine .persona-lab-entity-line {
+  opacity: 0.5;
+  stroke-dasharray: 8 5;
+}
+
+.persona-lab-preview-visual.renderer-elemental.elemental-earth-engine .persona-lab-entity-body {
+  filter:
+    blur(0px)
+    drop-shadow(0 0 14px color-mix(in srgb, #7a5d48 16%, transparent));
+}
+
+.persona-lab-preview-visual.mode-elemental.manifestation-variant-ar .persona-lab-entity-aura {
+  inset: 8% 8% 14% 8%;
+  background:
+    radial-gradient(circle at 44% 34%, color-mix(in srgb, rgba(255, 255, 255, 0.8) 55%, transparent), transparent 46%),
+    radial-gradient(circle at 62% 54%, color-mix(in srgb, var(--persona-lab-secondary) 24%, transparent), transparent 56%);
+}
+
+.persona-lab-preview-visual .persona-lab-entity-core-shell.core-elemental.core-variant-ar {
+  opacity: 0.12;
+}
+
+.persona-lab-preview-visual.mode-elemental.manifestation-variant-ar .persona-lab-logo-body.primary,
+.persona-lab-preview-visual.mode-elemental.manifestation-variant-ar .persona-lab-entity-body {
+  border-radius: 54% 46% 58% 42%;
+}
+
+.persona-lab-preview-visual.renderer-elemental.elemental-air-engine .persona-lab-engine-particles {
+  animation: persona-lab-air-sweep 5.1s ease-in-out infinite;
+}
+
+.persona-lab-preview-visual.renderer-elemental.elemental-air-engine .persona-lab-entity-body {
+  opacity: 0.72;
+  filter:
+    blur(calc(var(--persona-lab-surface-blur, 0px) + 0.8px))
+    drop-shadow(0 0 12px color-mix(in srgb, #ddecff 16%, transparent));
+}
+
+.persona-lab-preview-visual.renderer-elemental.elemental-air-engine .persona-lab-entity-aura-ring {
+  border-style: dotted;
+}
+
+.persona-lab-preview-visual.mode-natureza {
+  --persona-lab-glow-blur: 24px;
+}
+
+.persona-lab-preview-visual.renderer-natureza .persona-lab-entity-svg {
+  transform: scale(var(--persona-lab-natureza-growth-scale, 1));
+}
+
+.persona-lab-preview-visual.mode-natureza .persona-lab-entity-aura {
+  background:
+    radial-gradient(circle at 50% 42%, color-mix(in srgb, #9ce6b9 34%, transparent), transparent 48%),
+    radial-gradient(circle at 56% 62%, color-mix(in srgb, var(--persona-lab-accent) 24%, transparent), transparent 60%);
+}
+
+.persona-lab-preview-visual .persona-lab-entity-aura.field-natureza {
+  transform: scale(calc(var(--persona-lab-aura-scale) * 1.14)) translateY(2px);
+  inset: 10% 12% 14% 12%;
+}
+
+.persona-lab-preview-visual.mode-natureza .persona-lab-entity-aura-ring {
+  border-radius: 44% 56% 48% 52%;
+}
+
+.persona-lab-preview-visual.mode-natureza .persona-lab-logo-body.primary,
+.persona-lab-preview-visual.mode-natureza .persona-lab-entity-body {
+  border-radius: 40% 60% 46% 54%;
+}
+
+.persona-lab-preview-visual.renderer-natureza.natureza-growth-engine .persona-lab-engine-particles {
+  animation: persona-lab-pollen-drift 6.6s ease-in-out infinite;
+}
+
+.persona-lab-preview-visual.renderer-natureza.natureza-growth-engine .persona-lab-entity-body {
+  opacity: var(--persona-lab-natureza-bloom-opacity, 0.78);
+  filter:
+    blur(var(--persona-lab-surface-blur, 0px))
+    drop-shadow(0 0 16px color-mix(in srgb, #7ed0a0 18%, transparent));
+}
+
+.persona-lab-preview-visual.renderer-natureza.natureza-growth-engine .persona-lab-entity-inner {
+  opacity: 0.68;
+  transform: translateY(2px) scale(0.92);
+}
+
+.persona-lab-preview-visual.renderer-natureza.natureza-growth-engine .persona-lab-entity-line {
+  opacity: 0.4;
+  stroke-dasharray: 4 7;
+}
+
+.persona-lab-preview-visual .persona-lab-entity-core-shell.core-natureza {
+  width: calc(18px * var(--persona-lab-core-size-factor, 1));
+  height: calc(18px * var(--persona-lab-core-size-factor, 1));
+  top: calc(var(--persona-lab-zone-y) + 6%);
+  opacity: 0.18;
+}
+
+.persona-lab-preview-visual .persona-lab-entity-core-shell.core-natureza .persona-lab-entity-core-ring {
+  inset: 5px;
+  border-radius: 46% 54% 42% 58%;
+}
+
+.persona-lab-preview-visual .persona-lab-entity-core-shell.core-natureza .persona-lab-entity-core-glow {
+  filter: blur(6px);
+}
+
+.persona-lab-preview-visual.mode-robo-ia {
+  --persona-lab-glow-blur: 20px;
+}
+
+.persona-lab-preview-visual.renderer-robo .persona-lab-entity-svg {
+  transform: scale(var(--persona-lab-robo-rebuild-scale, 1));
+}
+
+.persona-lab-preview-visual.mode-robo-ia .persona-lab-entity-aura {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #a9c4ff 24%, transparent), transparent 38%),
+    radial-gradient(circle at 50% 46%, color-mix(in srgb, var(--persona-lab-accent) 24%, transparent), transparent 48%);
+}
+
+.persona-lab-preview-visual .persona-lab-entity-aura.field-robo-ia,
+.persona-lab-preview-visual .persona-lab-entity-aura-ring.field-robo-ia {
+  transform: scale(0.94);
+}
+
+.persona-lab-preview-visual .persona-lab-entity-aura.field-robo-ia {
+  inset: 16% 16%;
+  opacity: 0.22;
+  mix-blend-mode: normal;
+}
+
+.persona-lab-preview-visual.mode-robo-ia .persona-lab-entity-aura-ring {
+  border-radius: 20%;
+  border-style: solid;
+  border-color: color-mix(in srgb, #b8cbff 24%, transparent);
+}
+
+.persona-lab-preview-visual.mode-robo-ia .persona-lab-entity-noise {
+  background:
+    linear-gradient(180deg, transparent 0 18%, rgba(255, 255, 255, 0.05) 18% 20%, transparent 20% 44%, rgba(255, 255, 255, 0.04) 44% 46%, transparent 46% 100%),
+    radial-gradient(circle at 70% 32%, color-mix(in srgb, var(--persona-lab-secondary) 16%, transparent), transparent 18%);
+  opacity: 0.3;
+  filter: blur(8px);
+}
+
+.persona-lab-preview-visual .persona-lab-entity-noise.field-robo-ia {
+  opacity: 0.08;
+}
+
+.persona-lab-preview-visual.mode-robo-ia .persona-lab-logo-body.primary,
+.persona-lab-preview-visual.mode-robo-ia .persona-lab-entity-body {
+  border-radius: 18%;
+}
+
+.persona-lab-preview-visual.renderer-robo.robo-scan-engine .persona-lab-engine-particles {
+  animation: persona-lab-scan-sweep 2.8s linear infinite;
+}
+
+.persona-lab-preview-visual.renderer-robo.robo-scan-engine .persona-lab-entity-aura {
+  background:
+    linear-gradient(180deg, rgba(143, 174, 255, 0.18), transparent 28%),
+    radial-gradient(circle at 50% 48%, color-mix(in srgb, var(--persona-lab-accent) 16%, transparent), transparent 42%);
+}
+
+.persona-lab-preview-visual.renderer-robo.robo-scan-engine .persona-lab-entity-inner {
+  opacity: var(--persona-lab-robo-grid-opacity, 0.38);
+  mix-blend-mode: normal;
+}
+
+.persona-lab-preview-visual.renderer-robo.robo-scan-engine .persona-lab-entity-line {
+  opacity: 0.78;
+  stroke-dasharray: 10 4;
+}
+
+.persona-lab-preview-visual.renderer-robo.robo-scan-engine .persona-lab-entity-body {
+  filter:
+    blur(0px)
+    drop-shadow(0 0 16px color-mix(in srgb, #8fb2ff 18%, transparent));
+}
+
+.persona-lab-preview-visual.mode-robo-ia .persona-lab-entity-core-shell {
+  opacity: 0.36;
+}
+
+.persona-lab-preview-visual.mode-robo-ia .persona-lab-entity-aura,
+.persona-lab-preview-visual.mode-robo-ia .persona-lab-entity-aura-ring {
+  filter: blur(calc(var(--persona-lab-glow-blur) * 0.54));
+}
+
+.persona-lab-preview-visual .persona-lab-entity-core-shell.core-robo-ia {
+  width: calc(22px * var(--persona-lab-core-size-factor, 1));
+  height: calc(22px * var(--persona-lab-core-size-factor, 1));
+  opacity: 0.14;
+}
+
+.persona-lab-preview-visual .persona-lab-entity-core-shell.core-robo-ia .persona-lab-entity-core,
+.persona-lab-preview-visual .persona-lab-entity-core-shell.core-robo-ia .persona-lab-entity-core-ring {
+  border-radius: 22%;
+}
+
+.persona-lab-preview-visual.density-compact .persona-lab-logo-body-shell,
+.persona-lab-preview-visual.density-compact .persona-lab-entity-svg {
+  transform: scale(0.92);
+}
+
+.persona-lab-preview-visual.density-airy .persona-lab-logo-body-shell,
+.persona-lab-preview-visual.density-airy .persona-lab-entity-svg {
+  transform: scale(1.03);
+}
+
+.persona-lab-preview-visual.density-balanced .persona-lab-logo-body-shell,
+.persona-lab-preview-visual.density-balanced .persona-lab-entity-svg {
+  transform: scale(0.98);
+}
+
+.persona-lab-final-hero:hover .persona-lab-entity-core-shell,
+.persona-lab-final-hero:focus-within .persona-lab-entity-core-shell {
+  transform: translate(-50%, -50%) scale(calc(var(--persona-lab-hover-scale) + 0.03));
+}
+
+.persona-lab-final-hero:hover .persona-lab-entity-aura,
+.persona-lab-final-hero:hover .persona-lab-entity-aura-ring,
+.persona-lab-final-hero:focus-within .persona-lab-entity-aura,
+.persona-lab-final-hero:focus-within .persona-lab-entity-aura-ring {
+  opacity: 1;
+  filter: blur(30px);
+}
+
+.persona-lab-final-hero:hover .persona-lab-logo-body.primary,
+.persona-lab-final-hero:focus-within .persona-lab-logo-body.primary,
+.persona-lab-final-hero:hover .persona-lab-entity-body,
+.persona-lab-final-hero:focus-within .persona-lab-entity-body {
+  filter: drop-shadow(0 0 calc(28px * var(--persona-lab-hover-glow-boost)) color-mix(in srgb, var(--persona-lab-accent) 32%, transparent));
+}
+
+.persona-lab-select-link {
+  color: rgba(255, 233, 210, 0.82);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.persona-lab-birth-card {
+  justify-items: center;
+  text-align: center;
+  padding-block: 2.2rem;
+}
+
+.persona-lab-birth-rail {
+  width: min(100%, 900px);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.8rem;
+  margin: 1.2rem 0 1.4rem;
+}
+
+.persona-lab-birth-act {
+  position: relative;
+  display: grid;
+  gap: 0.28rem;
+  padding: 0.85rem 1rem;
+  border-radius: 18px;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  min-width: 0;
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.persona-lab-birth-act span {
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 223, 198, 0.58);
+}
+
+.persona-lab-birth-act strong {
+  font-size: 0.98rem;
+  color: rgba(255, 246, 238, 0.96);
+}
+
+.persona-lab-birth-act.state-active {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--persona-lab-accent) 16%, transparent), rgba(255, 255, 255, 0.04));
+  border-color: color-mix(in srgb, var(--persona-lab-accent) 38%, rgba(255, 255, 255, 0.1));
+  box-shadow: 0 18px 34px color-mix(in srgb, var(--persona-lab-accent) 10%, rgba(0, 0, 0, 0.18));
+  transform: translateY(-2px);
+}
+
+.persona-lab-birth-act.state-complete {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.persona-lab-birth-visual {
+  --persona-lab-birth-core-emergence-duration: 180ms;
+  --persona-lab-birth-core-emergence-particle-fade-duration: 180ms;
+  --persona-lab-birth-core-emergence-particle-travel-duration: 2200ms;
+  --persona-lab-birth-core-emergence-segment-duration: 180ms;
+  --persona-lab-birth-core-emergence-envelope-delay: 120ms;
+  --persona-lab-birth-core-emergence-core-duration: 180ms;
+  --persona-lab-birth-core-emergence-core-pulse-duration: 1000ms;
+  position: relative;
+  width: min(100%, 920px);
+  display: grid;
+  place-items: center;
+  min-height: 540px;
+  overflow: hidden;
+  border-radius: 34px;
+  padding: 1.4rem;
+  color: rgba(255, 243, 228, 0.84);
+  background:
+    radial-gradient(circle at 50% 22%, color-mix(in srgb, var(--persona-lab-accent) 16%, transparent), transparent 34%),
+    radial-gradient(circle at 50% 76%, rgba(81, 103, 255, 0.12), transparent 52%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(7, 9, 18, 0.18));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 28px 72px rgba(0, 0, 0, 0.28);
+}
+
+.persona-lab-birth-stage-frame {
+  position: absolute;
+  inset: 1rem;
+  border-radius: 28px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.persona-lab-birth-stage-frame::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.04), transparent),
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.02), transparent 68%);
+}
+
+.persona-lab-birth-origin-shell {
+  position: absolute;
+  inset: 18% 26%;
+  display: grid;
+  place-items: center;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02)),
+    rgba(10, 12, 24, 0.18);
+  backdrop-filter: blur(14px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  opacity: 0.78;
+  transform: scale(1);
+  transition:
+    opacity 420ms ease,
+    transform 420ms ease,
+    filter 420ms ease;
+}
+
+.persona-lab-birth-origin-image {
+  width: 72%;
+  height: 72%;
+  object-fit: contain;
+  filter: saturate(0.92) contrast(1.06);
+}
+
+.persona-lab-birth-reading-layer {
+  position: absolute;
+  inset: 12%;
+  opacity: 0;
+  transition: opacity 300ms ease;
+}
+
+.persona-lab-birth-reading-scan {
+  position: absolute;
+  inset-inline: 6%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(255, 249, 238, 0.86), transparent);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--persona-lab-accent) 26%, transparent);
+}
+
+.persona-lab-birth-reading-scan.scan-a {
+  top: 28%;
+}
+
+.persona-lab-birth-reading-scan.scan-b {
+  top: 64%;
+  opacity: 0.62;
+}
+
+.persona-lab-birth-axis {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.persona-lab-birth-axis.axis-horizontal {
+  left: 10%;
+  right: 10%;
+  top: 50%;
+  height: 1px;
+}
+
+.persona-lab-birth-axis.axis-vertical {
+  top: 10%;
+  bottom: 10%;
+  left: 50%;
+  width: 1px;
+}
+
+.persona-lab-birth-contour {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.persona-lab-birth-contour path {
+  fill: none;
+  stroke: rgba(255, 247, 235, 0.68);
+  stroke-width: 1.2;
+  stroke-dasharray: 2.2 4.4;
+  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--persona-lab-accent) 24%, transparent));
+}
+
+.persona-lab-birth-centroid {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  margin-left: -9px;
+  margin-top: -9px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.86);
+  background: radial-gradient(circle, rgba(255, 251, 239, 0.96), color-mix(in srgb, var(--persona-lab-accent) 32%, transparent) 72%);
+  box-shadow: 0 0 24px color-mix(in srgb, var(--persona-lab-accent) 32%, transparent);
+}
+
+.persona-lab-birth-core-cluster {
+  position: absolute;
+  left: var(--persona-lab-birth-core-x, 50%);
+  top: var(--persona-lab-birth-core-y, 50%);
+  width: var(--persona-lab-birth-core-size, 190px);
+  height: var(--persona-lab-birth-core-size, 190px);
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  z-index: 2;
+  transform: translate(-50%, -50%);
+}
+
+.persona-lab-birth-core-halo,
+.persona-lab-birth-core-ring,
+.persona-lab-birth-core-pulse {
+  position: absolute;
+  border-radius: 999px;
+  transition:
+    transform 360ms ease,
+    opacity 360ms ease,
+    filter 360ms ease;
+}
+
+.persona-lab-birth-core-halo {
+  inset: 18%;
+  background: radial-gradient(circle, rgba(255, 250, 238, 0.96) 0 12%, color-mix(in srgb, var(--persona-lab-accent) 80%, rgba(255, 255, 255, 0.34)) 38%, transparent 72%);
+  filter: blur(8px);
+  opacity: 0.24;
+}
+
+.persona-lab-birth-core-ring {
+  inset: 8%;
+  border: 1px solid color-mix(in srgb, var(--persona-lab-accent) 58%, rgba(255, 255, 255, 0.28));
+  box-shadow: 0 0 36px color-mix(in srgb, var(--persona-lab-accent) 14%, transparent);
+  opacity: 0.2;
+}
+
+.persona-lab-birth-core-pulse {
+  inset: 34%;
+  background: radial-gradient(circle, rgba(255, 248, 232, 0.98), color-mix(in srgb, var(--persona-lab-accent) 90%, rgba(255, 255, 255, 0.18)) 52%, transparent 100%);
+  box-shadow:
+    0 0 28px color-mix(in srgb, var(--persona-lab-accent) 34%, transparent),
+    0 0 64px color-mix(in srgb, var(--persona-lab-accent) 18%, transparent);
+  opacity: 0.3;
+}
+
+.persona-lab-birth-hero-caption {
+  position: absolute;
+  left: 1.2rem;
+  right: 1.2rem;
+  bottom: 1.2rem;
+  padding: 1rem 1.05rem 1.05rem;
+  text-align: left;
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+    rgba(6, 8, 17, 0.52);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(12px);
+  max-width: 420px;
+}
+
+.persona-lab-birth-hero-caption strong {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 1.02rem;
+  color: rgba(255, 249, 242, 0.96);
+}
+
+.persona-lab-birth-hero-caption p {
+  margin: 0.45rem 0 0;
+  color: rgba(255, 234, 220, 0.76);
+  line-height: 1.52;
+}
+
+.persona-lab-birth-logo {
+  position: absolute;
+  inset: 18% 20%;
+  display: grid;
+  place-items: center;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.persona-lab-birth-logo-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0.9;
+}
+
+.persona-lab-birth-anatomy {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.persona-lab-birth-anatomy-bounds {
+  fill: transparent;
+  stroke: rgba(222, 233, 255, 0.18);
+  stroke-width: 2;
+  stroke-dasharray: 7 5;
+}
+
+.persona-lab-birth-anatomy-envelope {
+  fill: color-mix(in srgb, var(--persona-lab-accent) 10%, transparent);
+  stroke: rgba(255, 244, 226, 0.76);
+  stroke-width: 2.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 14px color-mix(in srgb, var(--persona-lab-accent) 20%, transparent));
+}
+
+.persona-lab-birth-anatomy-cavity {
+  fill: color-mix(in srgb, #7effb0 14%, transparent);
+  stroke: rgba(126, 255, 176, 0.56);
+  stroke-width: 1.8;
+}
+
+.persona-lab-birth-anatomy-segment {
+  stroke: rgba(255, 214, 145, 0.82);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
+
+.persona-lab-birth-anatomy-anchor {
+  stroke-width: 1.6;
+}
+
+.persona-lab-birth-anatomy-anchor.role-core {
+  fill: rgba(255, 176, 116, 0.22);
+  stroke: rgba(255, 176, 116, 0.96);
+}
+
+.persona-lab-birth-anatomy-anchor.role-axis {
+  fill: rgba(143, 204, 255, 0.28);
+  stroke: rgba(143, 204, 255, 0.94);
+}
+
+.persona-lab-birth-anatomy-anchor.role-edge {
+  fill: rgba(221, 227, 255, 0.22);
+  stroke: rgba(221, 227, 255, 0.88);
+}
+
+.persona-lab-birth-anatomy-anchor.role-emission {
+  fill: rgba(126, 255, 176, 0.24);
+  stroke: rgba(126, 255, 176, 0.94);
+}
+
+.persona-lab-birth-reading-layer,
+.persona-lab-birth-anatomy,
+.persona-lab-birth-anatomy-envelope,
+.persona-lab-birth-anatomy-segment,
+.persona-lab-birth-anatomy-cavity,
+.persona-lab-birth-anatomy-anchor,
+.persona-lab-birth-core-halo,
+.persona-lab-birth-core-ring,
+.persona-lab-birth-core-pulse,
+.persona-lab-birth-origin-shell,
+.persona-lab-birth-particle.anatomy-particle,
+.persona-lab-birth-visual .persona-lab-preview-visual {
+  transition:
+    opacity 260ms ease,
+    transform 320ms ease,
+    filter 320ms ease,
+    stroke-dashoffset 260ms ease;
+}
+
+.persona-lab-birth-anatomy-anchor.role-axis,
+.persona-lab-birth-anatomy-anchor.role-edge,
+.persona-lab-birth-anatomy-anchor.role-emission,
+.persona-lab-birth-anatomy-segment,
+.persona-lab-birth-anatomy-cavity,
+.persona-lab-birth-anatomy-envelope,
+.persona-lab-birth-particle.anatomy-particle {
+  opacity: 0.18;
+}
+
+.persona-lab-birth-particles {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.persona-lab-birth-particle {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(255, 247, 228, 0.96), color-mix(in srgb, var(--persona-lab-accent) 46%, transparent) 68%);
+  opacity: 0;
+  filter: blur(var(--persona-lab-ritual-particle-blur));
+  transform: translate(-50%, -50%);
+}
+
+.persona-lab-birth-particle.anatomy-particle {
+  width: 10px;
+  height: 10px;
+  opacity: 0.18;
+}
+
+.persona-lab-birth-particle.anatomy-particle.role-axis {
+  background: radial-gradient(circle, rgba(236, 246, 255, 0.96), rgba(143, 204, 255, 0.3) 68%, transparent);
+}
+
+.persona-lab-birth-particle.anatomy-particle.role-edge {
+  background: radial-gradient(circle, rgba(250, 252, 255, 0.92), rgba(210, 218, 255, 0.2) 68%, transparent);
+}
+
+.persona-lab-birth-particle.anatomy-particle.role-emission {
+  background: radial-gradient(circle, rgba(244, 255, 247, 0.96), rgba(126, 255, 176, 0.34) 68%, transparent);
+}
+
+.persona-lab-birth-visual.state-transition .persona-lab-birth-particle,
+.persona-lab-birth-visual.phase-convergence .persona-lab-birth-particle {
+  animation: persona-lab-particle-burst 1.4s ease-out forwards;
+  animation-delay: var(--particle-delay);
+}
+
+.persona-lab-birth-particle.particle-1 {
+  --particle-x: -94px;
+  --particle-y: -72px;
+}
+
+.persona-lab-birth-particle.particle-2 {
+  --particle-x: 102px;
+  --particle-y: -68px;
+}
+
+.persona-lab-birth-particle.particle-3 {
+  --particle-x: -112px;
+  --particle-y: 18px;
+}
+
+.persona-lab-birth-particle.particle-4 {
+  --particle-x: 108px;
+  --particle-y: 24px;
+}
+
+.persona-lab-birth-particle.particle-5 {
+  --particle-x: -76px;
+  --particle-y: 94px;
+}
+
+.persona-lab-birth-particle.particle-6 {
+  --particle-x: 86px;
+  --particle-y: 98px;
+}
+
+.persona-lab-birth-particle.particle-7 {
+  --particle-x: -24px;
+  --particle-y: -116px;
+}
+
+.persona-lab-birth-particle.particle-8 {
+  --particle-x: 18px;
+  --particle-y: 122px;
+}
+
+.persona-lab-birth-visual .persona-lab-preview-visual {
+  width: 100%;
+  height: 100%;
+  z-index: 3;
+}
+
+.persona-lab-birth-visual.state-building .persona-lab-preview-visual {
+  filter: saturate(0.78) blur(1px);
+  opacity: 0.22;
+  transform: scale(0.88);
+}
+
+.persona-lab-birth-visual.state-transition .persona-lab-preview-visual {
+  filter: saturate(1.08);
+  opacity: 0.62;
+  transform: scale(0.95);
+}
+
+.persona-lab-birth-visual.state-final .persona-lab-preview-visual {
+  filter: saturate(1.18);
+  opacity: 0.96;
+  transform: scale(1);
+}
+
+.persona-lab-birth-visual.act-origin .persona-lab-birth-origin-shell {
+  opacity: 0.88;
+  transform: scale(1);
+}
+
+.persona-lab-birth-visual.act-origin .persona-lab-birth-reading-layer {
+  opacity: 0.08;
+}
+
+.persona-lab-birth-visual.act-origin .persona-lab-birth-core-halo,
+.persona-lab-birth-visual.act-origin .persona-lab-birth-core-ring,
+.persona-lab-birth-visual.act-origin .persona-lab-birth-core-pulse {
+  opacity: 0.08;
+  transform: scale(0.66);
+}
+
+.persona-lab-birth-visual.act-reading .persona-lab-birth-origin-shell {
+  opacity: 0.7;
+  transform: scale(0.95);
+}
+
+.persona-lab-birth-visual.act-reading .persona-lab-birth-reading-layer {
+  opacity: 0.94;
+}
+
+.persona-lab-birth-visual.act-reading .persona-lab-birth-reading-scan {
+  animation: persona-lab-birth-scan 2.1s ease-in-out infinite;
+}
+
+.persona-lab-birth-visual.act-reading .persona-lab-birth-contour path {
+  stroke-dashoffset: 14;
+  animation: persona-lab-birth-dash 2.4s linear infinite;
+}
+
+.persona-lab-birth-visual.phase-emission .persona-lab-birth-reading-layer {
+  opacity: 0.96;
+}
+
+.persona-lab-birth-visual.phase-emission .persona-lab-birth-origin-shell {
+  opacity: 0.76;
+  transform: scale(0.96);
+}
+
+.persona-lab-birth-visual.phase-emission .persona-lab-birth-anatomy-envelope,
+.persona-lab-birth-visual.phase-emission .persona-lab-birth-anatomy-segment,
+.persona-lab-birth-visual.phase-emission .persona-lab-birth-anatomy-cavity {
+  opacity: 0.12;
+}
+
+.persona-lab-birth-visual.phase-emission .persona-lab-birth-anatomy-anchor.role-emission {
+  opacity: 1;
+  transform: scale(1.18);
+}
+
+.persona-lab-birth-visual.phase-emission .persona-lab-birth-anatomy-anchor.role-axis,
+.persona-lab-birth-visual.phase-emission .persona-lab-birth-anatomy-anchor.role-edge {
+  opacity: 0.34;
+}
+
+.persona-lab-birth-visual.phase-emission .persona-lab-birth-particle.anatomy-particle.role-emission {
+  opacity: 0.92;
+}
+
+.persona-lab-birth-visual.phase-emission .persona-lab-birth-particle.anatomy-particle.role-axis,
+.persona-lab-birth-visual.phase-emission .persona-lab-birth-particle.anatomy-particle.role-edge {
+  opacity: 0.22;
+}
+
+.persona-lab-birth-visual.phase-emission .persona-lab-birth-core-halo,
+.persona-lab-birth-visual.phase-emission .persona-lab-birth-core-ring,
+.persona-lab-birth-visual.phase-emission .persona-lab-birth-core-pulse {
+  opacity: 0.12;
+  transform: scale(0.72);
+}
+
+.persona-lab-birth-visual.state-building .persona-lab-birth-anatomy {
+  opacity: 0.3;
+  transform: scale(0.96);
+}
+
+.persona-lab-birth-visual.state-transition .persona-lab-birth-anatomy {
+  opacity: 0.76;
+}
+
+.persona-lab-birth-visual.state-final .persona-lab-birth-anatomy {
+  opacity: 0.94;
+}
+
+.persona-lab-birth-visual.phase-convergence .persona-lab-birth-reading-layer {
+  opacity: 0.84;
+}
+
+.persona-lab-birth-visual.phase-convergence .persona-lab-birth-origin-shell {
+  opacity: 0.22;
+  transform: scale(0.78);
+  filter: blur(8px);
+}
+
+.persona-lab-birth-visual.phase-convergence .persona-lab-birth-anatomy-segment {
+  opacity: 0.94;
+  stroke-dasharray: 0;
+  animation: persona-lab-birth-dash 1.5s linear infinite;
+}
+
+.persona-lab-birth-visual.phase-convergence .persona-lab-birth-anatomy-anchor.role-axis {
+  opacity: 0.92;
+}
+
+.persona-lab-birth-visual.phase-convergence .persona-lab-birth-anatomy-anchor.role-emission {
+  opacity: 0.56;
+}
+
+.persona-lab-birth-visual.phase-convergence .persona-lab-birth-anatomy-envelope {
+  opacity: 0.24;
+}
+
+.persona-lab-birth-visual.phase-convergence .persona-lab-birth-anatomy-cavity {
+  opacity: 0.4;
+}
+
+.persona-lab-birth-visual.phase-convergence .persona-lab-birth-particle.anatomy-particle {
+  opacity: 0.9;
+}
+
+.persona-lab-birth-visual.phase-convergence .persona-lab-birth-core-halo {
+  opacity: 0.42;
+  transform: scale(0.92);
+}
+
+.persona-lab-birth-visual.phase-convergence .persona-lab-birth-core-ring {
+  opacity: 0.54;
+  transform: scale(0.94);
+}
+
+.persona-lab-birth-visual.phase-convergence .persona-lab-birth-core-pulse {
+  opacity: 0.6;
+  transform: scale(0.9);
+}
+
+.persona-lab-birth-visual.phase-core-emergence .persona-lab-birth-reading-layer {
+  opacity: 0.52;
+  transition-duration: var(--persona-lab-birth-core-emergence-duration);
+}
+
+.persona-lab-birth-visual.phase-core-emergence .persona-lab-birth-origin-shell {
+  opacity: 0.1;
+  transform: scale(0.72);
+  filter: blur(9px);
+  transition-duration: var(--persona-lab-birth-core-emergence-duration);
+}
+
+.persona-lab-birth-visual.phase-core-emergence .persona-lab-birth-anatomy-segment {
+  opacity: 0.48;
+  animation-duration: var(--persona-lab-birth-core-emergence-particle-travel-duration);
+  transition-duration: var(--persona-lab-birth-core-emergence-segment-duration);
+}
+
+.persona-lab-birth-visual.phase-core-emergence .persona-lab-birth-anatomy-envelope {
+  opacity: 0.36;
+  transition-delay: var(--persona-lab-birth-core-emergence-envelope-delay);
+  transition-duration: var(--persona-lab-birth-core-emergence-duration);
+}
+
+.persona-lab-birth-visual.phase-core-emergence .persona-lab-birth-anatomy-cavity {
+  opacity: 0.42;
+  transition-duration: var(--persona-lab-birth-core-emergence-duration);
+}
+
+.persona-lab-birth-visual.phase-core-emergence .persona-lab-birth-anatomy-anchor.role-axis,
+.persona-lab-birth-visual.phase-core-emergence .persona-lab-birth-anatomy-anchor.role-core {
+  opacity: 0.96;
+  transition-duration: var(--persona-lab-birth-core-emergence-duration);
+}
+
+.persona-lab-birth-visual.phase-core-emergence .persona-lab-birth-anatomy-anchor.role-emission,
+.persona-lab-birth-visual.phase-core-emergence .persona-lab-birth-anatomy-anchor.role-edge {
+  opacity: 0.22;
+  transition-duration: var(--persona-lab-birth-core-emergence-duration);
+}
+
+.persona-lab-birth-visual.phase-core-emergence .persona-lab-birth-particle.anatomy-particle {
+  opacity: 0.18;
+  animation-duration: var(--persona-lab-birth-core-emergence-particle-travel-duration);
+  transition-duration: var(--persona-lab-birth-core-emergence-particle-fade-duration);
+}
+
+.persona-lab-birth-visual.phase-core-emergence .persona-lab-birth-core-halo {
+  opacity: 0.84;
+  transform: scale(1.08);
+  filter: blur(10px);
+  transition-duration: var(--persona-lab-birth-core-emergence-core-duration);
+}
+
+.persona-lab-birth-visual.phase-core-emergence .persona-lab-birth-core-ring {
+  opacity: 0.82;
+  transform: scale(1.02);
+  transition-duration: var(--persona-lab-birth-core-emergence-core-duration);
+}
+
+.persona-lab-birth-visual.phase-core-emergence .persona-lab-birth-core-pulse {
+  opacity: 0.98;
+  transform: scale(0.98);
+  animation: persona-lab-birth-core-impact var(--persona-lab-birth-core-emergence-core-pulse-duration) ease-in-out infinite;
+  transition-duration: var(--persona-lab-birth-core-emergence-core-duration);
+}
+
+.persona-lab-birth-visual.act-metamorphosis .persona-lab-birth-origin-shell {
+  opacity: 0.22;
+  transform: scale(0.76);
+  filter: blur(8px);
+}
+
+.persona-lab-birth-visual.act-metamorphosis .persona-lab-birth-reading-layer {
+  opacity: 0.78;
+}
+
+.persona-lab-birth-visual.act-metamorphosis .persona-lab-birth-core-halo {
+  opacity: 0.76;
+  transform: scale(1.18);
+}
+
+.persona-lab-birth-visual.act-metamorphosis .persona-lab-birth-core-ring {
+  opacity: 0.72;
+  transform: scale(1.1);
+}
+
+.persona-lab-birth-visual.act-metamorphosis .persona-lab-birth-core-pulse {
+  opacity: 0.96;
+  transform: scale(1.18);
+  animation: persona-lab-birth-core-impact 1.2s ease-in-out infinite;
+}
+
+.persona-lab-birth-visual.phase-incarnation .persona-lab-birth-reading-layer {
+  opacity: 0.26;
+}
+
+.persona-lab-birth-visual.phase-incarnation .persona-lab-birth-origin-shell {
+  opacity: 0.06;
+  transform: scale(0.68);
+  filter: blur(10px);
+}
+
+.persona-lab-birth-visual.phase-incarnation .persona-lab-birth-anatomy-envelope {
+  opacity: 0.94;
+}
+
+.persona-lab-birth-visual.phase-incarnation .persona-lab-birth-anatomy-segment {
+  opacity: 0.28;
+}
+
+.persona-lab-birth-visual.phase-incarnation .persona-lab-birth-anatomy-anchor.role-core,
+.persona-lab-birth-visual.phase-incarnation .persona-lab-birth-anatomy-anchor.role-axis {
+  opacity: 0.88;
+}
+
+.persona-lab-birth-visual.phase-incarnation .persona-lab-birth-anatomy-anchor.role-emission,
+.persona-lab-birth-visual.phase-incarnation .persona-lab-birth-anatomy-anchor.role-edge,
+.persona-lab-birth-visual.phase-incarnation .persona-lab-birth-particle.anatomy-particle {
+  opacity: 0.08;
+}
+
+.persona-lab-birth-visual.phase-incarnation .persona-lab-birth-anatomy-cavity {
+  opacity: 0.52;
+}
+
+.persona-lab-birth-visual.phase-incarnation .persona-lab-birth-core-halo {
+  opacity: 0.96;
+  transform: scale(1.24);
+  filter: blur(12px);
+}
+
+.persona-lab-birth-visual.phase-incarnation .persona-lab-birth-core-ring {
+  opacity: 0.88;
+  transform: scale(1.12);
+}
+
+.persona-lab-birth-visual.phase-incarnation .persona-lab-birth-core-pulse {
+  opacity: 1;
+  transform: scale(1);
+  animation: persona-lab-birth-core-live 1.7s ease-in-out infinite;
+}
+
+.persona-lab-birth-visual.act-incarnation .persona-lab-birth-origin-shell {
+  opacity: 0.06;
+  transform: scale(0.68);
+  filter: blur(10px);
+}
+
+.persona-lab-birth-visual.act-incarnation .persona-lab-birth-reading-layer {
+  opacity: 0.34;
+}
+
+.persona-lab-birth-visual.act-incarnation .persona-lab-birth-core-halo {
+  opacity: 0.92;
+  transform: scale(1.28);
+  filter: blur(12px);
+}
+
+.persona-lab-birth-visual.act-incarnation .persona-lab-birth-core-ring {
+  opacity: 0.84;
+  transform: scale(1.2);
+}
+
+.persona-lab-birth-visual.act-incarnation .persona-lab-birth-core-pulse {
+  opacity: 1;
+  transform: scale(1);
+  animation: persona-lab-birth-core-live 1.7s ease-in-out infinite;
+}
+
+.persona-lab-birth-meta {
+  width: min(100%, 900px);
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.persona-lab-birth-copy-card {
+  min-width: 0;
+  padding: 1rem 1.05rem 1.1rem;
+  text-align: left;
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
+    rgba(9, 11, 22, 0.44);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.persona-lab-birth-copy-card--signal {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--persona-lab-accent) 8%, transparent), rgba(255, 255, 255, 0.02)),
+    rgba(9, 11, 22, 0.44);
+}
+
+.persona-lab-birth-message {
+  margin: 0.36rem 0 0;
+  font-size: 1rem;
+  line-height: 1.65;
+  color: rgba(255, 237, 224, 0.86);
+}
+
+.persona-lab-birth-signal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-top: 0.5rem;
+}
+
+.persona-lab-birth-signal-grid span {
+  padding: 0.58rem 0.68rem;
+  border-radius: 14px;
+  font-size: 0.84rem;
+  color: rgba(255, 243, 231, 0.82);
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.persona-lab-birth-core {
+  position: absolute;
+  inset: auto;
+  width: 132px;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle, rgba(255, 248, 223, 0.95) 0 12%, rgba(255, 148, 96, 0.9) 18%, rgba(143, 107, 255, 0.55) 42%, transparent 70%);
+  box-shadow: 0 0 36px rgba(255, 148, 96, 0.3), 0 0 72px rgba(143, 107, 255, 0.24);
+  animation: persona-lab-birth-core-live 1.7s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.persona-lab-fusion-stage.mode-centelha .persona-lab-fusion-logo {
+  border-style: dashed;
+  box-shadow: 0 0 24px color-mix(in srgb, var(--persona-lab-accent) 12%, transparent);
+}
+
+.persona-lab-fusion-stage.mode-elemental .persona-lab-fusion-plus {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--persona-lab-accent) 22%, transparent), rgba(255, 255, 255, 0.03));
+}
+
+.persona-lab-fusion-stage.mode-natureza .persona-lab-selected-preview {
+  background:
+    radial-gradient(circle at top right, rgba(126, 212, 177, 0.14), transparent 34%),
+    rgba(255, 255, 255, 0.03);
+}
+
+.persona-lab-fusion-stage.mode-robo-ia .persona-lab-selected-preview {
+  background:
+    linear-gradient(180deg, rgba(115, 146, 255, 0.08), transparent 34%),
+    rgba(255, 255, 255, 0.03);
+}
+
+.persona-lab-fusion-stage.intensity-soft .persona-lab-selected-preview {
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.14);
+}
+
+.persona-lab-fusion-stage.intensity-cinematic .persona-lab-selected-preview {
+  box-shadow: 0 22px 58px color-mix(in srgb, var(--persona-lab-accent) 12%, rgba(0, 0, 0, 0.2));
+}
+
+@keyframes persona-lab-fusion-logo-drift {
+  0%,
+  100% {
+    transform: translateY(calc(var(--persona-lab-fusion-lift) * -0.18px)) scale(calc(0.96 + var(--persona-lab-fusion-coupling) * 0.1));
+  }
+
+  50% {
+    transform: translateY(calc(var(--persona-lab-fusion-lift) * -0.3px - var(--persona-lab-fusion-fracture) * 3px)) scale(calc(0.98 + var(--persona-lab-fusion-coupling) * 0.12));
+  }
+}
+
+@keyframes persona-lab-fusion-plus-pulse {
+  0%,
+  100% {
+    transform: scale(calc(0.92 + var(--persona-lab-fusion-coupling) * 0.16));
+  }
+
+  50% {
+    transform: scale(calc(0.96 + var(--persona-lab-fusion-coupling) * 0.2 + var(--persona-lab-fusion-core-presence) * 0.04));
+  }
+}
+
+@keyframes persona-lab-birth-scan {
+  0%,
+  100% {
+    transform: translateY(-10px);
+    opacity: 0.38;
+  }
+
+  50% {
+    transform: translateY(10px);
+    opacity: 0.96;
+  }
+}
+
+@keyframes persona-lab-birth-dash {
+  from {
+    stroke-dashoffset: 16;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes persona-lab-birth-core-impact {
+  0%,
+  100% {
+    transform: scale(1.08);
+    filter: blur(0);
+  }
+
+  50% {
+    transform: scale(1.28);
+    filter: blur(1px);
+  }
+}
+
+@container (max-width: 860px) {
+  .persona-lab-birth-rail,
+  .persona-lab-birth-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .persona-lab-birth-visual {
+    min-height: 480px;
+  }
+
+  .persona-lab-birth-origin-shell {
+    inset: 16% 18%;
+  }
+}
+
+@container (max-width: 560px) {
+  .persona-lab-birth-visual {
+    min-height: 420px;
+    padding: 1rem;
+  }
+
+  .persona-lab-birth-stage-frame {
+    inset: 0.7rem;
+  }
+
+  .persona-lab-birth-origin-shell {
+    inset: 16% 10%;
+  }
+
+  .persona-lab-birth-hero-caption {
+    left: 0.8rem;
+    right: 0.8rem;
+    bottom: 0.8rem;
+    max-width: none;
+  }
+
+  .persona-lab-birth-signal-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.persona-lab-birth-visual.mode-centelha .persona-lab-birth-core {
+  background:
+    radial-gradient(circle, rgba(255, 249, 236, 0.96) 0 10%, rgba(255, 183, 112, 0.78) 20%, rgba(161, 111, 255, 0.48) 44%, transparent 72%);
+  box-shadow: 0 0 32px rgba(255, 170, 116, 0.28), 0 0 76px rgba(160, 116, 255, 0.2);
+}
+
+.persona-lab-birth-visual.mode-centelha .persona-lab-birth-particle {
+  background: radial-gradient(circle, rgba(255, 249, 235, 0.96), color-mix(in srgb, var(--persona-lab-accent) 58%, transparent) 68%);
+}
+
+.persona-lab-birth-visual.mode-elemental.variant-agua .persona-lab-birth-core {
+  background:
+    radial-gradient(circle, rgba(244, 251, 255, 0.96) 0 10%, rgba(119, 214, 255, 0.72) 24%, rgba(90, 136, 255, 0.34) 48%, transparent 72%);
+  box-shadow: 0 0 34px rgba(110, 199, 255, 0.26), 0 0 74px rgba(74, 149, 255, 0.16);
+}
+
+.persona-lab-birth-visual.mode-elemental.variant-fogo .persona-lab-birth-core {
+  background:
+    radial-gradient(circle, rgba(255, 249, 236, 0.96) 0 10%, rgba(255, 164, 92, 0.92) 22%, rgba(255, 90, 60, 0.52) 44%, transparent 72%);
+  box-shadow: 0 0 42px rgba(255, 128, 84, 0.28), 0 0 84px rgba(255, 98, 60, 0.2);
+}
+
+.persona-lab-birth-visual.mode-elemental.variant-terra .persona-lab-birth-core {
+  background:
+    radial-gradient(circle, rgba(252, 246, 233, 0.96) 0 10%, rgba(201, 170, 128, 0.76) 24%, rgba(119, 92, 68, 0.34) 48%, transparent 72%);
+  box-shadow: 0 0 30px rgba(181, 144, 102, 0.24), 0 0 62px rgba(123, 95, 72, 0.14);
+}
+
+.persona-lab-birth-visual.mode-elemental.variant-ar .persona-lab-birth-core {
+  background:
+    radial-gradient(circle, rgba(255, 251, 244, 0.96) 0 10%, rgba(210, 235, 255, 0.7) 22%, rgba(128, 176, 255, 0.28) 42%, transparent 72%);
+  box-shadow: 0 0 26px rgba(203, 229, 255, 0.24), 0 0 68px rgba(126, 170, 255, 0.14);
+}
+
+.persona-lab-birth-visual.mode-natureza .persona-lab-birth-core {
+  background:
+    radial-gradient(circle, rgba(250, 249, 238, 0.96) 0 10%, rgba(148, 223, 173, 0.76) 22%, rgba(82, 171, 124, 0.32) 46%, transparent 72%);
+  box-shadow: 0 0 34px rgba(144, 216, 167, 0.24), 0 0 72px rgba(75, 153, 107, 0.18);
+}
+
+.persona-lab-birth-visual.mode-natureza .persona-lab-birth-particle {
+  border-radius: 40% 60% 48% 52%;
+}
+
+.persona-lab-birth-visual.mode-robo-ia .persona-lab-birth-core {
+  background:
+    radial-gradient(circle, rgba(247, 251, 255, 0.96) 0 10%, rgba(146, 174, 255, 0.76) 22%, rgba(88, 113, 214, 0.32) 46%, transparent 72%);
+  box-shadow: 0 0 30px rgba(123, 154, 255, 0.22), 0 0 70px rgba(88, 110, 214, 0.18);
+}
+
+.persona-lab-birth-visual.mode-robo-ia .persona-lab-birth-stroke {
+  color: rgba(198, 214, 255, 0.9);
+}
+
+.persona-lab-birth-visual.mode-robo-ia::before {
+  content: '';
+  position: absolute;
+  inset: 16% 12%;
+  border-radius: 24px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent 22%),
+    linear-gradient(90deg, transparent 0 18%, rgba(255, 255, 255, 0.05) 18% 19%, transparent 19% 39%, rgba(255, 255, 255, 0.04) 39% 40%, transparent 40% 100%);
+  opacity: 0.36;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.persona-lab-birth-visual.intensity-soft .persona-lab-birth-core {
+  transform: scale(0.92);
+}
+
+.persona-lab-birth-visual.intensity-soft .persona-lab-birth-particle {
+  --persona-lab-ritual-particle-blur: 0.8px;
+}
+
+.persona-lab-birth-visual.intensity-cinematic .persona-lab-birth-core {
+  transform: scale(1.08);
+}
+
+.persona-lab-birth-visual.intensity-cinematic .persona-lab-birth-particle {
+  --persona-lab-ritual-particle-blur: 1.4px;
+}
+
+.persona-lab-birth-stroke {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.persona-lab-palette {
+  display: flex;
+  gap: 0.55rem;
+}
+
+.persona-lab-swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.persona-lab-birth-message {
+  font-size: 1rem;
+  color: rgba(255, 241, 226, 0.9);
+}
+
+.persona-lab-final-hero {
+  --persona-lab-final-rhythm: 1;
+  --persona-lab-final-containment: 0.56;
+  --persona-lab-final-discipline: 0.6;
+  --persona-lab-final-core-presence: 0.66;
+  --persona-lab-final-field-presence: 0.48;
+  --persona-lab-final-occupancy: 0.58;
+  --persona-lab-final-posture-lift: 8;
+  --persona-lab-final-stability: 0.72;
+  display: grid;
+  gap: 1rem;
+  justify-items: center;
+  padding: 1.65rem 1.45rem 1.35rem;
+  border-radius: 30px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255, 148, 96, 0.08), transparent 30%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.036), rgba(255, 255, 255, 0.018));
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.28);
+}
+
+.persona-lab-final-hero .persona-lab-preview-visual {
+  width: min(100%, 440px);
+  min-height: 320px;
+  animation: persona-lab-hover-breathe 7.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  transform: translateY(calc(var(--persona-lab-final-posture-lift) * -1px));
+  filter: saturate(calc(0.94 + var(--persona-lab-final-discipline) * 0.18)) contrast(calc(0.96 + var(--persona-lab-final-stability) * 0.08));
+}
+
+.persona-lab-final-hero .persona-lab-entity-core-shell,
+.persona-lab-final-hero .persona-lab-entity-core,
+.persona-lab-final-hero .persona-lab-entity-core-glow,
+.persona-lab-final-hero .persona-lab-entity-core-ring {
+  opacity: calc(0.62 + var(--persona-lab-final-core-presence) * 0.36);
+}
+
+.persona-lab-final-hero .persona-lab-entity-aura,
+.persona-lab-final-hero .persona-lab-entity-aura-ring {
+  opacity: calc(0.24 + var(--persona-lab-final-field-presence) * 0.34);
+}
+
+.persona-lab-final-hero .persona-lab-logo-body-shell {
+  filter: blur(calc((1 - var(--persona-lab-final-containment)) * 1.2px));
+}
+
+.persona-lab-final-hero .persona-lab-entity-body,
+.persona-lab-final-hero .persona-lab-logo-body.primary {
+  stroke-width: calc(1.2px + var(--persona-lab-final-discipline) * 0.9px);
+}
+
+.persona-lab-final-quote {
+  margin: 0;
+  color: rgba(255, 245, 235, 0.94);
+  font-family: var(--font-display);
+  font-size: clamp(1.4rem, 3vw, 2rem);
+  letter-spacing: -0.02em;
+}
+
+.persona-lab-final-impact-copy {
+  max-width: 560px;
+  margin: -0.3rem 0 0;
+  color: rgba(246, 239, 229, 0.74);
+  text-align: center;
+  line-height: 1.55;
+}
+
+.persona-lab-final-signal-strip {
+  margin-top: 0.1rem;
+}
+
+.persona-lab-final-name {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 4vw, 2.8rem);
+  letter-spacing: -0.04em;
+  color: rgba(255, 247, 238, 0.98);
+}
+
+.persona-lab-tone-keywords {
+  color: rgba(255, 234, 214, 0.74);
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+}
+
+.persona-lab-naming-rationale {
+  color: rgba(241, 228, 211, 0.68);
+}
+
+.persona-lab-final-card--signal {
+  background:
+    radial-gradient(circle at top right, color-mix(in srgb, var(--persona-lab-accent) 14%, transparent), transparent 38%),
+    rgba(255, 255, 255, 0.03);
+}
+
+.persona-lab-final-card-note {
+  margin-top: -0.1rem;
+  color: rgba(240, 231, 219, 0.72);
+}
+
+.persona-lab-final-signal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.persona-lab-final-signal-grid span {
+  padding: 0.58rem 0.68rem;
+  border-radius: 14px;
+  font-size: 0.84rem;
+  color: rgba(255, 243, 231, 0.82);
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.persona-lab-social-section {
+  display: grid;
+  gap: 1rem;
+}
+
+.persona-lab-social-copy {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.persona-lab-social-copy h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.25rem, 3vw, 1.8rem);
+}
+
+.persona-lab-social-copy p {
+  max-width: 58rem;
+}
+
+.persona-lab-social-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.persona-lab-social-card {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem;
+  border-radius: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(circle at top right, rgba(255, 148, 96, 0.08), transparent 38%),
+    rgba(255, 255, 255, 0.03);
+}
+
+.persona-lab-social-preview {
+  overflow: hidden;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(5, 7, 13, 0.86);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
+}
+
+.persona-lab-social-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.persona-lab-social-preview.format-post {
+  aspect-ratio: 1;
+}
+
+.persona-lab-social-preview.format-story {
+  aspect-ratio: 9 / 16;
+  max-height: 540px;
+}
+
+.persona-lab-social-meta {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.persona-lab-social-meta div {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.persona-lab-social-meta strong {
+  font-size: 1rem;
+  color: rgba(249, 250, 255, 0.95);
+}
+
+.persona-lab-output-actions {
+  justify-content: center;
+}
+
+.persona-lab-output-actions .persona-toggle {
+  min-width: 184px;
+}
+
+.persona-lab-export-moment {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1.25rem;
+  padding: 1.25rem;
+  border-radius: 28px;
+  border: 1px solid rgba(255, 181, 116, 0.22);
+  background:
+    radial-gradient(circle at 12% 0%, rgba(255, 148, 96, 0.18), transparent 34%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.018));
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.22);
+}
+
+.persona-lab-export-moment > div:first-child {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: center;
+  text-align: center;
+}
+
+.persona-lab-export-moment strong {
+  color: rgba(255, 248, 241, 0.98);
+  font-family: var(--font-display);
+  font-size: clamp(1.35rem, 2.6vw, 2rem);
+  letter-spacing: -0.035em;
+}
+
+.persona-lab-export-moment p {
+  max-width: 560px;
+  margin: 0;
+  color: rgba(245, 238, 229, 0.72);
+  line-height: 1.55;
+}
+
+@keyframes persona-lab-pulse {
+  0%,
+  100% {
+    transform: scale(0.96);
+    opacity: 0.88;
+  }
+
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+}
+
+@keyframes persona-lab-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes persona-lab-pulse-card {
+  0%,
+  100% {
+    transform: scale(0.96);
+    opacity: 0.9;
+  }
+
+  50% {
+    transform: scale(1.06);
+    opacity: 1;
+  }
+}
+
+@keyframes persona-lab-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(-18deg);
+  }
+
+  50% {
+    transform: translate3d(-10px, -6px, 0) rotate(-10deg);
+  }
+}
+
+@keyframes persona-lab-hover-breathe {
+  0%,
+  100% {
+    transform: scale(0.985);
+  }
+
+  35% {
+    transform: scale(1.012) translateY(-2px);
+  }
+
+  50% {
+    transform: scale(1.02) translateY(-1px);
+  }
+
+  72% {
+    transform: scale(0.996) translateY(1px);
+  }
+}
+
+@keyframes persona-lab-particle-burst {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.4);
+  }
+
+  18% {
+    opacity: 0.96;
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(calc(-50% + var(--particle-x)), calc(-50% + var(--particle-y))) scale(0.08);
+  }
+}
+
+@keyframes persona-lab-birth-core-live {
+  0%,
+  100% {
+    transform: scale(0.92);
+    opacity: 0.74;
+    filter: blur(0px);
+  }
+
+  40% {
+    transform: scale(1.08);
+    opacity: 1;
+    filter: blur(0.2px);
+  }
+
+  65% {
+    transform: scale(1.01);
+    opacity: 0.88;
+  }
+}
+
+@keyframes persona-lab-centelha-core {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(0.96);
+    opacity: 0.86;
+  }
+
+  38% {
+    transform: translate(-50%, -50%) scale(1.08);
+    opacity: 1;
+  }
+
+  62% {
+    transform: translate(-50%, -50%) scale(1.02);
+    opacity: 0.92;
+  }
+}
+
+@keyframes persona-lab-centelha-field {
+  0%,
+  100% {
+    transform: scale(0.98);
+    opacity: 0.92;
+  }
+
+  50% {
+    transform: scale(1.04);
+    opacity: 1;
+  }
+}
+
+@keyframes persona-lab-fire-flicker {
+  0%,
+  100% {
+    transform: translateY(0) scaleY(0.98);
+    opacity: 0.9;
+  }
+
+  45% {
+    transform: translateY(-4px) scaleY(1.08);
+    opacity: 1;
+  }
+
+  70% {
+    transform: translateY(-2px) scaleY(1.02);
+    opacity: 0.92;
+  }
+}
+
+@keyframes persona-lab-water-current {
+  0%,
+  100% {
+    transform: translateX(0) translateY(0);
+    opacity: 0.82;
+  }
+
+  50% {
+    transform: translateX(6px) translateY(4px);
+    opacity: 1;
+  }
+}
+
+@keyframes persona-lab-earth-dust {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 0.72;
+  }
+
+  50% {
+    transform: translateY(-1px) scale(1.01);
+    opacity: 0.84;
+  }
+}
+
+@keyframes persona-lab-air-sweep {
+  0%,
+  100% {
+    transform: translateX(-2px) translateY(0);
+    opacity: 0.72;
+  }
+
+  50% {
+    transform: translateX(10px) translateY(-4px);
+    opacity: 0.92;
+  }
+}
+
+@keyframes persona-lab-pollen-drift {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 0.74;
+  }
+
+  35% {
+    transform: translateY(-4px) translateX(3px) scale(1.02);
+    opacity: 0.88;
+  }
+
+  70% {
+    transform: translateY(-2px) translateX(-2px) scale(0.99);
+    opacity: 0.8;
+  }
+}
+
+@keyframes persona-lab-scan-sweep {
+  0%,
+  100% {
+    transform: translateX(-3px);
+    opacity: 0.7;
+  }
+
+  50% {
+    transform: translateX(6px);
+    opacity: 0.94;
+  }
+}
+
+@keyframes persona-lab-float-entity {
+  0%,
+  100% {
+    transform: translateY(0) rotate(var(--persona-lab-body-rotate)) skewX(var(--persona-lab-body-skew)) scale(var(--persona-lab-body-scale));
+  }
+
+  50% {
+    transform: translateY(calc(-6px * var(--persona-lab-motion-amplitude))) rotate(calc(var(--persona-lab-body-rotate) + 2deg)) skewX(var(--persona-lab-body-skew)) scale(calc(var(--persona-lab-body-scale) * var(--persona-lab-body-breath-scale)));
+  }
+}
+
+@keyframes persona-lab-pulse-entity {
+  0%,
+  100% {
+    transform: rotate(var(--persona-lab-body-rotate)) skewX(var(--persona-lab-body-skew)) scale(var(--persona-lab-body-scale));
+  }
+
+  50% {
+    transform: rotate(calc(var(--persona-lab-body-rotate) + 4deg)) skewX(var(--persona-lab-body-skew)) scale(calc(var(--persona-lab-body-scale) * var(--persona-lab-body-breath-scale)));
+  }
+}
+
+@keyframes persona-lab-drift-entity {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(var(--persona-lab-body-rotate)) skewX(var(--persona-lab-body-skew)) scale(var(--persona-lab-body-scale));
+  }
+
+  50% {
+    transform: translate3d(calc(-5px * var(--persona-lab-motion-amplitude)), calc(-4px * var(--persona-lab-motion-amplitude)), 0) rotate(calc(var(--persona-lab-body-rotate) + 3deg)) skewX(var(--persona-lab-body-skew)) scale(calc(var(--persona-lab-body-scale) * var(--persona-lab-body-breath-scale)));
+  }
+}
+
+@keyframes persona-lab-core-pulse {
+  0%,
+  100% {
+    opacity: 0.8;
+    transform: scale(0.96);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes persona-lab-core-pulse-strong {
+  0%,
+  100% {
+    opacity: 0.84;
+    transform: scale(0.94);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes persona-lab-core-focus {
+  0%,
+  100% {
+    opacity: 0.9;
+    transform: scale(0.98);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.03);
+  }
+}
+
+@keyframes persona-lab-pulse-inner-shift {
+  0%,
+  100% {
+    transform: rotate(8deg) translate(4px, -3px) scale(1);
+  }
+
+  50% {
+    transform: rotate(11deg) translate(8px, -6px) scale(1.03);
+  }
+}
+
+@keyframes persona-lab-drift-inner-breathe {
+  0%,
+  100% {
+    transform: rotate(-8deg) translateY(-1px) scale(1);
+  }
+
+  50% {
+    transform: rotate(-5deg) translateY(-4px) scale(1.02);
+  }
+}
+
+@keyframes persona-lab-logo-float {
+  0%,
+  100% {
+    transform: rotate(-6deg) scale(0.98);
+  }
+
+  50% {
+    transform: rotate(-4deg) translateY(-5px) scale(1.01);
+  }
+}
+
+@keyframes persona-lab-logo-sheen {
+  0%,
+  100% {
+    opacity: 0.78;
+    transform: translateY(2px) scale(0.92);
+  }
+
+  50% {
+    opacity: 0.94;
+    transform: translateY(-2px) scale(0.95);
+  }
+}
+
+@keyframes persona-lab-logo-pulse {
+  0%,
+  100% {
+    transform: rotate(12deg) scale(1.04);
+  }
+
+  50% {
+    transform: rotate(16deg) scale(1.08);
+  }
+}
+
+@keyframes persona-lab-logo-flare {
+  0%,
+  100% {
+    opacity: 0.82;
+    transform: rotate(18deg) translate(8px, -5px) scale(0.92);
+  }
+
+  50% {
+    opacity: 0.98;
+    transform: rotate(24deg) translate(11px, -9px) scale(0.97);
+  }
+}
+
+@keyframes persona-lab-logo-drift {
+  0%,
+  100% {
+    transform: rotate(4deg) scale(0.99);
+  }
+
+  50% {
+    transform: rotate(6deg) translate3d(-4px, -3px, 0) scale(1.02);
+  }
+}
+
+@keyframes persona-lab-aura-breathe {
+  0%,
+  100% {
+    opacity: 0.84;
+    transform: scale(1.02);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+
+@keyframes persona-lab-aura-throb {
+  0%,
+  100% {
+    opacity: 0.82;
+    transform: scale(1.01);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.09);
+  }
+}
+
+@keyframes persona-lab-aura-focus {
+  0%,
+  100% {
+    opacity: 0.74;
+    transform: scale(1.01);
+  }
+
+  50% {
+    opacity: 0.9;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes persona-lab-noise-drift {
+  0%,
+  100% {
+    opacity: 0.34;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+
+  50% {
+    opacity: 0.48;
+    transform: translate3d(2px, -3px, 0) scale(1.02);
+  }
+}
+
+@keyframes persona-lab-noise-flicker {
+  0%,
+  100% {
+    opacity: 0.32;
+    transform: scale(1);
+  }
+
+  30% {
+    opacity: 0.46;
+  }
+
+  60% {
+    opacity: 0.38;
+    transform: scale(1.03);
+  }
+}
+
+@media (max-width: 900px) {
+  .persona-lab-shell {
+    padding: 1.1rem;
+  }
+
+  .persona-lab-panel {
+    padding: 1.2rem;
+    border-radius: 28px;
+  }
+
+  .persona-lab-hero-grid,
+  .persona-lab-manifestation-grid,
+  .persona-lab-preview-grid,
+  .persona-lab-final-grid,
+  .persona-lab-social-grid,
+  .persona-lab-social-entity-list {
+    grid-template-columns: 1fr;
+  }
+
+  .persona-lab-stage-rail {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .persona-lab-live-panel {
+    position: static;
+  }
+
+  .persona-lab-live-preview {
+    min-height: 280px;
+  }
+
+  .persona-lab-logo-preview,
+  .persona-lab-logo-preview.compact {
+    grid-template-columns: 1fr;
+  }
+
+  .persona-lab-choice-grid,
+  .persona-lab-choice-row {
+    grid-template-columns: 1fr;
+  }
+
+  .persona-lab-social-preview.format-story {
+    max-height: none;
+  }
+
+  .persona-lab-final-hero .persona-lab-preview-visual {
+    width: min(100%, 300px);
+  }
+}
+
+@media (max-width: 560px) {
+  .persona-lab-stage-rail {
+    grid-template-columns: 1fr;
+  }
+
+  .persona-lab-title {
+    max-width: 13ch;
+  }
+
+  .persona-lab-live-preview {
+    min-height: 240px;
+    padding: 0.8rem;
+  }
+
+  .persona-lab-card,
+  .persona-lab-live-panel {
+    padding: 1rem;
+  }
+}

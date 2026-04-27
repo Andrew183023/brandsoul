@@ -1,0 +1,73 @@
+.conversation-thread .conversation-thread__message {
+  width: min(86%, 42rem);
+}
+
+.conversation-thread .conversation-thread__message--user {
+  justify-self: end;
+}
+
+.conversation-thread .conversation-thread__message--lawyer {
+  justify-self: start;
+}
+
+.conversation-thread .conversation-thread__message--system {
+  justify-self: center;
+  width: min(92%, 46rem);
+}
+
+.conversation-thread .conversation-thread__message--pending {
+  opacity: 0.82;
+  border-style: dashed;
+}
+
+.timeline-list {
+  display: grid;
+  gap: 12px;
+}
+
+.timeline-list__content {
+  display: grid;
+  gap: 8px;
+}
+
+.timeline-list__event {
+  justify-self: start;
+  padding: 0.22rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: rgba(95, 73, 46, 0.08);
+  color: #5f492e;
+}
+
+.timeline-list__event--created {
+  background: rgba(55, 93, 170, 0.12);
+  color: #375daa;
+}
+
+.timeline-list__event--assigned {
+  background: rgba(126, 88, 173, 0.14);
+  color: #70459e;
+}
+
+.timeline-list__event--responded {
+  background: rgba(42, 124, 92, 0.14);
+  color: #206748;
+}
+
+.timeline-list__event--closed {
+  background: rgba(132, 58, 52, 0.14);
+  color: #8a302b;
+}
+
+.timeline-list__event--monetization {
+  background: rgba(176, 126, 36, 0.16);
+  color: #8f6110;
+}
+
+.timeline-list__event--updated {
+  background: rgba(95, 73, 46, 0.08);
+  color: #5f492e;
+}

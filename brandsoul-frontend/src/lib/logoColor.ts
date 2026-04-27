@@ -1,14 +1,5 @@
 const logoColorCache = new Map<string, string | undefined>()
-
-function clampColorChannel(value: number) {
-  return Math.max(0, Math.min(255, Math.round(value)))
-}
-
-function rgbToHex(red: number, green: number, blue: number) {
-  return `#${[red, green, blue]
-    .map((channel) => clampColorChannel(channel).toString(16).padStart(2, '0'))
-    .join('')}`
-}
+import { analyzeRasterPalette } from '../domain/identity/processing/rasterPalette'
 
 export async function extractDominantLogoColor(imageSrc?: string): Promise<string | undefined> {
   if (!imageSrc?.trim()) {
@@ -39,29 +30,14 @@ export async function extractDominantLogoColor(imageSrc?: string): Promise<strin
         context.drawImage(image, 0, 0, sampleSize, sampleSize)
 
         const { data } = context.getImageData(0, 0, sampleSize, sampleSize)
-        let redTotal = 0
-        let greenTotal = 0
-        let blueTotal = 0
-        let visiblePixels = 0
+        const palette = analyzeRasterPalette({ data, width: sampleSize, height: sampleSize })
 
-        for (let index = 0; index < data.length; index += 4) {
-          const alpha = data[index + 3]
-          if (alpha < 24) {
-            continue
-          }
-
-          redTotal += data[index]
-          greenTotal += data[index + 1]
-          blueTotal += data[index + 2]
-          visiblePixels += 1
-        }
-
-        if (visiblePixels === 0) {
+        if (!palette) {
           resolve(undefined)
           return
         }
 
-        resolve(rgbToHex(redTotal / visiblePixels, greenTotal / visiblePixels, blueTotal / visiblePixels))
+        resolve(palette.primaryColor)
       }
 
       image.onerror = () => resolve(undefined)

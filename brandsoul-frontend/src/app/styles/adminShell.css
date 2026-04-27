@@ -1,0 +1,267 @@
+.entity-console-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  background: var(--bg);
+  color: var(--text-primary);
+}
+
+.entity-console-shell__sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  padding: 1.5rem 1.1rem;
+  display: grid;
+  align-content: start;
+  gap: 1.4rem;
+  background: var(--bg-soft);
+  border-right: 1px solid var(--card-border);
+}
+
+.entity-console-shell__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.85rem;
+  color: inherit;
+  text-decoration: none;
+}
+
+.entity-console-shell__brand-mark {
+  width: 2.35rem;
+  height: 2.35rem;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--card-border);
+  color: #fff9f3;
+  box-shadow: none;
+}
+
+.entity-console-shell__brand-copy {
+  display: grid;
+  gap: 0.08rem;
+}
+
+.entity-console-shell__brand-copy strong {
+  font-size: 1rem;
+  letter-spacing: -0.02em;
+}
+
+.entity-console-shell__brand-copy span {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.entity-console-shell__entity-meta {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.95rem 1rem;
+  border-radius: 12px;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+}
+
+.entity-console-shell__entity-kicker,
+.entity-console-shell__kicker {
+  margin: 0;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.76rem;
+}
+
+.entity-console-shell__entity-meta strong {
+  font-size: 1rem;
+}
+
+.entity-console-shell__entity-meta span:last-child {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  word-break: break-word;
+}
+
+.entity-console-shell__nav {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.entity-console-shell__nav-link {
+  display: block;
+  padding: 0.85rem 0.95rem;
+  border-radius: 10px;
+  text-decoration: none;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--card-border);
+  font-weight: 600;
+}
+
+.entity-console-shell__nav-link:hover {
+  color: var(--text-primary);
+  background: var(--card);
+}
+
+.entity-console-shell__nav-link--active {
+  color: var(--text-primary);
+  background: var(--card);
+  border-color: rgba(249, 115, 22, 0.36);
+  box-shadow: inset 0 0 0 1px rgba(249, 115, 22, 0.12);
+}
+
+.entity-console-shell__main {
+  min-width: 0;
+  padding: clamp(24px, 4vw, 32px);
+  display: grid;
+  gap: 1.5rem;
+}
+
+.entity-console-shell__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  width: min(var(--page-max-width), 100%);
+  margin: 0 auto;
+  padding: 1.5rem;
+  border-radius: 12px;
+  background: var(--bg-soft);
+  border: 1px solid var(--card-border);
+}
+
+.entity-console-shell__header h1 {
+  margin: 0.35rem 0 0;
+  font-size: clamp(2rem, 4vw, 3rem);
+  letter-spacing: -0.04em;
+}
+
+.entity-console-shell__subtitle {
+  margin: 0.7rem 0 0;
+  max-width: 54rem;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.entity-console-shell__header-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.entity-console-shell__button {
+  min-height: 2.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 1rem;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 600;
+  color: #fff;
+  background: var(--accent);
+  box-shadow: none;
+}
+
+.entity-console-shell__button--ghost {
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid var(--card-border);
+  box-shadow: none;
+}
+
+.entity-console-shell__content {
+  display: grid;
+  width: min(var(--page-max-width), 100%);
+  margin: 0 auto;
+  gap: 1.5rem;
+}
+
+.entity-console-shell .admin-card {
+  background: var(--card);
+  border-color: var(--card-border);
+  box-shadow: none;
+  color: var(--text-primary);
+}
+
+.entity-console-shell .admin-card-header span,
+.entity-console-shell .admin-field span,
+.entity-console-shell .admin-entity-main span,
+.entity-console-shell .admin-entity-meta span,
+.entity-console-shell .admin-diagnosis-meta,
+.entity-console-shell .admin-diagnosis-copy,
+.entity-console-shell .admin-domain-card p,
+.entity-console-shell .admin-domain-card span,
+.entity-console-shell .admin-case-message p,
+.entity-console-shell .admin-case-message__meta span,
+.entity-console-shell .admin-feedback {
+  color: var(--text-secondary);
+}
+
+.entity-console-shell .admin-feedback {
+  background: var(--bg-soft);
+}
+
+.entity-console-shell .admin-feedback--error {
+  background: rgba(185, 64, 39, 0.16);
+  color: #ffd5c8;
+}
+
+.entity-console-shell .admin-domain-card,
+.entity-console-shell .admin-entity-item,
+.entity-console-shell .admin-case-message,
+.entity-console-shell .admin-case-timeline-item {
+  background: var(--bg-soft);
+  border-color: var(--card-border);
+}
+
+.entity-console-shell .admin-case-message--lawyer {
+  background: #161b24;
+}
+
+.entity-console-shell .admin-case-message--system {
+  background: #12161c;
+}
+
+.entity-console-shell .admin-button {
+  background: var(--accent);
+  color: #fff;
+}
+
+.entity-console-shell .admin-button--ghost {
+  background: transparent;
+  color: var(--text-primary);
+  border-color: var(--card-border);
+}
+
+.entity-console-shell .admin-field input,
+.entity-console-shell .admin-field select,
+.entity-console-shell .admin-field textarea {
+  background: #0f1115;
+  border-color: #2a2f3a;
+  color: var(--text-primary);
+}
+
+.entity-console-shell .admin-inline-link {
+  color: var(--accent);
+}
+
+@media (max-width: 980px) {
+  .entity-console-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .entity-console-shell__sidebar {
+    position: static;
+    height: auto;
+  }
+
+  .entity-console-shell__main {
+    padding-top: 0;
+  }
+
+  .entity-console-shell__header {
+    flex-direction: column;
+  }
+}
