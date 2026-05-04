@@ -186,6 +186,10 @@ function isAuthorityObservationCandidate(value: unknown): value is FlowMindAutho
     && typeof record.authorityZone === 'string'
     && typeof record.authorityCommand === 'string'
     && (record.authorityDeniedReason === undefined || typeof record.authorityDeniedReason === 'string')
+    && (record.autonomyLevel === undefined || record.autonomyLevel === 'manual' || record.autonomyLevel === 'supervised' || record.autonomyLevel === 'partial' || record.autonomyLevel === 'autonomous')
+    && (record.promotionEligible === undefined || typeof record.promotionEligible === 'boolean')
+    && (record.rollbackTriggered === undefined || typeof record.rollbackTriggered === 'boolean')
+    && (record.rollbackReason === undefined || typeof record.rollbackReason === 'string')
 }
 
 function isSummaryCandidate(value: unknown): value is FlowMindServiceSummary {

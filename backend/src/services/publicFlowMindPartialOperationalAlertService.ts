@@ -78,6 +78,13 @@ type WebhookPublisher = {
   publish(alert: JsonRecord): Promise<void>
 }
 
+export type PublicFlowMindPartialOperationalAlertEventRecord = {
+  entityId: string
+  type: 'flowmind.public_partial.alert.triggered'
+  timestamp: string
+  payload: JsonRecord
+}
+
 const DEFAULT_PUBLIC_FLOWMIND_PARTIAL_ALERT_REEMIT_WINDOW_MS = 5 * 60 * 1000
 const PUBLIC_FLOWMIND_PARTIAL_ALERT_WEBHOOK_RETRY_DELAY_MS = 250
 
@@ -379,6 +386,7 @@ export async function emitPublicFlowMindPartialOperationalAlerts(args: {
     observedAt: args.observedAt,
     aggregation: args.aggregation,
   })
+  const eventRecords: PublicFlowMindPartialOperationalAlertEventRecord[] = []
 
   for (const alert of alertsToEmit) {
     const record = buildOperationalAlertRecord({
@@ -387,6 +395,12 @@ export async function emitPublicFlowMindPartialOperationalAlerts(args: {
       observedAt: args.observedAt,
       aggregation: args.aggregation,
       alert,
+    })
+    eventRecords.push({
+      entityId: args.entityId,
+      type: 'flowmind.public_partial.alert.triggered',
+      timestamp: args.observedAt,
+      payload: toJsonObject(record),
     })
 
     if (record.level === 'critical') {
@@ -446,5 +460,6 @@ export async function emitPublicFlowMindPartialOperationalAlerts(args: {
   return {
     entityProfile,
     emittedAlerts: alertsToEmit,
+    eventRecords,
   }
 }

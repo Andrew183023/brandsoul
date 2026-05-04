@@ -1,5 +1,5 @@
 import type { EntityProfile } from '../brain/domain/entity/contracts/EntityProfile.js'
-import type { FlowMindOutput, FlowMindDecisionAdapter } from '../flowmind/index.js'
+import type { FlowMindOutput, FlowMindDecisionAdapter, EntityCognitiveMemory } from '../flowmind/index.js'
 import type { OrchestratorCommand, OrchestratorState } from '../orchestrator/orchestratorState.js'
 
 export type FlowMindServiceMode = 'disabled' | 'shadow' | 'dry-run' | 'debug' | 'active'
@@ -8,11 +8,22 @@ export type FlowMindAdapterLoadStatus = 'loaded' | 'backend-base-only' | 'load-f
 
 export type FlowMindAuthorityScopeZone = 'safe' | 'prohibited' | 'future'
 
+export type FlowMindAutonomyLevel = 'manual' | 'supervised' | 'partial' | 'autonomous'
+
+export type FlowMindAutonomyMetrics = {
+  averageErrorRate: number
+  decisionStability: number
+  averageDivergenceScore: number
+  sampleSize: number
+}
+
 export type FlowMindServiceInvocation = {
   entityProfile: EntityProfile
   state: OrchestratorState
   command: OrchestratorCommand
   now?: string
+  memory?: EntityCognitiveMemory
+  persistMemory?: boolean
 }
 
 export type FlowMindServiceSummary = {
@@ -93,6 +104,11 @@ export type FlowMindAuthorityObservation = {
   authorityDeniedReason?: string
   authorityZone: FlowMindAuthorityScopeZone
   authorityCommand: OrchestratorCommand['name']
+  autonomyLevel?: FlowMindAutonomyLevel
+  promotionEligible?: boolean
+  rollbackTriggered?: boolean
+  rollbackReason?: string
+  autonomyMetrics?: FlowMindAutonomyMetrics
 }
 
 export type FlowMindDecisionComparison = {

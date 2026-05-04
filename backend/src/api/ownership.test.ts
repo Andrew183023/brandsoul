@@ -262,6 +262,77 @@ test('patching an entity ignores client ownership overrides', { concurrency: fal
   }
 })
 
+test('posting entity events still returns the logged event and records return-visit growth', { concurrency: false }, async () => {
+  const harness = await createTestApp()
+
+  try {
+    await harness.app.backendContext.entityRepository.createEntity({
+      id: 'entity-events-owned',
+      ownerId: 'user:5:tenant:8',
+      ownerUserId: 5,
+      ownerTenantId: 8,
+      entityProfile: createEntityProfileFixture('entity-events-owned'),
+    })
+
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/entity/entity-events-owned/events',
+      headers: {
+        authorization: `Bearer ${await createAccessToken(5, 8, harness.privateKeyPem, harness.configuredKid)}`,
+        'content-type': 'application/json',
+      },
+      payload: {
+        type: 'return.visit',
+        payload: {
+          summary: 'Viewer returned to the entity.',
+        },
+      },
+    })
+
+    assert.equal(response.statusCode, 201)
+    assert.equal(response.json().event.type, 'return.visit')
+
+    const growthEvents = await harness.app.backendContext.growthRepository.getGrowthEvents('entity-events-owned', 10)
+    assert.equal(growthEvents.some((event) => event.type === 'return_visit'), true)
+  } finally {
+    await harness.close()
+  }
+})
+
+test('public export delivery still records view-side growth through sovereign command', { concurrency: false }, async () => {
+  const harness = await createTestApp()
+
+  try {
+    await harness.app.backendContext.entityRepository.createEntity({
+      id: 'entity-export-owned',
+      ownerId: 'user:5:tenant:8',
+      ownerUserId: 5,
+      ownerTenantId: 8,
+      entityProfile: createEntityProfileFixture('entity-export-owned'),
+    })
+    await harness.app.backendContext.entityExportRepository.logExport({
+      id: 'exp-owned-1',
+      entityId: 'entity-export-owned',
+      format: 'square',
+      fileUrl: 'https://example.com/export.png',
+      createdAt: '2026-05-04T10:00:00.000Z',
+    })
+
+    const response = await harness.app.inject({
+      method: 'GET',
+      url: '/entity/entity-export-owned/export/exp-owned-1',
+    })
+
+    assert.equal(response.statusCode, 200)
+    assert.equal(response.json().export.id, 'exp-owned-1')
+
+    const growthEvents = await harness.app.backendContext.growthRepository.getGrowthEvents('entity-export-owned', 10)
+    assert.equal(growthEvents.some((event) => event.type === 'export_viewed'), true)
+  } finally {
+    await harness.close()
+  }
+})
+
 test('private monetization rejects foreign entity ownership', { concurrency: false }, async () => {
   const harness = await createTestApp()
 

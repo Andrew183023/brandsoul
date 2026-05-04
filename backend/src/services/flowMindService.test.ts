@@ -38,14 +38,14 @@ test('flowMindService evaluates orchestrator commands in shadow mode', async () 
   assert.ok(result)
   assert.equal(result.mode, 'shadow')
   assert.equal(result.summary.mode, 'shadow')
-  assert.equal(result.summary.adapterName, 'backend-base-fallback')
-  assert.equal(result.summary.adapterLoadStatus, 'backend-base-only')
+  assert.equal(result.summary.adapterName, 'degraded-cognition')
+  assert.equal(result.summary.adapterLoadStatus, 'load-failed')
   assert.equal(result.summary.fallbackUsed, true)
-  assert.equal(result.summary.fallbackReason, 'adaptive-core-not-configured')
+  assert.equal(result.summary.fallbackReason, 'degraded_cognition')
   assert.equal(result.summary.invokedAt, '2026-04-19T16:01:00.000Z')
-  assert.equal(result.summary.objectiveType, 'convert')
-  assert.equal(typeof result.summary.decision.intent, 'string')
-  assert.equal(typeof result.summary.decision.action, 'string')
+  assert.equal(result.summary.objectiveType, 'degraded_cognition')
+  assert.equal(result.summary.decision.intent, 'observe')
+  assert.equal(result.summary.decision.action, 'none')
   assert.equal(result.output.updatedMemory.historicalSignals.totalInteractions, 0)
 })
 
@@ -241,4 +241,47 @@ test('flowMindService prefers BrandSoul shadow adapter when real runtime is avai
   assert.equal(result.summary.fallbackReason, result.output.fallbackConditions[0])
   assert.equal(result.output.updatedMemory.historicalSignals.totalInteractions >= 0, true)
   assert.equal(typeof result.output.updatedMemory.strategyProfile.dominantStrategy, 'string')
+})
+
+test('flowMindService requires a real adapter when runtime adapter is missing', () => {
+  const service = createFlowMindService({
+    mode: 'shadow',
+  })
+
+  assert.equal(service.adapter, undefined)
+})
+
+test('flowMindService derives invokedAt deterministically from injected state when now is omitted', async () => {
+  const entity = createTestEntity()
+  const state = createInitialOrchestratorState({
+    entityId: entity.id,
+    entityProfile: entity,
+    now: '2026-05-03T12:00:00.000Z',
+  })
+  const service = createFlowMindService({
+    mode: 'shadow',
+  })
+
+  const command = {
+    type: 'command' as const,
+    name: 'start_birth' as const,
+    commandId: 'command-deterministic',
+    issuedAt: undefined as unknown as string,
+    source: 'user' as const,
+  }
+
+  const first = await service.evaluateOrchestratorCommand({
+    entityProfile: entity,
+    state,
+    command,
+  })
+  const second = await service.evaluateOrchestratorCommand({
+    entityProfile: entity,
+    state,
+    command,
+  })
+
+  assert.ok(first)
+  assert.deepEqual(first?.summary.invokedAt, '2026-05-03T12:00:00.000Z')
+  assert.deepEqual(first, second)
 })

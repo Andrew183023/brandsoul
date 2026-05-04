@@ -1,4 +1,5 @@
 import type { EntityCognitiveMemoryRepository } from '../../repositories/entityCognitiveMemoryRepository.js'
+import { traceMutation } from '../../sovereignty/authorityBoundary.js'
 import { hydrateEntityCognitiveMemory, type EntityCognitiveMemory } from './entityCognitiveMemory.js'
 import type { EntityCognitiveMemoryStore } from './entityCognitiveMemoryStore.js'
 import { InMemoryEntityCognitiveMemoryStore } from './inMemoryEntityCognitiveMemoryStore.js'
@@ -19,7 +20,6 @@ export class PersistentEntityCognitiveMemoryStore implements EntityCognitiveMemo
     try {
       const record = await this.options.repository.getByEntityId(entityId)
       if (record) {
-        await this.fallbackStore.set(entityId, record.memory)
         return hydrateEntityCognitiveMemory(record.memory)
       }
     } catch {
@@ -30,17 +30,18 @@ export class PersistentEntityCognitiveMemoryStore implements EntityCognitiveMemo
   }
 
   async set(entityId: string, memory: EntityCognitiveMemory): Promise<void> {
+    traceMutation({
+      source: 'backend/src/flowmind/memory/persistentEntityCognitiveMemoryStore.ts#set',
+      type: 'memory',
+      targetId: entityId,
+      whatChanged: 'write persistent cognitive memory store',
+    })
     const hydratedMemory = hydrateEntityCognitiveMemory(memory)
     await this.fallbackStore.set(entityId, hydratedMemory)
-
-    try {
-      await this.options.repository.save({
-        entityId,
-        memory: hydratedMemory,
-      })
-    } catch {
-      return
-    }
+    await this.options.repository.save({
+      entityId,
+      memory: hydratedMemory,
+    })
   }
 }
 

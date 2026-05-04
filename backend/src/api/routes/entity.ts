@@ -27,16 +27,18 @@ import {
   resolvePublicEntityInteractionAvailability,
   type PublicEntityInteractionRequest,
 } from '../../services/publicEntityInteractionService.js'
+import { getLegalMarketplaceEntityId } from '../../config/env.js'
 import {
   appendLegalCaseMessage,
   assignLegalCase,
   buildLawyerReputationMetrics,
   buildPublicInteractionActionResponseText,
+  claimLegalCaseClientOwnership,
   closeLegalCase,
-  decidePublicInteractionAction,
   executePublicInteractionAction,
   findLegalCaseById,
   getEntityLegalCases,
+  resolvePublicInteractionExecutionDecision,
   type LegalCaseMessageRole,
 } from '../../services/publicInteractionActionService.js'
 import {
@@ -59,8 +61,17 @@ import type { EntityProfileDocument } from '../../domain/entityProfile.js'
 import type { EntityBusinessConfig, EntityBusinessType } from '../../domain/entityBusinessConfig.js'
 import type { OrchestratorSnapshotRepository } from '../../repositories/orchestratorSnapshotRepository.js'
 import type { RelationalTraceRepository } from '../../repositories/relationalTraceRepository.js'
+import type { SovereignMutationCommandService } from '../../orchestrator/sovereignMutationCommandService.js'
+import type {
+  EntityMutationResult,
+  EntityRelationshipInteractionResult,
+  EventMutationResult,
+  MultiEventMutationResult,
+  PublicExportViewRecordResult,
+} from '../../orchestrator/sovereignMutationCommandService.js'
 import { processBrandInBackendEngine } from '../../services/entityEngineService.js'
 import type { EntityRepository } from '../../repositories/entityRepository.js'
+import type { BackendDatabase } from '../../db/index.js'
 import { requireAuth, getRequestAuth, optionalAuth } from '../middleware/requireAuth.js'
 import { buildLegacyOwnerId, requireEntityOwner, validateEntityOwnership } from '../middleware/requireEntityOwner.js'
 import { createRateLimit } from '../middleware/rateLimit.js'
@@ -79,6 +90,9 @@ import {
   restoreOrchestratorState,
 } from '../../orchestrator/orchestratorState.js'
 import { buildRuntimeSceneProjection } from '../../orchestrator/runtimeSceneProjection.js'
+import { createCaseRepository } from '../../modules/legalCases/caseRepository.js'
+import type { CaseMessageRecord, CaseRecord, CaseTimelineEventRecord } from '../../modules/legalCases/caseTypes.js'
+import { createCaseService } from '../../modules/legalCases/caseService.js'
 
 type BackendContext = {
   backendContext: {
@@ -91,11 +105,13 @@ type BackendContext = {
     jobProducer: JobProducer
     monetizationService: MonetizationService
     growthEngine: GrowthEngine
+    connection: BackendDatabase
     observability: ObservabilityService
     orchestratorSnapshotRepository: OrchestratorSnapshotRepository
     relationalTraceRepository: RelationalTraceRepository
     publicCacheService: PublicCacheService
     flowMindService?: FlowMindPort
+    sovereignMutationCommandService: SovereignMutationCommandService
   }
 }
 
@@ -224,6 +240,10 @@ function getFlowMindService(app: FastifyInstance) {
   return (app as FastifyInstance & BackendContext).backendContext.flowMindService
 }
 
+function getSovereignMutationCommandService(app: FastifyInstance) {
+  return (app as FastifyInstance & BackendContext).backendContext.sovereignMutationCommandService
+}
+
 function getObservability(app: FastifyInstance) {
   return (app as FastifyInstance & BackendContext).backendContext.observability
 }
@@ -234,6 +254,18 @@ function getRelationalTraceRepository(app: FastifyInstance) {
 
 function getGrowthEngine(app: FastifyInstance) {
   return (app as FastifyInstance & BackendContext).backendContext.growthEngine
+}
+
+function getConnection(app: FastifyInstance) {
+  return (app as FastifyInstance & BackendContext).backendContext.connection
+}
+
+function getLegalCaseRepository(app: FastifyInstance) {
+  return createCaseRepository(getConnection(app))
+}
+
+function getLegalCaseService(app: FastifyInstance) {
+  return createCaseService(getConnection(app))
 }
 
 function createRequestId() {
@@ -250,6 +282,14 @@ function createExportRecordId() {
 
 function createDiagnosisArtifactId() {
   return `diag-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function trackCaseRouteMetric(
+  app: FastifyInstance,
+  metric: 'postgres_case_hit' | 'legacy_case_fallback' | 'legacy_case_fallback_error',
+  route: string,
+) {
+  getObservability(app).incrementMetric(metric, 1, { route })
 }
 
 function resolveAuthenticatedOwnerContext(auth: AuthContext): AuthenticatedOwnerContext {
@@ -963,12 +1003,46 @@ function isAssignedLawyer(auth: AuthContext | undefined, assignedLawyerId: strin
     || assignedLawyerId === buildLegacyOwnerId(auth.userId, auth.tenantId)
 }
 
-function isCaseParticipant(args: {
-  auth: AuthContext | undefined
+function logCasesAuthDebug(args: {
+  request?: FastifyRequest
+  auth: AuthContext
+  caseTenantId?: number
+  createdByUserId?: number
+  createdByTenantId?: number
+  entityOwnerUserId?: number
+  entityOwnerTenantId?: number
+  professionalId?: string
+  assignedLawyerId?: string
+  isClient: boolean
+  isOwner: boolean
+  isLawyer: boolean
+  accessAllowed: boolean
+}) {
+  args.request?.log.debug({
+    event: 'cases.auth.debug',
+    userId: args.auth.userId,
+    tenantId: args.auth.tenantId,
+    caseTenantId: args.caseTenantId,
+    createdByUserId: args.createdByUserId,
+    createdByTenantId: args.createdByTenantId,
+    entityOwnerUserId: args.entityOwnerUserId,
+    entityOwnerTenantId: args.entityOwnerTenantId,
+    professionalId: args.professionalId,
+    assignedLawyerId: args.assignedLawyerId,
+    isClient: args.isClient,
+    isOwner: args.isOwner,
+    isLawyer: args.isLawyer,
+    accessAllowed: args.accessAllowed,
+  }, 'Case authorization evaluation')
+}
+
+function resolveLegacyCaseParticipantAccess(args: {
+  auth: AuthContext
   legalCase: {
     creatorUserId?: number
     creatorTenantId?: number
     assignedLawyerId?: string
+    tenantId?: number
   }
   entity: {
     ownerUserId?: number
@@ -976,17 +1050,461 @@ function isCaseParticipant(args: {
   }
 }) {
   const { auth, legalCase, entity } = args
-  if (!auth) {
-    return false
-  }
-
   const isClient = legalCase.creatorUserId === auth.userId
-    && legalCase.creatorTenantId === auth.tenantId
   const isLawyer = isAssignedLawyer(auth, legalCase.assignedLawyerId)
   const isOwner = entity.ownerUserId === auth.userId
     && entity.ownerTenantId === auth.tenantId
 
-  return isClient || isLawyer || isOwner
+  return {
+    isClient,
+    isLawyer,
+    isOwner,
+    accessAllowed: isClient || isLawyer || isOwner,
+  }
+}
+
+async function resolveCaseForAuthenticatedAccess(args: {
+  app: FastifyInstance
+  request: FastifyRequest
+  caseId: string
+}) {
+  const repository = getRepository(args.app)
+  let found = await findLegalCaseById({
+    repository,
+    caseId: args.caseId,
+  })
+
+  const auth = getRequestAuth(args.request)
+  if (!found || !auth) {
+    return found
+  }
+
+  const creatorMissing = typeof found.legalCase.creatorUserId !== 'number'
+    && typeof found.legalCase.creatorTenantId !== 'number'
+  const isOwner = found.entity.ownerUserId === auth.userId
+    && found.entity.ownerTenantId === auth.tenantId
+  const isLawyer = isAssignedLawyer(auth, found.legalCase.assignedLawyerId)
+
+  if (!creatorMissing || isOwner || isLawyer) {
+    logCasesAuthDebug({
+      request: args.request,
+      auth,
+      caseTenantId: found.legalCase.creatorTenantId,
+      createdByUserId: found.legalCase.creatorUserId,
+      createdByTenantId: found.legalCase.creatorTenantId,
+      entityOwnerUserId: found.entity.ownerUserId,
+      entityOwnerTenantId: found.entity.ownerTenantId,
+      assignedLawyerId: found.legalCase.assignedLawyerId,
+      isClient: found.legalCase.creatorUserId === auth.userId,
+      isOwner,
+      isLawyer,
+      accessAllowed: true,
+    })
+    return found
+  }
+
+  found = await claimLegalCaseClientOwnership({
+    repository,
+    sovereignCommandService: getSovereignMutationCommandService(args.app),
+    caseId: args.caseId,
+    userId: auth.userId,
+    tenantId: auth.tenantId,
+  })
+
+  if (found) {
+    logCasesAuthDebug({
+      request: args.request,
+      auth,
+      caseTenantId: found.legalCase.creatorTenantId,
+      createdByUserId: found.legalCase.creatorUserId,
+      createdByTenantId: found.legalCase.creatorTenantId,
+      entityOwnerUserId: found.entity.ownerUserId,
+      entityOwnerTenantId: found.entity.ownerTenantId,
+      assignedLawyerId: found.legalCase.assignedLawyerId,
+      isClient: found.legalCase.creatorUserId === auth.userId,
+      isOwner: found.entity.ownerUserId === auth.userId && found.entity.ownerTenantId === auth.tenantId,
+      isLawyer: isAssignedLawyer(auth, found.legalCase.assignedLawyerId),
+      accessAllowed: true,
+    })
+  }
+
+  return found
+}
+
+type LegacyCompatibleCaseMessage = {
+  id: string
+  role: LegalCaseMessageRole
+  text: string
+  actorId?: string
+  createdAt: string
+}
+
+type LegacyCompatibleCaseTimelineEntry = {
+  id: string
+  type: 'case_opened' | 'message_added' | 'status_changed' | 'case_closed'
+  createdAt: string
+  summary: string
+}
+
+type LegacyCompatibleCaseRecord = {
+  id: string
+  tenantId: number
+  entityId: string
+  status: 'open' | 'assigned' | 'pending' | 'closed'
+  createdAt: string
+  updatedAt: string
+  creatorUserId?: number
+  creatorTenantId?: number
+  assignedLawyerId?: string
+  description: string
+  city?: string
+  contact?: string
+  source: 'public-interaction'
+  messages: LegacyCompatibleCaseMessage[]
+  timeline: LegacyCompatibleCaseTimelineEntry[]
+}
+
+function safeJsonObject(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return {} as Record<string, unknown>
+  }
+
+  return value as Record<string, unknown>
+}
+
+function readRecordString(input: Record<string, unknown>, key: string) {
+  const value = input[key]
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
+}
+
+function mapPostgresCaseStatus(record: CaseRecord): LegacyCompatibleCaseRecord['status'] {
+  if (record.status === 'closed' || record.status === 'archived') {
+    return 'closed'
+  }
+
+  if (record.status === 'pending' || record.status === 'on_hold') {
+    return 'pending'
+  }
+
+  if (record.leadProfessionalId) {
+    return 'assigned'
+  }
+
+  return 'open'
+}
+
+function mapPostgresMessageRole(message: CaseMessageRecord): LegalCaseMessageRole {
+  if (message.direction === 'inbound') {
+    return 'user'
+  }
+
+  if (message.authorProfessionalId || message.direction === 'outbound') {
+    return 'lawyer'
+  }
+
+  return 'system'
+}
+
+function mapTimelineEventTypeToLegacyType(eventType: string): LegacyCompatibleCaseTimelineEntry['type'] {
+  if (eventType === 'created') {
+    return 'case_opened'
+  }
+
+  if (eventType === 'message_added') {
+    return 'message_added'
+  }
+
+  if (eventType === 'closed') {
+    return 'case_closed'
+  }
+
+  return 'status_changed'
+}
+
+function buildTimelineSummary(event: CaseTimelineEventRecord) {
+  const payload = safeJsonObject(event.payload)
+  if (event.eventType === 'message_added') {
+    const sequenceNo = payload.sequenceNo
+    if (typeof sequenceNo === 'number' && Number.isFinite(sequenceNo)) {
+      return `Mensagem registrada no caso (#${Math.trunc(sequenceNo)}).`
+    }
+
+    return 'Mensagem registrada no caso.'
+  }
+
+  if (event.eventType === 'assigned') {
+    const professionalId = readRecordString(payload, 'professionalId')
+    if (professionalId) {
+      return `Caso atribuido ao advogado ${professionalId}.`
+    }
+
+    return 'Caso atribuido.'
+  }
+
+  if (event.eventType === 'accepted') {
+    return 'Atribuicao aceita.'
+  }
+
+  if (event.eventType === 'rejected') {
+    return 'Atribuicao recusada.'
+  }
+
+  if (event.eventType === 'closed') {
+    return 'Caso finalizado.'
+  }
+
+  if (event.eventType === 'created') {
+    return 'Caso aberto.'
+  }
+
+  return `Evento ${event.eventType} registrado.`
+}
+
+async function listPostgresCaseTimeline(db: BackendDatabase, tenantId: number, caseId: string) {
+  const rows = await db.all<Array<{
+    id: string
+    tenant_id: number
+    case_id: string
+    event_type: string
+    actor_professional_id: string | null
+    actor_user_id: number | null
+    occurred_at: string
+    payload: unknown
+    created_at: string
+    updated_at: string
+  }>>(
+    `
+      SELECT
+        id, tenant_id, case_id, event_type, actor_professional_id, actor_user_id, occurred_at, payload, created_at, updated_at
+      FROM case_timeline
+      WHERE tenant_id = ? AND case_id = ?
+      ORDER BY occurred_at ASC, created_at ASC, id ASC
+    `,
+    tenantId,
+    caseId,
+  )
+
+  return rows.map((row) => ({
+    id: row.id,
+    tenantId: row.tenant_id,
+    caseId: row.case_id,
+    eventType: row.event_type as CaseTimelineEventRecord['eventType'],
+    actorProfessionalId: row.actor_professional_id ?? undefined,
+    actorUserId: row.actor_user_id ?? undefined,
+    occurredAt: row.occurred_at,
+    payload: safeJsonObject(row.payload),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }))
+}
+
+function toLegacyCompatibleCase(args: {
+  tenantId: number
+  caseRecord: CaseRecord
+  messages: CaseMessageRecord[]
+  timeline: CaseTimelineEventRecord[]
+}): LegacyCompatibleCaseRecord {
+  const metadata = safeJsonObject(args.caseRecord.metadata)
+  const metadataLocation = safeJsonObject(metadata.location)
+  const contact = readRecordString(metadata, 'contact')
+    ?? readRecordString(safeJsonObject(metadata.contact), 'value')
+    ?? readRecordString(safeJsonObject(metadata.contact), 'whatsapp')
+    ?? readRecordString(safeJsonObject(metadata.contact), 'phone')
+    ?? readRecordString(safeJsonObject(metadata.contact), 'email')
+  const city = readRecordString(metadata, 'city')
+    ?? readRecordString(metadataLocation, 'city')
+
+  return {
+    id: args.caseRecord.id,
+    tenantId: args.caseRecord.tenantId,
+    entityId: args.caseRecord.entityId ?? '',
+    status: mapPostgresCaseStatus(args.caseRecord),
+    createdAt: args.caseRecord.createdAt,
+    updatedAt: args.caseRecord.updatedAt,
+    creatorUserId: args.caseRecord.createdByUserId,
+    creatorTenantId: args.caseRecord.createdByUserId ? args.tenantId : undefined,
+    assignedLawyerId: args.caseRecord.leadProfessionalId,
+    description: args.caseRecord.description?.trim() || args.caseRecord.title,
+    city,
+    contact,
+    source: 'public-interaction',
+    messages: args.messages.map((message) => ({
+      id: message.id,
+      role: mapPostgresMessageRole(message),
+      text: message.body,
+      actorId: message.authorProfessionalId,
+      createdAt: message.createdAt,
+    })),
+    timeline: args.timeline.map((event) => ({
+      id: event.id,
+      type: mapTimelineEventTypeToLegacyType(event.eventType),
+      createdAt: event.occurredAt,
+      summary: buildTimelineSummary(event),
+    })),
+  }
+}
+
+function isPostgresCaseParticipant(args: {
+  auth: AuthContext
+  legalCase: LegacyCompatibleCaseRecord
+  entity: { ownerUserId?: number; ownerTenantId?: number } | null
+  professionalId?: string
+}) {
+  const { auth, legalCase, entity, professionalId } = args
+  const isClient = legalCase.creatorUserId === auth.userId
+  const isOwner = entity?.ownerUserId === auth.userId && entity?.ownerTenantId === auth.tenantId
+  const isAssignedLawyerByUserId = legalCase.assignedLawyerId === String(auth.userId)
+    || legalCase.assignedLawyerId === buildLegacyOwnerId(auth.userId, auth.tenantId)
+  const isAssignedLawyerByProfessionalId = Boolean(professionalId && legalCase.assignedLawyerId === professionalId)
+
+  return isClient || isOwner || isAssignedLawyerByUserId || isAssignedLawyerByProfessionalId
+}
+
+async function resolveMarketplaceCasesAccess(args: {
+  app: FastifyInstance
+  auth: AuthContext
+}) {
+  const marketplaceEntityId = getLegalMarketplaceEntityId()
+  const marketplaceEntity = await getRepository(args.app).getEntityById(marketplaceEntityId)
+
+  if (!marketplaceEntity) {
+    return {
+      marketplaceEntityId,
+      marketplaceEntity: null,
+      hasAccess: false,
+    }
+  }
+
+  const normalizedRoles = Array.isArray(args.auth.roles)
+    ? args.auth.roles.map((role) => role.trim().toLowerCase())
+    : []
+  const hasMarketplaceRole = normalizedRoles.some((role) => role === 'owner' || role === 'admin' || role === 'operator')
+  const marketplaceTenantId = marketplaceEntity.ownerTenantId
+  const hasMarketplaceTenant = typeof marketplaceTenantId === 'number' && Number.isInteger(marketplaceTenantId) && marketplaceTenantId > 0
+  const hasAccess = hasMarketplaceTenant
+    && marketplaceTenantId === args.auth.tenantId
+    && (validateEntityOwnership(marketplaceEntity, args.auth.userId, args.auth.tenantId) || hasMarketplaceRole)
+
+  return {
+    marketplaceEntityId,
+    marketplaceEntity,
+    hasAccess,
+  }
+}
+
+async function resolvePostgresCaseForRead(args: {
+  app: FastifyInstance
+  request?: FastifyRequest
+  auth: AuthContext
+  caseId: string
+}) {
+  const repository = getLegalCaseRepository(args.app)
+  let caseRecord = await repository.getCaseById(args.auth.tenantId, args.caseId)
+  let globalCaseRecord: CaseRecord | null = null
+  const claimTokenHeader = args.request?.headers['x-case-claim-token']
+  const claimToken = Array.isArray(claimTokenHeader) ? claimTokenHeader[0] : claimTokenHeader
+  const normalizedClaimToken = typeof claimToken === 'string' ? claimToken.trim() : ''
+
+  if (!caseRecord) {
+    globalCaseRecord = await repository.getCaseByIdAnyTenant(args.caseId)
+  }
+
+  if (!caseRecord && normalizedClaimToken.length > 0) {
+    const globalCaseClaimToken = typeof globalCaseRecord?.metadata.caseClaimToken === 'string'
+      ? globalCaseRecord.metadata.caseClaimToken
+      : undefined
+
+    if (globalCaseRecord && globalCaseClaimToken && globalCaseClaimToken === normalizedClaimToken) {
+      caseRecord = globalCaseRecord
+    }
+  }
+
+  if (!caseRecord && globalCaseRecord) {
+    caseRecord = globalCaseRecord
+  }
+
+  if (!caseRecord) {
+    return undefined
+  }
+
+  const metadataClaimToken = typeof caseRecord.metadata.caseClaimToken === 'string'
+    ? caseRecord.metadata.caseClaimToken
+    : undefined
+
+  if (
+    !caseRecord.createdByUserId
+    && normalizedClaimToken.length > 0
+    && metadataClaimToken
+    && metadataClaimToken === normalizedClaimToken
+  ) {
+    const claimedCase = await repository.updateCaseCreatorOwnership(caseRecord.tenantId, args.caseId, args.auth.userId)
+    if (claimedCase) {
+      caseRecord = claimedCase
+    }
+  }
+
+  const caseTenantId = caseRecord.tenantId
+  const [messages, timeline, professional, entity] = await Promise.all([
+    repository.listMessages(caseTenantId, args.caseId),
+    listPostgresCaseTimeline(getConnection(args.app), caseTenantId, args.caseId),
+    repository.getProfessionalByUserId(caseTenantId, args.auth.userId),
+    caseRecord.entityId ? getRepository(args.app).getEntityById(caseRecord.entityId) : Promise.resolve(null),
+  ])
+
+  const legalCase = toLegacyCompatibleCase({
+    tenantId: caseTenantId,
+    caseRecord,
+    messages,
+    timeline,
+  })
+
+  const marketplaceAccess = legalCase.entityId
+    ? await resolveMarketplaceCasesAccess({
+        app: args.app,
+        auth: args.auth,
+      })
+    : undefined
+  const hasMarketplaceReadAccess = Boolean(
+    marketplaceAccess?.hasAccess
+      && marketplaceAccess.marketplaceEntityId === legalCase.entityId,
+  )
+
+  const hasAccess = isPostgresCaseParticipant({
+    auth: args.auth,
+    legalCase,
+    entity,
+    professionalId: professional?.id,
+  }) || hasMarketplaceReadAccess
+
+  logCasesAuthDebug({
+    request: args.request,
+    auth: args.auth,
+    caseTenantId: caseRecord.tenantId,
+    createdByUserId: legalCase.creatorUserId,
+    createdByTenantId: legalCase.creatorTenantId,
+    entityOwnerUserId: entity?.ownerUserId,
+    entityOwnerTenantId: entity?.ownerTenantId,
+    professionalId: professional?.id,
+    assignedLawyerId: legalCase.assignedLawyerId,
+    isClient: legalCase.creatorUserId === args.auth.userId,
+    isOwner: entity?.ownerUserId === args.auth.userId && entity?.ownerTenantId === args.auth.tenantId,
+    isLawyer: legalCase.assignedLawyerId === String(args.auth.userId)
+      || legalCase.assignedLawyerId === buildLegacyOwnerId(args.auth.userId, args.auth.tenantId)
+      || (Boolean(professional?.id) && legalCase.assignedLawyerId === professional?.id),
+    accessAllowed: hasAccess,
+  })
+
+  return {
+    source: 'postgres' as const,
+    legalCase,
+    entity,
+    hasAccess,
+    messages: legalCase.messages,
+  }
+}
+
+async function resolvePostgresAssignedProfessionalForAuth(app: FastifyInstance, auth: AuthContext) {
+  return getLegalCaseRepository(app).getProfessionalByUserId(auth.tenantId, auth.userId)
 }
 
 function readHeaderValue(value: string | string[] | undefined) {
@@ -1291,26 +1809,27 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       ...(engineResult.entity as EntityProfileDocument),
     }, ownerContext)
     const entityId = String(entity.id)
-    const repository = getRepository(app)
-    const eventLogRepository = getEventLogRepository(app)
-    const stored = await repository.createEntity({
-      id: entityId,
+    const storedResult = await getSovereignMutationCommandService(app).submitCommand({
+      type: 'entity.create',
+      commandId: `entity-create:${entityId}:${requestId}`,
+      entityId,
       ownerId: ownerContext.ownerId,
       ownerUserId: ownerContext.ownerUserId,
       ownerTenantId: ownerContext.ownerTenantId,
       entityProfile: entity,
-    })
-    await eventLogRepository.logEvent({
-      entityId,
-      type: 'entity.created',
-      timestamp: stored.createdAt,
-      payload: {
-        requestId,
-        ownerId: ownerContext.ownerId,
-        ownerUserId: ownerContext.ownerUserId,
-        ownerTenantId: ownerContext.ownerTenantId,
+      now: new Date().toISOString(),
+      event: {
+        type: 'entity.created',
+        timestamp: new Date().toISOString(),
+        payload: {
+          requestId,
+          ownerId: ownerContext.ownerId,
+          ownerUserId: ownerContext.ownerUserId,
+          ownerTenantId: ownerContext.ownerTenantId,
+        },
       },
-    })
+    }) as EntityMutationResult
+    const stored = storedResult.entity!
     await getGlobalFeedEngine(app).publishFeedItem({
       entityId,
       ownerId: ownerContext.ownerId,
@@ -1336,7 +1855,7 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       entityId,
       ownerUserId: ownerContext.ownerUserId,
       ownerTenantId: ownerContext.ownerTenantId,
-      entitiesCount: (await repository.getEntitiesByOwnerUserId(ownerContext.ownerUserId, ownerContext.ownerTenantId)).length,
+      entitiesCount: (await getRepository(app).getEntitiesByOwnerUserId(ownerContext.ownerUserId, ownerContext.ownerTenantId)).length,
       memoryUsage: resolveMemoryUsageFromEntityDocument(entity),
     })
     await getGrowthEngine(app).trackEvent({
@@ -1432,10 +1951,12 @@ export async function registerEntityRoutes(app: FastifyInstance) {
     }
 
     const nextEntityProfile = writeEntityBusinessConfig(entity.entityProfile as EntityProfile, mergedBusinessConfig)
-    const updated = await getRepository(app).updateEntity({
-      id: request.params.id,
+    const updated = (await getSovereignMutationCommandService(app).submitCommand({
+      type: 'entity.profile.persist',
+      commandId: `entity-business-config:${request.params.id}:${createRequestId()}`,
+      entityId: request.params.id,
       entityProfile: nextEntityProfile,
-    })
+    }) as EntityMutationResult).entity
 
     if (!updated) {
       return reply.status(404).send({
@@ -1529,114 +2050,28 @@ export async function registerEntityRoutes(app: FastifyInstance) {
     const at = new Date().toISOString()
     const relationType = mapInteractionToRelationType(type)
     const strengthDelta = resolveInteractionStrength(type, request.body.weight)
-    const relationshipEngine = getRelationshipEngine(app)
-    const eventLogRepository = getEventLogRepository(app)
-    const socialSignalEngine = getSocialSignalEngine(app)
-    const globalFeedEngine = getGlobalFeedEngine(app)
-
-    const [forwardRelation, reverseRelation] = await Promise.all([
-      relationshipEngine.updateRelationship({
-        sourceEntityId,
-        targetEntityId,
-        relationType,
-        strengthDelta,
-        lastInteractionAt: at,
-      }),
-      relationshipEngine.updateRelationship({
-        sourceEntityId: targetEntityId,
-        targetEntityId: sourceEntityId,
-        relationType: type === 'suggestion' ? 'affinity' : relationType,
-        strengthDelta: Math.max(0.08, strengthDelta * 0.72),
-        lastInteractionAt: at,
-      }),
-    ])
 
     const summary =
       request.body.summary ??
       `${String((sourceEntity.entityProfile.social as Record<string, unknown>).publicName ?? sourceEntityId)} interacted with ${String((targetEntity.entityProfile.social as Record<string, unknown>).publicName ?? targetEntityId)} via ${type}.`
-
-    const [sourceEvent, targetEvent] = await Promise.all([
-      eventLogRepository.logEvent({
-        entityId: sourceEntityId,
-        type: 'interaction.message',
-        causedByCommandId: request.body.commandId,
-        timestamp: at,
-        payload: {
-          summary,
-          topics: request.body.topics ?? ['entity-to-entity', type],
-          targetEntityId,
-          interactionType: type,
-        },
-      }),
-      eventLogRepository.logEvent({
-        entityId: targetEntityId,
-        type: 'interaction.message',
-        causedByCommandId: request.body.commandId,
-        timestamp: at,
-        payload: {
-          summary,
-          topics: request.body.topics ?? ['entity-to-entity', type],
-          sourceEntityId,
-          interactionType: type,
-        },
-      }),
-    ])
-
-    await Promise.all([
-      socialSignalEngine.registerSignal({
-        entityId: sourceEntityId,
-        ownerId: sourceEntity.ownerId,
-        type: 'interacted',
-        timestamp: at,
-        source: 'entity-to-entity',
-        actorId: targetEntityId,
-        weight: Math.max(0.28, strengthDelta),
-        metadata: {
-          targetEntityId,
-          interactionType: type,
-        },
-      }),
-      socialSignalEngine.registerSignal({
-        entityId: targetEntityId,
-        ownerId: targetEntity.ownerId,
-        type: 'interacted',
-        timestamp: at,
-        source: 'entity-to-entity',
-        actorId: sourceEntityId,
-        weight: Math.max(0.24, strengthDelta * 0.86),
-        metadata: {
-          sourceEntityId,
-          interactionType: type,
-        },
-      }),
-    ])
-
-    const feedItem = await globalFeedEngine.publishFeedItem({
-      entityId: sourceEntityId,
-      ownerId: sourceEntity.ownerId,
-      type: 'interaction_happened',
-      timestamp: at,
-      relevanceScore: Math.max(0.54, strengthDelta),
-      content: {
-        entityName: String((sourceEntity.entityProfile.social as Record<string, unknown>).publicName ?? sourceEntityId),
-        targetEntityId,
-        targetEntityName: String((targetEntity.entityProfile.social as Record<string, unknown>).publicName ?? targetEntityId),
-        interactionType: type,
-        summary,
-      },
-      visibility: 'public',
-    })
-    await getGrowthEngine(app).trackEvent({
-      entityId: sourceEntityId,
-      ownerId: sourceEntity.ownerId,
-      type: 'entity_interacted',
-      actorId: targetEntityId,
-      metadata: {
-        targetEntityId,
-        interactionType: type,
-        strengthDelta,
-      },
-    })
+    const recorded = await getSovereignMutationCommandService(app).submitCommand({
+      type: 'entity.relationship.interaction.record',
+      commandId: request.body.commandId ?? `entity-relationship-interaction:${sourceEntityId}:${targetEntityId}:${at}`,
+      sourceEntityId,
+      targetEntityId,
+      relationType,
+      reverseRelationType: type === 'suggestion' ? 'affinity' : relationType,
+      strengthDelta,
+      reverseStrengthDelta: Math.max(0.08, strengthDelta * 0.72),
+      interactionType: type,
+      summary,
+      topics: request.body.topics ?? ['entity-to-entity', type],
+      occurredAt: at,
+      sourceOwnerId: sourceEntity.ownerId,
+      targetOwnerId: targetEntity.ownerId,
+      sourceEntityName: String((sourceEntity.entityProfile.social as Record<string, unknown>).publicName ?? sourceEntityId),
+      targetEntityName: String((targetEntity.entityProfile.social as Record<string, unknown>).publicName ?? targetEntityId),
+    }) as EntityRelationshipInteractionResult
 
     return {
       status: 'ready',
@@ -1648,14 +2083,14 @@ export async function registerEntityRoutes(app: FastifyInstance) {
         timestamp: at,
       },
       relationships: {
-        sourceToTarget: forwardRelation,
-        targetToSource: reverseRelation,
+        sourceToTarget: recorded.relationships.sourceToTarget,
+        targetToSource: recorded.relationships.targetToSource,
       },
       events: {
-        source: sourceEvent,
-        target: targetEvent,
+        source: recorded.events.source,
+        target: recorded.events.target,
       },
-      feedItem,
+      feedItem: recorded.feedItem,
     }
   })
 
@@ -1736,8 +2171,10 @@ export async function registerEntityRoutes(app: FastifyInstance) {
     })
 
     const updatedEntityProfile = writeDiagnosisArtifact(entityProfile, diagnosis)
-    await getRepository(app).updateEntity({
-      id: request.params.id,
+    await getSovereignMutationCommandService(app).submitCommand({
+      type: 'entity.profile.persist',
+      commandId: `entity-rebrand-diagnose:${request.params.id}:${diagnosis.id}`,
+      entityId: request.params.id,
       entityProfile: updatedEntityProfile,
     })
 
@@ -1783,8 +2220,10 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
     }
 
-    await getRepository(app).updateEntity({
-      id: request.params.id,
+    await getSovereignMutationCommandService(app).submitCommand({
+      type: 'entity.profile.persist',
+      commandId: `entity-rebrand-approve:${request.params.id}:${request.body.diagnosisId}`,
+      entityId: request.params.id,
       entityProfile: update.entityProfile,
     })
 
@@ -1830,8 +2269,10 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
     }
 
-    await getRepository(app).updateEntity({
-      id: request.params.id,
+    await getSovereignMutationCommandService(app).submitCommand({
+      type: 'entity.profile.persist',
+      commandId: `entity-rebrand-reject:${request.params.id}:${request.body.diagnosisId}`,
+      entityId: request.params.id,
       entityProfile: update.entityProfile,
     })
 
@@ -1868,18 +2309,26 @@ export async function registerEntityRoutes(app: FastifyInstance) {
         exports,
       })
 
+      const presence = buildPublicPresenceResponse({
+        entityId: request.params.id,
+        entityProfile: entity.entityProfile as EntityProfile,
+        publicProfile,
+        latestSnapshot,
+        recentEvents: events,
+        relationalTrace,
+        exports,
+      })
+
       return {
         status: 'ready',
         entityId: request.params.id,
-        presence: buildPublicPresenceResponse({
-          entityId: request.params.id,
-          entityProfile: entity.entityProfile as EntityProfile,
-          publicProfile,
-          latestSnapshot,
-          recentEvents: events,
-          relationalTrace,
-          exports,
-        }),
+        presence: {
+          ...presence,
+          entity: {
+            ...presence.entity,
+            ownerTenantId: entity.ownerTenantId ?? undefined,
+          },
+        },
       }
     })
 
@@ -2065,10 +2514,11 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
     }
 
-    const actionDecision = decidePublicInteractionAction({
+    const executionDecision = resolvePublicInteractionExecutionDecision({
       entityProfile: entity.entityProfile as EntityProfile,
       userMessage: request.body.userMessage.trim(),
       businessContext: request.body.businessContext,
+      flowMindDecision: interaction.decision.decision,
     })
     const actor = resolveSocialActor(request, request.params.id, 'case:create')
     const auth = getRequestAuth(request)
@@ -2077,7 +2527,7 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       entityId: request.params.id,
       entityProfile: entity.entityProfile as EntityProfile,
       repository: getRepository(app),
-      decision: actionDecision,
+      decision: executionDecision,
       initialUserMessage: request.body.userMessage.trim(),
       creatorActorId: actor.actorId,
       creatorUserId: auth?.userId,
@@ -2088,7 +2538,7 @@ export async function registerEntityRoutes(app: FastifyInstance) {
     const responseText = buildPublicInteractionActionResponseText({
       entityName: publicPresence.entity.name,
       baseResponseText: interaction.decision.responseText,
-      actionDecision,
+      actionDecision: executionDecision,
       actionResult,
     })
 
@@ -2097,12 +2547,6 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       decision: {
         ...interaction.decision,
         responseText,
-        decision: {
-          ...interaction.decision.decision,
-          intent: actionDecision.intent === 'legal_case'
-            ? 'legal_case'
-            : interaction.decision.decision.intent,
-        },
       },
       actionResult,
     }
@@ -2118,10 +2562,11 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       action: actionResult.actionType,
     })
 
-    await eventLogRepository.logEvent({
+    await getSovereignMutationCommandService(app).submitCommand({
+      type: 'public.interaction.resolve',
+      commandId: `public-interaction-resolved:${request.params.id}:${interactionWithAction.requestId}`,
       entityId: request.params.id,
-      type: 'public.interaction.resolved',
-      timestamp: interactionWithAction.telemetry.evaluatedAt,
+      occurredAt: interactionWithAction.telemetry.evaluatedAt,
       payload: {
         requestId: interactionWithAction.requestId,
         message: request.body.userMessage.trim(),
@@ -2144,8 +2589,47 @@ export async function registerEntityRoutes(app: FastifyInstance) {
   })
 
   app.get<{ Params: { id: string } }>('/cases/:id', { preHandler: [requireAuth, publicReadRateLimit] }, async (request, reply) => {
-    const found = await findLegalCaseById({
-      repository: getRepository(app),
+    const auth = getRequestAuth(request)
+    if (!auth) {
+      return reply.status(401).send({
+        status: 'failed',
+        error: {
+          code: 'AUTH_REQUIRED',
+          message: 'Authentication required.',
+        },
+      })
+    }
+
+    const postgresCase = await resolvePostgresCaseForRead({
+      app,
+      request,
+      auth,
+      caseId: request.params.id,
+    })
+
+    if (postgresCase) {
+      trackCaseRouteMetric(app, 'postgres_case_hit', 'GET /cases/:id')
+      if (!postgresCase.hasAccess) {
+        return reply.status(403).send({
+          status: 'failed',
+          error: {
+            code: 'CASE_ACCESS_FORBIDDEN',
+            message: 'You do not have access to this case.',
+          },
+        })
+      }
+
+      return reply.status(200).send({
+        status: 'ready',
+        case: postgresCase.legalCase,
+      })
+    }
+
+    trackCaseRouteMetric(app, 'legacy_case_fallback', 'GET /cases/:id')
+
+    const found = await resolveCaseForAuthenticatedAccess({
+      app,
+      request,
       caseId: request.params.id,
     })
 
@@ -2159,8 +2643,22 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
     }
 
-    const auth = getRequestAuth(request)
-    if (!isCaseParticipant({ auth, legalCase: found.legalCase, entity: found.entity })) {
+    const access = resolveLegacyCaseParticipantAccess({ auth, legalCase: found.legalCase, entity: found.entity })
+    logCasesAuthDebug({
+      request,
+      auth,
+      caseTenantId: found.legalCase.creatorTenantId,
+      createdByUserId: found.legalCase.creatorUserId,
+      createdByTenantId: found.legalCase.creatorTenantId,
+      entityOwnerUserId: found.entity.ownerUserId,
+      entityOwnerTenantId: found.entity.ownerTenantId,
+      assignedLawyerId: found.legalCase.assignedLawyerId,
+      isClient: access.isClient,
+      isOwner: access.isOwner,
+      isLawyer: access.isLawyer,
+      accessAllowed: access.accessAllowed,
+    })
+    if (!access.accessAllowed) {
       return reply.status(403).send({
         status: 'failed',
         error: {
@@ -2188,13 +2686,39 @@ export async function registerEntityRoutes(app: FastifyInstance) {
     }
 
     const entityId = request.query.entityId as string
+    const traceId = request.traceId ?? request.id
+    const auth = getRequestAuth(request)
+    const tenantId = auth?.tenantId
 
-    const resolved = await getEntityLegalCases({
-      repository: getRepository(app),
-      entityId,
-    })
+    // SQL diagnostics (manual checks when debugging production incidents):
+    // 1) SELECT to_regclass(current_schema() || '.cases') AS cases_table,
+    //           to_regclass(current_schema() || '.case_messages') AS case_messages_table,
+    //           to_regclass(current_schema() || '.case_timeline') AS case_timeline_table;
+    // 2) SELECT id FROM entity_profile WHERE id = $1;
+    //    -- then validate entity_profile JSON payload for the same entityId if needed.
 
-    if (!resolved) {
+    let ownerEntity: Awaited<ReturnType<ReturnType<typeof getRepository>['getEntityById']>> | null = null
+    try {
+      ownerEntity = await getRepository(app).getEntityById(entityId)
+    } catch (error) {
+      request.log.error({
+        event: 'cases.owner_entity_read_failed',
+        traceId,
+        entityId,
+        tenantId,
+        message: error instanceof Error ? error.message : 'Failed to read owner entity.',
+        stack: error instanceof Error ? error.stack : undefined,
+      }, 'Owner entity lookup failed unexpectedly while reading cases')
+      return reply.status(500).send({
+        status: 'failed',
+        error: {
+          code: 'ENTITY_CASES_OWNER_LOOKUP_FAILED',
+          message: 'Failed to load entity cases.',
+        },
+      })
+    }
+
+    if (!ownerEntity) {
       return reply.status(404).send({
         status: 'failed',
         error: {
@@ -2204,8 +2728,7 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
     }
 
-    const auth = getRequestAuth(request)
-    if (!auth || !validateEntityOwnership(resolved.entity, auth.userId, auth.tenantId)) {
+    if (!auth || !validateEntityOwnership(ownerEntity, auth.userId, auth.tenantId)) {
       return reply.status(403).send({
         status: 'failed',
         error: {
@@ -2215,11 +2738,252 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
     }
 
-    return reply.status(200).send({
-      status: 'ready',
-      entityId: request.query.entityId,
-      cases: resolved.cases,
+    let postgresCases: CaseRecord[] = []
+    let postgresListFailed = false
+    try {
+      postgresCases = await getLegalCaseRepository(app).listCasesByEntity(auth.tenantId, entityId)
+    } catch (error) {
+      postgresListFailed = true
+      request.log.error({
+        event: 'cases.postgres_list_failed',
+        traceId,
+        entityId,
+        tenantId: auth.tenantId,
+        message: error instanceof Error ? error.message : 'Failed to list Postgres cases.',
+        stack: error instanceof Error ? error.stack : undefined,
+      }, 'Postgres case listing failed, attempting legacy fallback')
+    }
+
+    if (!postgresListFailed && postgresCases.length > 0) {
+      trackCaseRouteMetric(app, 'postgres_case_hit', 'GET /cases')
+      try {
+        const normalizedCases = await Promise.all(postgresCases.map(async (caseRecord) => {
+          try {
+            const [messages, timeline] = await Promise.all([
+              getLegalCaseRepository(app).listMessages(auth.tenantId, caseRecord.id),
+              listPostgresCaseTimeline(getConnection(app), auth.tenantId, caseRecord.id),
+            ])
+
+            return toLegacyCompatibleCase({
+              tenantId: auth.tenantId,
+              caseRecord,
+              messages,
+              timeline,
+            })
+          } catch (error) {
+            request.log.error({
+              event: 'cases.postgres_normalization_failed',
+              traceId,
+              entityId,
+              tenantId: auth.tenantId,
+              caseId: caseRecord.id,
+              message: error instanceof Error ? error.message : 'Failed to normalize Postgres case.',
+              stack: error instanceof Error ? error.stack : undefined,
+            }, 'Failed to normalize one Postgres case, skipping record')
+            return null
+          }
+        }))
+
+        const safeCases = normalizedCases.filter((item): item is LegacyCompatibleCaseRecord => Boolean(item))
+        if (safeCases.length > 0) {
+          return reply.status(200).send({
+            status: 'ready',
+            entityId: request.query.entityId,
+            cases: safeCases,
+          })
+        }
+      } catch (error) {
+        request.log.error({
+          event: 'cases.postgres_normalization_failed',
+          traceId,
+          entityId,
+          tenantId: auth.tenantId,
+          message: error instanceof Error ? error.message : 'Failed to normalize Postgres case list.',
+          stack: error instanceof Error ? error.stack : undefined,
+        }, 'Postgres case normalization failed, attempting legacy fallback')
+      }
+    }
+
+    trackCaseRouteMetric(app, 'legacy_case_fallback', 'GET /cases')
+    try {
+      const resolvedLegacy = await getEntityLegalCases({
+        repository: getRepository(app),
+        entityId,
+      })
+
+      return reply.status(200).send({
+        status: 'ready',
+        entityId: request.query.entityId,
+        cases: resolvedLegacy?.cases ?? [],
+      })
+    } catch (error) {
+      trackCaseRouteMetric(app, 'legacy_case_fallback_error', 'GET /cases')
+      request.log.error({
+        event: 'cases.legacy_fallback_failed',
+        traceId,
+        entityId,
+        tenantId: auth.tenantId,
+        message: error instanceof Error ? error.message : 'Failed to read legacy fallback cases.',
+        stack: error instanceof Error ? error.stack : undefined,
+      }, 'Legacy fallback failed while reading cases')
+
+      return reply.status(500).send({
+        status: 'failed',
+        error: {
+          code: 'ENTITY_CASES_READ_FAILED',
+          message: 'Failed to load entity cases.',
+        },
+      })
+    }
+  })
+
+  app.get('/marketplace/legal/cases', { preHandler: [requireAuth, publicReadRateLimit] }, async (request, reply) => {
+    const auth = getRequestAuth(request)
+    if (!auth) {
+      return reply.status(401).send({
+        status: 'failed',
+        error: {
+          code: 'AUTH_REQUIRED',
+          message: 'Authentication required.',
+        },
+      })
+    }
+
+    const traceId = request.traceId ?? request.id
+    const marketplaceAccess = await resolveMarketplaceCasesAccess({
+      app,
+      auth,
     })
+
+    if (!marketplaceAccess.marketplaceEntity) {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'ENTITY_NOT_FOUND',
+          message: `Entity "${marketplaceAccess.marketplaceEntityId}" was not found.`,
+        },
+      })
+    }
+
+    if (!marketplaceAccess.hasAccess) {
+      return reply.status(403).send({
+        status: 'failed',
+        error: {
+          code: 'MARKETPLACE_CASES_ACCESS_FORBIDDEN',
+          message: 'You do not have access to the marketplace legal cases list.',
+        },
+      })
+    }
+
+    const rawMarketplaceTenantId = marketplaceAccess.marketplaceEntity.ownerTenantId
+    if (typeof rawMarketplaceTenantId !== 'number' || !Number.isInteger(rawMarketplaceTenantId) || rawMarketplaceTenantId <= 0) {
+      return reply.status(500).send({
+        status: 'failed',
+        error: {
+          code: 'MARKETPLACE_CASES_TENANT_INVALID',
+          message: 'Failed to resolve marketplace legal cases tenant.',
+        },
+      })
+    }
+    const marketplaceTenantId = Number(rawMarketplaceTenantId)
+
+    let postgresCases: CaseRecord[] = []
+    let postgresListFailed = false
+    try {
+      postgresCases = await getLegalCaseRepository(app).listCasesByEntity(
+        marketplaceTenantId,
+        marketplaceAccess.marketplaceEntityId,
+      )
+    } catch (error) {
+      postgresListFailed = true
+      request.log.error({
+        event: 'marketplace_cases.postgres_list_failed',
+        traceId,
+        entityId: marketplaceAccess.marketplaceEntityId,
+        tenantId: marketplaceTenantId,
+        message: error instanceof Error ? error.message : 'Failed to list marketplace Postgres cases.',
+        stack: error instanceof Error ? error.stack : undefined,
+      }, 'Marketplace Postgres case listing failed, attempting legacy fallback')
+    }
+
+    if (!postgresListFailed && postgresCases.length > 0) {
+      try {
+        const normalizedCases = await Promise.all(postgresCases.map(async (caseRecord) => {
+          try {
+            const [messages, timeline] = await Promise.all([
+              getLegalCaseRepository(app).listMessages(marketplaceTenantId, caseRecord.id),
+              listPostgresCaseTimeline(getConnection(app), marketplaceTenantId, caseRecord.id),
+            ])
+
+            return toLegacyCompatibleCase({
+              tenantId: marketplaceTenantId,
+              caseRecord,
+              messages,
+              timeline,
+            })
+          } catch (error) {
+            request.log.error({
+              event: 'marketplace_cases.postgres_normalization_failed',
+              traceId,
+              entityId: marketplaceAccess.marketplaceEntityId,
+              tenantId: marketplaceTenantId,
+              caseId: caseRecord.id,
+              message: error instanceof Error ? error.message : 'Failed to normalize marketplace Postgres case.',
+              stack: error instanceof Error ? error.stack : undefined,
+            }, 'Failed to normalize one marketplace Postgres case, skipping record')
+            return null
+          }
+        }))
+
+        const safeCases = normalizedCases.filter((item): item is LegacyCompatibleCaseRecord => Boolean(item))
+        if (safeCases.length > 0) {
+          return reply.status(200).send({
+            status: 'ready',
+            entityId: marketplaceAccess.marketplaceEntityId,
+            cases: safeCases,
+          })
+        }
+      } catch (error) {
+        request.log.error({
+          event: 'marketplace_cases.postgres_normalization_failed',
+          traceId,
+          entityId: marketplaceAccess.marketplaceEntityId,
+          tenantId: marketplaceTenantId,
+          message: error instanceof Error ? error.message : 'Failed to normalize marketplace Postgres case list.',
+          stack: error instanceof Error ? error.stack : undefined,
+        }, 'Marketplace Postgres case normalization failed, attempting legacy fallback')
+      }
+    }
+
+    try {
+      const resolvedLegacy = await getEntityLegalCases({
+        repository: getRepository(app),
+        entityId: marketplaceAccess.marketplaceEntityId,
+      })
+
+      return reply.status(200).send({
+        status: 'ready',
+        entityId: marketplaceAccess.marketplaceEntityId,
+        cases: resolvedLegacy?.cases ?? [],
+      })
+    } catch (error) {
+      request.log.error({
+        event: 'marketplace_cases.legacy_fallback_failed',
+        traceId,
+        entityId: marketplaceAccess.marketplaceEntityId,
+        tenantId: marketplaceTenantId,
+        message: error instanceof Error ? error.message : 'Failed to read marketplace legacy fallback cases.',
+        stack: error instanceof Error ? error.stack : undefined,
+      }, 'Marketplace legacy fallback failed while reading cases')
+
+      return reply.status(500).send({
+        status: 'failed',
+        error: {
+          code: 'MARKETPLACE_CASES_READ_FAILED',
+          message: 'Failed to load marketplace legal cases.',
+        },
+      })
+    }
   })
 
   app.get<{ Params: { entityId: string; lawyerId: string } }>('/entities/:entityId/lawyers/:lawyerId/reputation', { preHandler: [requireAuth, publicReadRateLimit] }, async (request, reply) => {
@@ -2278,8 +3042,48 @@ export async function registerEntityRoutes(app: FastifyInstance) {
   })
 
   app.get<{ Params: { id: string } }>('/cases/:id/messages', { preHandler: [requireAuth, publicReadRateLimit] }, async (request, reply) => {
-    const found = await findLegalCaseById({
-      repository: getRepository(app),
+    const auth = getRequestAuth(request)
+    if (!auth) {
+      return reply.status(401).send({
+        status: 'failed',
+        error: {
+          code: 'AUTH_REQUIRED',
+          message: 'Authentication required.',
+        },
+      })
+    }
+
+    const postgresCase = await resolvePostgresCaseForRead({
+      app,
+      request,
+      auth,
+      caseId: request.params.id,
+    })
+
+    if (postgresCase) {
+      trackCaseRouteMetric(app, 'postgres_case_hit', 'GET /cases/:id/messages')
+      if (!postgresCase.hasAccess) {
+        return reply.status(403).send({
+          status: 'failed',
+          error: {
+            code: 'CASE_ACCESS_FORBIDDEN',
+            message: 'You do not have access to this case.',
+          },
+        })
+      }
+
+      return reply.status(200).send({
+        status: 'ready',
+        caseId: postgresCase.legalCase.id,
+        messages: postgresCase.messages,
+      })
+    }
+
+    trackCaseRouteMetric(app, 'legacy_case_fallback', 'GET /cases/:id/messages')
+
+    const found = await resolveCaseForAuthenticatedAccess({
+      app,
+      request,
       caseId: request.params.id,
     })
 
@@ -2293,8 +3097,22 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
     }
 
-    const auth = getRequestAuth(request)
-    if (!isCaseParticipant({ auth, legalCase: found.legalCase, entity: found.entity })) {
+    const access = resolveLegacyCaseParticipantAccess({ auth, legalCase: found.legalCase, entity: found.entity })
+    logCasesAuthDebug({
+      request,
+      auth,
+      caseTenantId: found.legalCase.creatorTenantId,
+      createdByUserId: found.legalCase.creatorUserId,
+      createdByTenantId: found.legalCase.creatorTenantId,
+      entityOwnerUserId: found.entity.ownerUserId,
+      entityOwnerTenantId: found.entity.ownerTenantId,
+      assignedLawyerId: found.legalCase.assignedLawyerId,
+      isClient: access.isClient,
+      isOwner: access.isOwner,
+      isLawyer: access.isLawyer,
+      accessAllowed: access.accessAllowed,
+    })
+    if (!access.accessAllowed) {
       return reply.status(403).send({
         status: 'failed',
         error: {
@@ -2350,6 +3168,7 @@ export async function registerEntityRoutes(app: FastifyInstance) {
 
     const assigned = await assignLegalCase({
       repository: getRepository(app),
+      sovereignCommandService: getSovereignMutationCommandService(app),
       caseId: request.params.id,
       lawyerId: request.body.lawyerId!,
     })
@@ -2375,15 +3194,16 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
     }
 
-    await getEventLogRepository(app).logEvent({
+    await getSovereignMutationCommandService(app).submitCommand({
+      type: 'legal.case.assign',
+      commandId: `legal-case-assigned:${assigned.entityId}:${assigned.legalCase.id}:${assigned.legalCase.updatedAt}`,
       entityId: assigned.entityId,
-      type: 'legal.case.assigned',
+      occurredAt: assigned.legalCase.updatedAt,
       payload: {
         caseId: assigned.legalCase.id,
         lawyerId: request.body.lawyerId,
         status: assigned.legalCase.status,
       },
-      timestamp: assigned.legalCase.updatedAt,
     })
 
     return reply.status(200).send({
@@ -2403,10 +3223,117 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
     }
 
-    const caseMessageText = request.body.text?.trim() ?? ''
+    const auth = getRequestAuth(request)
+    if (!auth) {
+      return reply.status(401).send({
+        status: 'failed',
+        error: {
+          code: 'AUTH_REQUIRED',
+          message: 'Authentication required.',
+        },
+      })
+    }
 
-    const found = await findLegalCaseById({
-      repository: getRepository(app),
+    const caseMessageText = request.body.text?.trim() ?? ''
+    const role = request.body.role ?? 'user'
+
+    const postgresCase = await resolvePostgresCaseForRead({
+      app,
+      request,
+      auth,
+      caseId: request.params.id,
+    })
+
+    if (postgresCase) {
+      trackCaseRouteMetric(app, 'postgres_case_hit', 'POST /cases/:id/messages')
+      if (!postgresCase.hasAccess) {
+        return reply.status(403).send({
+          status: 'failed',
+          error: {
+            code: 'CASE_ACCESS_FORBIDDEN',
+            message: 'You do not have access to this case.',
+          },
+        })
+      }
+
+      const professional = await resolvePostgresAssignedProfessionalForAuth(app, auth)
+      const canAnswerAsLawyer = role === 'lawyer'
+        ? (isAssignedLawyer(auth, postgresCase.legalCase.assignedLawyerId)
+          || (Boolean(professional?.id) && postgresCase.legalCase.assignedLawyerId === professional?.id))
+        : true
+
+      if (!canAnswerAsLawyer) {
+        return reply.status(403).send({
+          status: 'failed',
+          error: {
+            code: 'CASE_LAWYER_NOT_ASSIGNED',
+            message: 'Only the assigned lawyer can answer as lawyer.',
+          },
+        })
+      }
+
+      await getLegalCaseService(app).addMessage({
+        tenantId: auth.tenantId,
+        caseId: request.params.id,
+        authorProfessionalId: role === 'lawyer' ? professional?.id : undefined,
+        body: caseMessageText,
+        direction: role === 'lawyer' ? 'outbound' : role === 'system' ? 'internal' : 'inbound',
+        messageType: role === 'system' ? 'system' : 'chat',
+        messageStatus: 'sent',
+      })
+
+      const [caseRecord, messages, timeline] = await Promise.all([
+        getLegalCaseRepository(app).getCaseById(auth.tenantId, request.params.id),
+        getLegalCaseRepository(app).listMessages(auth.tenantId, request.params.id),
+        listPostgresCaseTimeline(getConnection(app), auth.tenantId, request.params.id),
+      ])
+
+      if (!caseRecord) {
+        return reply.status(404).send({
+          status: 'failed',
+          error: {
+            code: 'CASE_NOT_FOUND',
+            message: `Case "${request.params.id}" was not found.`,
+          },
+        })
+      }
+
+      const normalized = toLegacyCompatibleCase({
+        tenantId: auth.tenantId,
+        caseRecord,
+        messages,
+        timeline,
+      })
+      const latestMessage = normalized.messages.at(-1)
+
+      if (normalized.entityId) {
+        await getSovereignMutationCommandService(app).submitCommand({
+          type: 'legal.case.message.append',
+          commandId: `legal-case-message:${normalized.entityId}:${normalized.id}:${latestMessage?.id ?? normalized.updatedAt}`,
+          entityId: normalized.entityId,
+          occurredAt: latestMessage?.createdAt ?? normalized.updatedAt,
+          payload: {
+            caseId: normalized.id,
+            role,
+            actorId: latestMessage?.actorId,
+            messageId: latestMessage?.id,
+          },
+        })
+      }
+
+      return reply.status(200).send({
+        status: 'ready',
+        caseId: normalized.id,
+        message: latestMessage,
+        messages: normalized.messages,
+      })
+    }
+
+    trackCaseRouteMetric(app, 'legacy_case_fallback', 'POST /cases/:id/messages')
+
+    const found = await resolveCaseForAuthenticatedAccess({
+      app,
+      request,
       caseId: request.params.id,
     })
 
@@ -2420,8 +3347,22 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
     }
 
-    const auth = getRequestAuth(request)
-    if (!isCaseParticipant({ auth, legalCase: found.legalCase, entity: found.entity })) {
+    const access = resolveLegacyCaseParticipantAccess({ auth, legalCase: found.legalCase, entity: found.entity })
+    logCasesAuthDebug({
+      request,
+      auth,
+      caseTenantId: found.legalCase.creatorTenantId,
+      createdByUserId: found.legalCase.creatorUserId,
+      createdByTenantId: found.legalCase.creatorTenantId,
+      entityOwnerUserId: found.entity.ownerUserId,
+      entityOwnerTenantId: found.entity.ownerTenantId,
+      assignedLawyerId: found.legalCase.assignedLawyerId,
+      isClient: access.isClient,
+      isOwner: access.isOwner,
+      isLawyer: access.isLawyer,
+      accessAllowed: access.accessAllowed,
+    })
+    if (!access.accessAllowed) {
       return reply.status(403).send({
         status: 'failed',
         error: {
@@ -2432,7 +3373,6 @@ export async function registerEntityRoutes(app: FastifyInstance) {
     }
 
     const actor = resolveSocialActor(request, found.entity.id, `case:${request.params.id}`)
-    const role = request.body.role ?? 'user'
 
     if (role === 'lawyer' && !isAssignedLawyer(auth, found.legalCase.assignedLawyerId)) {
       return reply.status(403).send({
@@ -2446,6 +3386,7 @@ export async function registerEntityRoutes(app: FastifyInstance) {
 
     const appended = await appendLegalCaseMessage({
       repository: getRepository(app),
+      sovereignCommandService: getSovereignMutationCommandService(app),
       caseId: request.params.id,
       role,
       text: request.body.text!.trim(),
@@ -2462,16 +3403,17 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
     }
 
-    await getEventLogRepository(app).logEvent({
+    await getSovereignMutationCommandService(app).submitCommand({
+      type: 'legal.case.message.append',
+      commandId: `legal-case-message:${appended.entityId}:${appended.legalCase.id}:${appended.message.id}`,
       entityId: appended.entityId,
-      type: 'legal.case.message.appended',
+      occurredAt: appended.message.createdAt,
       payload: {
         caseId: appended.legalCase.id,
         role,
         actorId: `${actor.actorId}:${role}`,
         messageId: appended.message.id,
       },
-      timestamp: appended.message.createdAt,
     })
 
     return reply.status(200).send({
@@ -2493,7 +3435,109 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
     }
 
+    const auth = getRequestAuth(request)
+    if (!auth) {
+      return reply.status(401).send({
+        status: 'failed',
+        error: {
+          code: 'AUTH_REQUIRED',
+          message: 'Authentication required.',
+        },
+      })
+    }
+
     const caseMessageText = request.body.text?.trim() ?? ''
+    const postgresCase = await resolvePostgresCaseForRead({
+      app,
+      request,
+      auth,
+      caseId: request.params.id,
+    })
+
+    if (postgresCase) {
+      trackCaseRouteMetric(app, 'postgres_case_hit', 'POST /cases/:id/respond')
+      if (!postgresCase.hasAccess) {
+        return reply.status(403).send({
+          status: 'failed',
+          error: {
+            code: 'CASE_ACCESS_FORBIDDEN',
+            message: 'You do not have access to this case.',
+          },
+        })
+      }
+
+      const professional = await resolvePostgresAssignedProfessionalForAuth(app, auth)
+      const canRespond = isAssignedLawyer(auth, postgresCase.legalCase.assignedLawyerId)
+        || (Boolean(professional?.id) && postgresCase.legalCase.assignedLawyerId === professional?.id)
+
+      if (!canRespond) {
+        return reply.status(403).send({
+          status: 'failed',
+          error: {
+            code: 'CASE_LAWYER_NOT_ASSIGNED',
+            message: 'Only the assigned lawyer can respond to this case.',
+          },
+        })
+      }
+
+      await getLegalCaseService(app).addMessage({
+        tenantId: auth.tenantId,
+        caseId: request.params.id,
+        authorProfessionalId: professional?.id,
+        body: caseMessageText,
+        direction: 'outbound',
+        messageType: 'chat',
+        messageStatus: 'sent',
+      })
+
+      const [caseRecord, messages, timeline] = await Promise.all([
+        getLegalCaseRepository(app).getCaseById(auth.tenantId, request.params.id),
+        getLegalCaseRepository(app).listMessages(auth.tenantId, request.params.id),
+        listPostgresCaseTimeline(getConnection(app), auth.tenantId, request.params.id),
+      ])
+
+      if (!caseRecord) {
+        return reply.status(404).send({
+          status: 'failed',
+          error: {
+            code: 'CASE_NOT_FOUND',
+            message: `Case "${request.params.id}" was not found.`,
+          },
+        })
+      }
+
+      const normalized = toLegacyCompatibleCase({
+        tenantId: auth.tenantId,
+        caseRecord,
+        messages,
+        timeline,
+      })
+      const latestMessage = normalized.messages.at(-1)
+
+      if (normalized.entityId) {
+        await getSovereignMutationCommandService(app).submitCommand({
+          type: 'legal.case.message.append',
+          commandId: `legal-case-message:${normalized.entityId}:${normalized.id}:${latestMessage?.id ?? normalized.updatedAt}`,
+          entityId: normalized.entityId,
+          occurredAt: latestMessage?.createdAt ?? normalized.updatedAt,
+          payload: {
+            caseId: normalized.id,
+            role: 'lawyer',
+            actorId: latestMessage?.actorId,
+            messageId: latestMessage?.id,
+          },
+        })
+      }
+
+      return reply.status(200).send({
+        status: 'ready',
+        caseId: normalized.id,
+        message: latestMessage,
+        messages: normalized.messages,
+      })
+    }
+
+    trackCaseRouteMetric(app, 'legacy_case_fallback', 'POST /cases/:id/respond')
 
     const found = await findLegalCaseById({
       repository: getRepository(app),
@@ -2510,7 +3554,6 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
     }
 
-    const auth = getRequestAuth(request)
     if (!isAssignedLawyer(auth, found.legalCase.assignedLawyerId)) {
       return reply.status(403).send({
         status: 'failed',
@@ -2524,6 +3567,7 @@ export async function registerEntityRoutes(app: FastifyInstance) {
     const actorId = found.legalCase.assignedLawyerId ?? String(auth?.userId ?? 'lawyer')
     const appended = await appendLegalCaseMessage({
       repository: getRepository(app),
+      sovereignCommandService: getSovereignMutationCommandService(app),
       caseId: request.params.id,
       role: 'lawyer',
       text: caseMessageText,
@@ -2540,16 +3584,17 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
     }
 
-    await getEventLogRepository(app).logEvent({
+    await getSovereignMutationCommandService(app).submitCommand({
+      type: 'legal.case.message.append',
+      commandId: `legal-case-message:${appended.entityId}:${appended.legalCase.id}:${appended.message.id}`,
       entityId: appended.entityId,
-      type: 'legal.case.message.appended',
+      occurredAt: appended.message.createdAt,
       payload: {
         caseId: appended.legalCase.id,
         role: 'lawyer',
         actorId,
         messageId: appended.message.id,
       },
-      timestamp: appended.message.createdAt,
     })
 
     return reply.status(200).send({
@@ -2571,8 +3616,101 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
     }
 
-    const found = await findLegalCaseById({
-      repository: getRepository(app),
+    const auth = getRequestAuth(request)
+    if (!auth) {
+      return reply.status(401).send({
+        status: 'failed',
+        error: {
+          code: 'AUTH_REQUIRED',
+          message: 'Authentication required.',
+        },
+      })
+    }
+
+    const postgresCase = await resolvePostgresCaseForRead({
+      app,
+      request,
+      auth,
+      caseId: request.params.id,
+    })
+
+    if (postgresCase) {
+      trackCaseRouteMetric(app, 'postgres_case_hit', 'POST /cases/:id/close')
+      if (!postgresCase.hasAccess) {
+        return reply.status(403).send({
+          status: 'failed',
+          error: {
+            code: 'CASE_ACCESS_FORBIDDEN',
+            message: 'You do not have access to this case.',
+          },
+        })
+      }
+
+      const professional = await resolvePostgresAssignedProfessionalForAuth(app, auth)
+      const closedCaseRecord = await getLegalCaseService(app).closeCase(
+        auth.tenantId,
+        request.params.id,
+        request.body.feedback,
+        professional?.id,
+      )
+
+      if (!closedCaseRecord) {
+        return reply.status(404).send({
+          status: 'failed',
+          error: {
+            code: 'CASE_NOT_FOUND',
+            message: `Case "${request.params.id}" was not found.`,
+          },
+        })
+      }
+
+      const [messages, timeline] = await Promise.all([
+        getLegalCaseRepository(app).listMessages(auth.tenantId, request.params.id),
+        listPostgresCaseTimeline(getConnection(app), auth.tenantId, request.params.id),
+      ])
+      const normalized = toLegacyCompatibleCase({
+        tenantId: auth.tenantId,
+        caseRecord: closedCaseRecord,
+        messages,
+        timeline,
+      })
+      const responseCase = {
+        ...normalized,
+        outcome: {
+          rating: request.body.rating!,
+          feedback: request.body.feedback,
+          closedBy: request.body.closedBy!,
+          closedAt: normalized.updatedAt,
+        },
+      }
+
+      if (normalized.entityId) {
+        await getSovereignMutationCommandService(app).submitCommand({
+          type: 'legal.case.close',
+          commandId: `legal-case-closed:${normalized.entityId}:${normalized.id}:${normalized.updatedAt}`,
+          entityId: normalized.entityId,
+          occurredAt: normalized.updatedAt,
+          payload: {
+            caseId: normalized.id,
+            rating: request.body.rating,
+            feedback: request.body.feedback,
+            closedBy: request.body.closedBy,
+            status: normalized.status,
+          },
+        })
+      }
+
+      return reply.status(200).send({
+        status: 'ready',
+        case: responseCase,
+      })
+    }
+
+    trackCaseRouteMetric(app, 'legacy_case_fallback', 'POST /cases/:id/close')
+
+    const found = await resolveCaseForAuthenticatedAccess({
+      app,
+      request,
       caseId: request.params.id,
     })
 
@@ -2586,8 +3724,22 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
     }
 
-    const auth = getRequestAuth(request)
-    if (!isCaseParticipant({ auth, legalCase: found.legalCase, entity: found.entity })) {
+    const access = resolveLegacyCaseParticipantAccess({ auth, legalCase: found.legalCase, entity: found.entity })
+    logCasesAuthDebug({
+      request,
+      auth,
+      caseTenantId: found.legalCase.creatorTenantId,
+      createdByUserId: found.legalCase.creatorUserId,
+      createdByTenantId: found.legalCase.creatorTenantId,
+      entityOwnerUserId: found.entity.ownerUserId,
+      entityOwnerTenantId: found.entity.ownerTenantId,
+      assignedLawyerId: found.legalCase.assignedLawyerId,
+      isClient: access.isClient,
+      isOwner: access.isOwner,
+      isLawyer: access.isLawyer,
+      accessAllowed: access.accessAllowed,
+    })
+    if (!access.accessAllowed) {
       return reply.status(403).send({
         status: 'failed',
         error: {
@@ -2599,6 +3751,7 @@ export async function registerEntityRoutes(app: FastifyInstance) {
 
     const closed = await closeLegalCase({
       repository: getRepository(app),
+      sovereignCommandService: getSovereignMutationCommandService(app),
       caseId: request.params.id,
       rating: request.body.rating!,
       feedback: request.body.feedback,
@@ -2626,9 +3779,11 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
     }
 
-    await getEventLogRepository(app).logEvent({
+    await getSovereignMutationCommandService(app).submitCommand({
+      type: 'legal.case.close',
+      commandId: `legal-case-closed:${closed.entityId}:${closed.legalCase.id}:${closed.legalCase.updatedAt}`,
       entityId: closed.entityId,
-      type: 'legal.case.closed',
+      occurredAt: closed.legalCase.updatedAt,
       payload: {
         caseId: closed.legalCase.id,
         rating: request.body.rating,
@@ -2636,7 +3791,6 @@ export async function registerEntityRoutes(app: FastifyInstance) {
         closedBy: request.body.closedBy,
         status: closed.legalCase.status,
       },
-      timestamp: closed.legalCase.updatedAt,
     })
 
     return reply.status(200).send({
@@ -2703,8 +3857,10 @@ export async function registerEntityRoutes(app: FastifyInstance) {
     })
     const updatedEntity = appendPublicFlowMindShadowSnapshot(entity.entityProfile as EntityProfile, snapshot)
 
-    await getRepository(app).updateEntity({
-      id: request.params.id,
+    await getSovereignMutationCommandService(app).submitCommand({
+      type: 'entity.profile.persist',
+      commandId: `entity-public-shadow:${request.params.id}:${requestId}`,
+      entityId: request.params.id,
       entityProfile: updatedEntity,
     })
 
@@ -2786,8 +3942,10 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       policy: partialPolicy,
     })
 
-    await getRepository(app).updateEntity({
-      id: request.params.id,
+    await getSovereignMutationCommandService(app).submitCommand({
+      type: 'entity.profile.persist',
+      commandId: `entity-public-partial-sampled:${request.params.id}:${requestId}`,
+      entityId: request.params.id,
       entityProfile: registeredSampled.entityProfile,
     })
 
@@ -2897,37 +4055,7 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
       : (autoApplied?.entityProfile ?? withPolicyEvaluation)
 
-    if (policyRecommendation) {
-      await getEventLogRepository(app).logEvent({
-        entityId: request.params.id,
-        type: 'flowmind.public_partial.policy.evaluated',
-        timestamp: policyRecommendation.evaluatedAt,
-        payload: {
-          mode: policyRecommendation.automationMode,
-          action: policyRecommendation.action,
-          status: autoApplied?.adjustment ? 'applied' : policyRecommendation.status,
-          currentRolloutPercentage: policyRecommendation.currentRolloutPercentage,
-          targetRolloutPercentage: autoApplied?.adjustment?.toRolloutPercentage ?? policyRecommendation.targetRolloutPercentage,
-          blockedReason: policyRecommendation.blockedReason,
-          sampleSize: policyRecommendation.sampleSize,
-          reasons: policyRecommendation.reasons,
-        },
-      })
-    }
-
     if (autoApplied?.adjustment) {
-      await getEventLogRepository(app).logEvent({
-        entityId: request.params.id,
-        type: 'flowmind.public_partial.policy.applied',
-        timestamp: autoApplied.adjustment.changedAt,
-        payload: {
-          action: autoApplied.adjustment.action,
-          source: autoApplied.adjustment.source,
-          fromRolloutPercentage: autoApplied.adjustment.fromRolloutPercentage,
-          toRolloutPercentage: autoApplied.adjustment.toRolloutPercentage,
-          reason: autoApplied.adjustment.reason,
-        },
-      })
       getPublicCacheService(app).deleteByPrefix(`entity-public:${request.params.id}`)
       getPublicCacheService(app).deleteByPrefix(`entity-public-presence:${request.params.id}`)
     }
@@ -2939,14 +4067,6 @@ export async function registerEntityRoutes(app: FastifyInstance) {
         observedAt: snapshot.decidedAt,
         entityProfile: updatedEntity,
         aggregation: partialAggregation,
-        eventLogRepository: {
-          logEvent: (input) => getEventLogRepository(app).logEvent({
-            entityId: input.entityId,
-            type: input.type,
-            timestamp: input.timestamp,
-            payload: input.payload as import('../../domain/entityProfile.js').JsonObject,
-          }),
-        },
         observability: getObservability(app),
         logger: app.log,
         webhookPublisher: resolvePublicFlowMindPartialOperationalAlertWebhookPublisher({
@@ -2955,10 +4075,50 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
       : undefined
 
+    const telemetryEvents = [
+      ...(policyRecommendation ? [{
+        type: 'flowmind.public_partial.policy.evaluated' as const,
+        timestamp: policyRecommendation.evaluatedAt,
+        payload: {
+          mode: policyRecommendation.automationMode,
+          action: policyRecommendation.action,
+          status: autoApplied?.adjustment ? 'applied' : policyRecommendation.status,
+          currentRolloutPercentage: policyRecommendation.currentRolloutPercentage,
+          targetRolloutPercentage: autoApplied?.adjustment?.toRolloutPercentage ?? policyRecommendation.targetRolloutPercentage,
+          blockedReason: policyRecommendation.blockedReason,
+          sampleSize: policyRecommendation.sampleSize,
+          reasons: policyRecommendation.reasons,
+        },
+      }] : []),
+      ...(autoApplied?.adjustment ? [{
+        type: 'flowmind.public_partial.policy.applied' as const,
+        timestamp: autoApplied.adjustment.changedAt,
+        payload: {
+          action: autoApplied.adjustment.action,
+          source: autoApplied.adjustment.source,
+          fromRolloutPercentage: autoApplied.adjustment.fromRolloutPercentage,
+          toRolloutPercentage: autoApplied.adjustment.toRolloutPercentage,
+          reason: autoApplied.adjustment.reason,
+        },
+      }] : []),
+      ...(alertEmission?.eventRecords ?? []),
+    ]
+
+    if (telemetryEvents.length > 0) {
+      await getSovereignMutationCommandService(app).submitCommand({
+        type: 'flowmind.partial.telemetry.record',
+        commandId: `flowmind-public-partial-telemetry:${request.params.id}:${requestId}`,
+        entityId: request.params.id,
+        events: telemetryEvents,
+      })
+    }
+
     const entityProfileForPersistence = (alertEmission?.entityProfile ?? updatedEntity) as EntityProfile
 
-    await getRepository(app).updateEntity({
-      id: request.params.id,
+    await getSovereignMutationCommandService(app).submitCommand({
+      type: 'entity.profile.persist',
+      commandId: `entity-public-partial-telemetry:${request.params.id}:${requestId}`,
+      entityId: request.params.id,
       entityProfile: entityProfileForPersistence,
     })
 
@@ -3006,47 +4166,19 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
     }
 
-    const socialSignalEngine = getSocialSignalEngine(app)
     const actor = resolveSocialActor(request, request.params.id, `view:export:${request.params.exportId}`)
-    const insertedViewedSignal = await socialSignalEngine.registerSignalIfActorAbsentSince({
+    await getSovereignMutationCommandService(app).submitCommand({
+      type: 'public.export.view.record',
+      commandId: `public-export-view:${request.params.id}:${request.params.exportId}:${actor.actorId}:${new Date().toISOString()}`,
       entityId: request.params.id,
       ownerId: entity.ownerId,
-      type: 'viewed',
-      source: 'public-export-link',
       actorId: actor.actorId,
-      weight: resolveSignalWeight('viewed', actor),
-      metadata: buildServerValidatedSignalMetadata({
-        exportId: request.params.exportId,
-        format: exportRecord.format,
-      }, actor),
-    }, new Date(Date.now() - resolveSignalWindowMs('viewed', actor)).toISOString())
-
-    if (insertedViewedSignal) {
-      const eventLogRepository = getEventLogRepository(app)
-      await eventLogRepository.logEvent({
-        entityId: request.params.id,
-        type: 'interaction.click',
-        timestamp: new Date().toISOString(),
-        payload: {
-          target: 'public-export-link',
-          summary: `Public export ${request.params.exportId} viewed.`,
-          exportId: request.params.exportId,
-          _signalTrust: actor.kind,
-        },
-      })
-
-      await getGrowthEngine(app).trackEvent({
-        entityId: request.params.id,
-        ownerId: entity.ownerId,
-        type: 'export_viewed',
-        actorId: actor.actorId,
-        metadata: {
-          exportId: request.params.exportId,
-          format: exportRecord.format,
-          _signalTrust: actor.kind,
-        },
-      })
-    }
+      actorKind: actor.kind,
+      exportId: request.params.exportId,
+      exportFormat: exportRecord.format,
+      signalSince: new Date(Date.now() - resolveSignalWindowMs('viewed', actor)).toISOString(),
+      occurredAt: new Date().toISOString(),
+    }) as PublicExportViewRecordResult
 
     reply.header('Cache-Control', 'public, max-age=60, stale-while-revalidate=120')
     return {
@@ -3069,13 +4201,22 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
     }
 
-    const repository = getRepository(app)
-    const eventLogRepository = getEventLogRepository(app)
     const ownerContext = resolveAuthenticatedOwnerContext(getRequestAuth(request)!)
-    const updated = await repository.updateEntity({
-      id: request.params.id,
+    const updated = (await getSovereignMutationCommandService(app).submitCommand({
+      type: 'entity.profile.persist',
+      commandId: `entity-patch:${request.params.id}:${createRequestId()}`,
+      entityId: request.params.id,
       entityProfile: applyOwnerContextToEntityProfile(request.body.entityProfile, ownerContext),
-    })
+      event: {
+        type: 'entity.updated',
+        timestamp: new Date().toISOString(),
+        payload: {
+          ownerId: ownerContext.ownerId,
+          ownerUserId: ownerContext.ownerUserId,
+          ownerTenantId: ownerContext.ownerTenantId,
+        },
+      },
+    }) as EntityMutationResult).entity
 
     if (!updated) {
       return reply.status(404).send({
@@ -3087,16 +4228,6 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
     }
 
-    await eventLogRepository.logEvent({
-      entityId: request.params.id,
-      type: 'entity.updated',
-      timestamp: updated.updatedAt,
-      payload: {
-        ownerId: updated.ownerId ?? null,
-        ownerUserId: updated.ownerUserId ?? null,
-        ownerTenantId: updated.ownerTenantId ?? null,
-      },
-    })
     getPublicCacheService(app).deleteByPrefix(`entity-public:${request.params.id}`)
 
     return {
@@ -3154,39 +4285,25 @@ export async function registerEntityRoutes(app: FastifyInstance) {
     }
 
     const entity = request.entityRecord!
-
-    const eventLogRepository = getEventLogRepository(app)
-    const logged = await eventLogRepository.logEvent({
-      id: request.body.id,
+    const logged = (await getSovereignMutationCommandService(app).submitCommand({
+      type: 'entity.event.append',
+      commandId: `entity-event:${request.params.id}:${request.body.id ?? createRequestId()}`,
       entityId: request.params.id,
-      type: request.body.type,
-      payload: (request.body.payload ?? {}) as never,
-      timestamp: request.body.timestamp,
-      causedByCommandId: request.body.causedByCommandId,
-    })
-    await getGlobalFeedEngine(app).publishFromEvent({
-      event: logged,
-      entity: entity.entityProfile,
       ownerId: entity.ownerId,
-    })
-    await getMonetizationService(app).incrementUsage({
-      entityId: request.params.id,
       ownerUserId: request.entityRecord!.ownerUserId ?? 0,
       ownerTenantId: request.entityRecord!.ownerTenantId ?? 0,
-      messagesCount: request.body.type === 'interaction.message' ? 1 : 0,
-      socialInteractions: /^interaction\./.test(request.body.type) ? 1 : 0,
-      flowMindActions: request.body.causedByCommandId ? 1 : 0,
+      entityProfile: request.entityRecord!.entityProfile,
       memoryUsage: resolveMemoryUsageFromEntityDocument(request.entityRecord!.entityProfile),
-    })
+      event: {
+        id: request.body.id,
+        type: request.body.type,
+        payload: (request.body.payload ?? {}) as Record<string, unknown>,
+        timestamp: request.body.timestamp,
+        causedByCommandId: request.body.causedByCommandId,
+      },
+    }) as EventMutationResult).event!
+
     if (request.body.type === 'return.visit') {
-      await getGrowthEngine(app).trackEvent({
-        entityId: request.params.id,
-        ownerId: entity.ownerId,
-        type: 'return_visit',
-        metadata: {
-          causedByCommandId: request.body.causedByCommandId ?? '',
-        },
-      })
       await getJobProducer(app).enqueueFlowMindExecution({
         entityId: request.params.id,
         commandName: 'growth_return_loop',

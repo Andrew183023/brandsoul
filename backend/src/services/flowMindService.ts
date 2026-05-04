@@ -1,5 +1,6 @@
 import type { EntityProfile } from '../brain/domain/entity/contracts/EntityProfile.js'
 import {
+  createDefaultEntityCognitiveMemory,
   InMemoryEntityCognitiveMemoryStore,
   resolveFlowMindDecision,
   type CognitiveObjective,
@@ -14,6 +15,37 @@ import type {
   FlowMindServiceMode,
   FlowMindServiceResult,
 } from './flowMindPort.js'
+
+function buildContractDecision(args: {
+  intent: string
+  action: string
+  confidence: number
+  topic: string
+  intentGoal: string
+  reason: string
+}) {
+  return {
+    intent: args.intent,
+    action: args.action,
+    confidence: args.confidence,
+    decisionHash: '',
+    responsePlan: {
+      kind: 'observe',
+      topic: args.topic,
+      intentGoal: args.intentGoal,
+      requiredData: [],
+      constraints: [args.reason],
+      optionalCloseStyle: 'contextual-clarity',
+    },
+    actionPayload: {},
+    memoryReadSet: [],
+    memoryWritePlan: [],
+    expectedStateChanges: [],
+    metadata: {
+      reason: args.reason,
+    },
+  }
+}
 
 export type CreateFlowMindServiceOptions = {
   mode?: FlowMindServiceMode
@@ -48,6 +80,133 @@ function resolveAdapterLoadStatus(options: CreateFlowMindServiceOptions): FlowMi
   }
 
   return options.adapter ? 'loaded' : 'backend-base-only'
+}
+
+function resolveDeterministicInvokedAt(input: FlowMindServiceInvocation) {
+  return input.now
+    ?? input.command.issuedAt
+    ?? input.state.metadata.updatedAt
+    ?? input.state.metadata.createdAt
+    ?? input.entityProfile.metadata.updatedAt
+    ?? input.entityProfile.metadata.createdAt
+    ?? '1970-01-01T00:00:00.000Z'
+}
+
+function describeDecisionInput(input: FlowMindServiceInvocation) {
+  return {
+    entityId: input.entityProfile.id,
+    commandName: input.command.name,
+    commandId: input.command.commandId,
+    currentStage: input.state.currentStage,
+    sessionStatus: input.state.sessionStatus,
+    requestedAt: resolveDeterministicInvokedAt(input),
+  }
+}
+
+function createMissingCognitiveCoreResult(args: {
+  mode: Exclude<FlowMindServiceMode, 'disabled'>
+  invokedAt: string
+}): FlowMindServiceResult {
+  const updatedMemory = createDefaultEntityCognitiveMemory()
+
+  return {
+    mode: args.mode,
+    summary: {
+      mode: args.mode,
+      adapterName: 'missing-cognitive-core',
+      adapterLoadStatus: 'backend-base-only',
+      invokedAt: args.invokedAt,
+      decisionSource: 'heuristic-base',
+      terminalAuthority: 'heuristic-fallback',
+      semanticFrozen: false,
+      lowRiskLaneUsed: false,
+      fallbackConditions: ['no-cognitive-core'],
+      fallbackUsed: true,
+      fallbackReason: 'no-cognitive-core',
+      decision: {
+        intent: 'observe',
+        action: 'none',
+        confidence: 0,
+      },
+    },
+    output: {
+      decision: buildContractDecision({
+        intent: 'observe',
+        action: 'none',
+        confidence: 0,
+        topic: 'cognitive-core-unavailable',
+        intentGoal: 'preserve-safe-observation',
+        reason: 'no-cognitive-core',
+      }),
+      decisionSource: 'heuristic-base',
+      terminalAuthority: 'heuristic-fallback',
+      semanticFrozen: false,
+      lowRiskLaneUsed: false,
+      fallbackConditions: ['no-cognitive-core'],
+      updatedMemory,
+      updatedProfiles: {
+        cognitiveState: updatedMemory.cognitiveState,
+        strategyProfile: updatedMemory.strategyProfile,
+        policyProfile: updatedMemory.policyProfile,
+        adaptiveDecisionProfile: updatedMemory.adaptiveDecisionProfile,
+        historicalSignals: updatedMemory.historicalSignals,
+      },
+    },
+  }
+}
+
+function createDegradedCognitionResult(args: {
+  mode: Exclude<FlowMindServiceMode, 'disabled'>
+  invokedAt: string
+  reason: string
+}): FlowMindServiceResult {
+  const updatedMemory = createDefaultEntityCognitiveMemory()
+
+  return {
+    mode: args.mode,
+    summary: {
+      mode: args.mode,
+      adapterName: 'degraded-cognition',
+      adapterLoadStatus: 'load-failed',
+      invokedAt: args.invokedAt,
+      decisionSource: 'heuristic-base',
+      terminalAuthority: 'heuristic-fallback',
+      semanticFrozen: false,
+      lowRiskLaneUsed: false,
+      fallbackConditions: ['degraded_cognition'],
+      fallbackUsed: true,
+      fallbackReason: args.reason,
+      decision: {
+        intent: 'observe',
+        action: 'none',
+        confidence: 0,
+      },
+      objectiveType: 'degraded_cognition',
+    },
+    output: {
+      decision: buildContractDecision({
+        intent: 'observe',
+        action: 'none',
+        confidence: 0,
+        topic: 'degraded_cognition',
+        intentGoal: 'preserve-safe-observation',
+        reason: 'degraded_cognition',
+      }),
+      decisionSource: 'heuristic-base',
+      terminalAuthority: 'heuristic-fallback',
+      semanticFrozen: false,
+      lowRiskLaneUsed: false,
+      fallbackConditions: ['degraded_cognition'],
+      updatedMemory,
+      updatedProfiles: {
+        cognitiveState: updatedMemory.cognitiveState,
+        strategyProfile: updatedMemory.strategyProfile,
+        policyProfile: updatedMemory.policyProfile,
+        adaptiveDecisionProfile: updatedMemory.adaptiveDecisionProfile,
+        historicalSignals: updatedMemory.historicalSignals,
+      },
+    },
+  }
 }
 
 function resolveFallbackReason(args: {
@@ -182,9 +341,18 @@ class FlowMindService implements FlowMindPort {
     this.memoryStore = options.memoryStore ?? new InMemoryEntityCognitiveMemoryStore()
     this.adapterLoadStatus = resolveAdapterLoadStatus(options)
     this.adapterLoadReason = options.adapterLoadReason
+
+    if (!options.adapter && this.mode !== 'disabled') {
+      console.error('flowmind.adapter_missing', {
+        severity: 'critical',
+        mode: this.mode,
+        outcome: 'safe-observable-decision',
+      })
+    }
   }
 
   async evaluateOrchestratorCommand(input: FlowMindServiceInvocation): Promise<FlowMindServiceResult | undefined> {
+    console.info('flowmind.decision_input', describeDecisionInput(input))
     const effectiveMode = resolveEffectiveMode({
       globalMode: this.mode,
       entityProfile: input.entityProfile,
@@ -194,28 +362,56 @@ class FlowMindService implements FlowMindPort {
       return undefined
     }
 
-    const invokedAt = input.now ?? input.command.issuedAt ?? new Date().toISOString()
+    const invokedAt = resolveDeterministicInvokedAt(input)
+    if (!this.adapter) {
+      return createDegradedCognitionResult({
+        mode: effectiveMode,
+        invokedAt,
+        reason: 'degraded_cognition',
+      })
+    }
+
     const objective = resolveObjectiveFromEntityProfile(input.entityProfile, input.command)
-    const output = await resolveFlowMindDecision({
-      entityId: input.entityProfile.id,
-      input: buildCommandInput(input.command, input.state),
-      context: buildFlowMindContext(input),
-      objective,
-    }, {
-      adapter: this.adapter,
-      memoryStore: this.memoryStore,
-    })
+    let output
+
+    try {
+      output = await resolveFlowMindDecision({
+        entityId: input.entityProfile.id,
+        input: buildCommandInput(input.command, input.state),
+        context: buildFlowMindContext(input),
+        requestedAt: invokedAt,
+        objective,
+        memory: input.memory,
+      }, {
+        adapter: this.adapter,
+      })
+    } catch {
+      return createDegradedCognitionResult({
+        mode: effectiveMode,
+        invokedAt,
+        reason: 'degraded_cognition',
+      })
+    }
     const fallbackReason = resolveFallbackReason({
       output,
       adapterLoadStatus: this.adapterLoadStatus,
       adapterLoadReason: this.adapterLoadReason,
     })
 
+    if (fallbackReason) {
+      console.warn('flowmind.fallback_used', {
+        entityId: input.entityProfile.id,
+        commandName: input.command.name,
+        fallbackReason,
+        adapterLoadStatus: this.adapterLoadStatus,
+      })
+    }
+
     return {
       mode: effectiveMode,
       summary: {
         mode: effectiveMode,
-        adapterName: this.adapter?.name ?? 'backend-base-fallback',
+        adapterName: this.adapter.name,
         adapterLoadStatus: this.adapterLoadStatus,
         invokedAt,
         decisionSource: output.decisionSource,

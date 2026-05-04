@@ -5,6 +5,7 @@ import { createContext, createIntent, createTestEntity } from '../brain/flowmind
 import type { EntityAction } from '../brain/domain/entity/contracts/EntityAction.js'
 import type { FlowMindDecisionOutput } from '../brain/domain/entity/contracts/FlowMindState.js'
 import type { FlowMindDecisionComparison, FlowMindServiceResult } from '../services/flowMindPort.js'
+import { serializeFlowMindServiceSnapshot } from './flowMindComparison.js'
 import { evaluateFlowMindPartialAuthorityPolicy } from './flowMindAuthorityPolicy.js'
 import { createOrchestratorCommand } from './orchestratorCore.js'
 
@@ -123,10 +124,15 @@ function buildSovereignFlowMindResult(now: string, overrides?: {
         intent: overrides?.intent ?? 'encourage_export',
         action: overrides?.action ?? 'sell',
         confidence: overrides?.confidence ?? 0.76,
+        decisionHash: '',
         responsePlan: {
           kind: overrides?.action === 'guide' ? 'general' : 'promotion',
           topic: 'export controlado',
         },
+        actionPayload: {},
+        memoryReadSet: [],
+        memoryWritePlan: [],
+        expectedStateChanges: [],
       },
       decisionSource: 'adaptive-core',
       terminalAuthority: 'adaptive-core',
@@ -196,8 +202,34 @@ function buildComparison(args: {
 
 test('evaluateFlowMindPartialAuthorityPolicy allows marginal divergence when semantics stay aligned in safe zone', () => {
   const now = '2026-04-19T21:00:00.000Z'
+  const entity = createTestEntity()
+  entity.metadata.notes = Array.from({ length: 4 }, (_, index) => serializeFlowMindServiceSnapshot({
+    summary: buildSovereignFlowMindResult(now).summary,
+    comparison: buildComparison({
+      now: `2026-04-19T20:5${index}:00.000Z`,
+      divergenceScore: 0.11,
+      intentChanged: false,
+      actionChanged: false,
+    }),
+    authority: {
+      authorityEligible: true,
+      authorityGranted: false,
+      authorityZone: 'safe',
+      authorityCommand: 'trigger_export',
+      autonomyLevel: 'supervised',
+      promotionEligible: true,
+      rollbackTriggered: false,
+      autonomyMetrics: {
+        averageErrorRate: 0.08,
+        decisionStability: 1,
+        averageDivergenceScore: 0.11,
+        sampleSize: 4,
+      },
+    },
+  }))
+
   const result = evaluateFlowMindPartialAuthorityPolicy({
-    entityProfile: createTestEntity(),
+    entityProfile: entity,
     legacyDecision: buildLegacyDecision(now),
     sovereignFlowMind: buildSovereignFlowMindResult(now),
     comparison: buildComparison({
@@ -220,6 +252,9 @@ test('evaluateFlowMindPartialAuthorityPolicy allows marginal divergence when sem
 
   assert.equal(result.applied, true)
   assert.equal(result.reason, 'eligible-for-partial-authority')
+  assert.equal(result.autonomyLevel, 'partial')
+  assert.equal(result.promotionEligible, true)
+  assert.equal(result.rollbackTrigger.active, false)
 })
 
 test('evaluateFlowMindPartialAuthorityPolicy still denies semantic drift under divergence-too-high', () => {
@@ -248,6 +283,7 @@ test('evaluateFlowMindPartialAuthorityPolicy still denies semantic drift under d
 
   assert.equal(result.applied, false)
   assert.equal(result.reason, 'divergence-too-high')
+  assert.equal(result.autonomyLevel, 'manual')
 })
 
 test('evaluateFlowMindPartialAuthorityPolicy maps safe guide action to sendMessage execution', () => {
@@ -338,6 +374,7 @@ test('evaluateFlowMindPartialAuthorityPolicy maps safe guide action to sendMessa
 
   assert.equal(result.applied, true)
   assert.equal(result.action?.type, 'sendMessage')
+  assert.equal(result.autonomyLevel, 'partial')
 })
 
 test('evaluateFlowMindPartialAuthorityPolicy still denies action drift under divergence-too-high', () => {
@@ -366,4 +403,117 @@ test('evaluateFlowMindPartialAuthorityPolicy still denies action drift under div
 
   assert.equal(result.applied, false)
   assert.equal(result.reason, 'divergence-too-high')
+})
+
+test('evaluateFlowMindPartialAuthorityPolicy denies promotion when recent error rate is too high', () => {
+  const now = '2026-04-19T21:40:00.000Z'
+  const entity = createTestEntity()
+  entity.metadata.notes = Array.from({ length: 4 }, (_, index) => serializeFlowMindServiceSnapshot({
+    summary: buildSovereignFlowMindResult(now).summary,
+    comparison: {
+      ...buildComparison({
+        now: `2026-04-19T21:3${index}:00.000Z`,
+        divergenceScore: 0.12,
+        intentChanged: false,
+        actionChanged: false,
+      }),
+      metrics: {
+        divergenceScore: 0.12,
+        stabilityScore: 0.9,
+        fallbackRate: 0,
+        adaptiveSuccessRate: 0.4,
+        sampleSize: 5,
+      },
+    },
+    authority: {
+      authorityEligible: true,
+      authorityGranted: false,
+      authorityZone: 'safe',
+      authorityCommand: 'trigger_export',
+    },
+  }))
+
+  const result = evaluateFlowMindPartialAuthorityPolicy({
+    entityProfile: entity,
+    legacyDecision: buildLegacyDecision(now),
+    sovereignFlowMind: buildSovereignFlowMindResult(now),
+    comparison: buildComparison({
+      now,
+      divergenceScore: 0.12,
+      intentChanged: false,
+      actionChanged: false,
+    }),
+    command: createOrchestratorCommand({
+      type: 'command',
+      name: 'trigger_export',
+      issuedAt: now,
+      source: 'user',
+      payload: {
+        exportFormat: 'post',
+      },
+    }),
+    now,
+  })
+
+  assert.equal(result.applied, false)
+  assert.equal(result.reason, 'error-rate-too-high')
+  assert.equal(result.autonomyLevel, 'manual')
+  assert.ok(result.autonomyMetrics.averageErrorRate > result.thresholds.maxErrorRate)
+})
+
+test('evaluateFlowMindPartialAuthorityPolicy triggers rollback when recent granted autonomy becomes unstable', () => {
+  const now = '2026-04-19T21:50:00.000Z'
+  const entity = createTestEntity()
+  entity.metadata.notes = Array.from({ length: 4 }, (_, index) => serializeFlowMindServiceSnapshot({
+    summary: buildSovereignFlowMindResult(now).summary,
+    comparison: buildComparison({
+      now: `2026-04-19T21:4${index}:00.000Z`,
+      divergenceScore: 0.1,
+      intentChanged: false,
+      actionChanged: false,
+    }),
+    authority: {
+      authorityEligible: true,
+      authorityGranted: true,
+      authorityZone: 'safe',
+      authorityCommand: 'trigger_export',
+      autonomyLevel: 'partial',
+      promotionEligible: true,
+      rollbackTriggered: false,
+      autonomyMetrics: {
+        averageErrorRate: 0.05,
+        decisionStability: 1,
+        averageDivergenceScore: 0.1,
+        sampleSize: 4,
+      },
+    },
+  }))
+
+  const result = evaluateFlowMindPartialAuthorityPolicy({
+    entityProfile: entity,
+    legacyDecision: buildLegacyDecision(now),
+    sovereignFlowMind: buildSovereignFlowMindResult(now),
+    comparison: buildComparison({
+      now,
+      divergenceScore: 0.34,
+      intentChanged: true,
+      actionChanged: true,
+    }),
+    command: createOrchestratorCommand({
+      type: 'command',
+      name: 'trigger_export',
+      issuedAt: now,
+      source: 'user',
+      payload: {
+        exportFormat: 'post',
+      },
+    }),
+    now,
+  })
+
+  assert.equal(result.applied, false)
+  assert.equal(result.rollbackTrigger.active, true)
+  assert.equal(result.rollbackTrigger.reason, 'rollback-divergence-too-high')
+  assert.equal(result.reason, 'rollback-divergence-too-high')
+  assert.equal(result.autonomyLevel, 'manual')
 })

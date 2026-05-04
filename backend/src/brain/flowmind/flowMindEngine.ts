@@ -1,3 +1,5 @@
+import { normalizeCognitiveInput } from './cognitiveInput.js'
+
 type JsonRecord = Record<string, unknown>
 
 type EntityAction = {
@@ -81,7 +83,35 @@ function readString(value: unknown, fallback = '') {
 function readStringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === 'string')
+      .slice()
+      .sort((left, right) => left.localeCompare(right))
     : []
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(',')}]`
+  }
+
+  if (value && typeof value === 'object') {
+    const record = value as JsonRecord
+    return `{${Object.keys(record).sort((left, right) => left.localeCompare(right)).map((key) => `${key}:${stableStringify(record[key])}`).join(',')}}`
+  }
+
+  return JSON.stringify(value)
+}
+
+function resolveStableNow(input: DecideInput, entity: JsonRecord) {
+  if (typeof input.now === 'string' && input.now.trim().length > 0) {
+    return input.now
+  }
+
+  const metadata = asRecord(entity.metadata)
+  const previousState = input.previousState
+  return readString(metadata.updatedAt)
+    || readString(metadata.createdAt)
+    || readString(previousState?.lastDecisionAt)
+    || '2026-01-01T00:00:00.000Z'
 }
 
 function buildInitialFlowMindState(entity: JsonRecord): FlowMindDecisionState {
@@ -176,19 +206,27 @@ function buildFallbackAction(args: {
 }
 
 function decideLocally(input: DecideInput): FlowMindDecisionOutput {
+  const safeInput = normalizeCognitiveInput({
+    ...input,
+    context: asRecord(input.contextSnapshot),
+    engagementScore: readNumber(asRecord(asRecord(input.contextSnapshot).socialContext).engagementScore),
+    confidence: input.previousState?.decisionConfidence,
+  })
   const entity = input.entity
-  const now = input.now ?? new Date().toISOString()
+  const now = resolveStableNow(input, entity)
   const relational = asRecord(entity.relational)
-  const behaviorState = asRecord(input.behaviorState ?? relational.behaviorState)
-  const progression = asRecord(input.progression ?? relational.progression)
-  const userMemory = asRecord(input.userMemory ?? relational.userMemory)
-  const hookLoop = asRecord(input.hookLoop ?? relational.hookLoop)
-  const contextSnapshot = asRecord(input.contextSnapshot)
-  const socialSignals = Array.isArray(input.socialSignals) ? input.socialSignals : []
+  const behaviorState = asRecord(safeInput.behaviorState ?? relational.behaviorState)
+  const progression = asRecord(safeInput.progression ?? relational.progression)
+  const userMemory = asRecord(safeInput.userMemory ?? relational.userMemory)
+  const hookLoop = asRecord(safeInput.hookLoop ?? relational.hookLoop)
+  const contextSnapshot = asRecord(safeInput.context)
+  const socialSignals = (Array.isArray(safeInput.socialSignals) ? safeInput.socialSignals : [])
+    .slice()
+    .sort((left, right) => stableStringify(left).localeCompare(stableStringify(right)))
 
   const socialEngagement = clamp(
     (socialSignals.length > 0 ? Math.min(1, socialSignals.length / 8) * 0.4 : 0) +
-      readNumber(asRecord(contextSnapshot.socialContext).engagementScore) * 0.6,
+      safeInput.engagementScore * 0.6,
   )
 
   const awarenessLevel = clamp(
@@ -279,7 +317,7 @@ function decideLocally(input: DecideInput): FlowMindDecisionOutput {
     intent,
     confidence: decisionConfidence,
     now,
-    journeyMoment: input.journeyMoment,
+    journeyMoment: safeInput.journeyMoment,
   })
 
   return {

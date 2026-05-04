@@ -5,9 +5,16 @@ import { isAuthError, toAuthErrorResponse } from './authErrors.js'
 
 type BackendContext = {
   backendContext: {
-    auth: {
-      authService: {
-        register(input: { name: string; email: string; password: string; tenantName: string; businessModel: 'product' | 'service' | 'hybrid' | 'professional' }, clientContext: { ip?: string; userAgent?: string }): Promise<unknown>
+      auth: {
+        authService: {
+        register(input: {
+          name: string
+          email: string
+          password: string
+          tenantName?: string
+          businessModel: 'product' | 'service' | 'hybrid' | 'professional'
+          accountMode?: 'client' | 'owner'
+        }, clientContext: { ip?: string; userAgent?: string }): Promise<unknown>
         login(email: string, password: string, clientContext: { ip?: string; userAgent?: string }): Promise<unknown>
         requestPasswordReset(email: string): Promise<unknown>
         resetPasswordWithToken(token: string, newPassword: string): Promise<unknown>
@@ -62,6 +69,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       password?: string
       tenant_name?: string
       business_model?: 'product' | 'service' | 'hybrid' | 'professional'
+      intent?: 'client-case'
     }
   }>('/auth/register', async (request, reply) => {
     const name = request.body?.name?.trim() ?? ''
@@ -69,13 +77,16 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     const password = request.body?.password ?? ''
     const tenantName = request.body?.tenant_name?.trim() ?? ''
     const businessModel = request.body?.business_model ?? 'hybrid'
+    const accountMode = request.body?.intent === 'client-case' ? 'client' : 'owner'
 
-    if (!name || !email || !password || !tenantName) {
+    if (!name || !email || !password || (accountMode !== 'client' && !tenantName)) {
       return reply.status(400).send({
         status: 'failed',
         error: {
           code: 'invalid_registration',
-          message: 'name, email, password and tenant_name are required.',
+          message: accountMode === 'client'
+            ? 'name, email and password are required.'
+            : 'name, email, password and tenant_name are required.',
         },
       })
     }
@@ -85,8 +96,9 @@ export async function registerAuthRoutes(app: FastifyInstance) {
         name,
         email,
         password,
-        tenantName,
+        tenantName: accountMode === 'client' ? undefined : tenantName,
         businessModel,
+        accountMode,
       }, getClientContext(request))
       return reply.send(result)
     } catch (error) {

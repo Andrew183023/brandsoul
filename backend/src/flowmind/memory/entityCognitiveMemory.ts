@@ -8,12 +8,39 @@ import { createDefaultFlowMindCognitiveState, type FlowMindCognitiveState } from
 import { createDefaultFlowMindPolicyProfile, type FlowMindPolicyProfile } from '../cognition/policyProfile.js'
 import { createDefaultFlowMindStrategyProfile, type FlowMindStrategyProfile } from '../cognition/strategyProfile.js'
 
+export type EntityEpisodicMemory = {
+  id: string
+  summary: string
+  tags: string[]
+  relevanceScore: number
+  recordedAt: string
+  context: Record<string, unknown>
+}
+
+export type EntityEpisodicMemoryStore = {
+  entries: EntityEpisodicMemory[]
+}
+
 export type EntityCognitiveMemory = {
   cognitiveState: FlowMindCognitiveState
   strategyProfile: FlowMindStrategyProfile
   policyProfile: FlowMindPolicyProfile
   adaptiveDecisionProfile: FlowMindAdaptiveDecisionProfile
   historicalSignals: FlowMindHistoricalSignals
+  episodicMemory: EntityEpisodicMemoryStore
+}
+
+function hydrateEpisodicMemoryEntry(seed?: Partial<EntityEpisodicMemory>): EntityEpisodicMemory {
+  return {
+    id: seed?.id ?? 'episode:unknown',
+    summary: seed?.summary ?? '',
+    tags: Array.isArray(seed?.tags) ? [...seed.tags] : [],
+    relevanceScore: typeof seed?.relevanceScore === 'number' ? seed.relevanceScore : 0,
+    recordedAt: seed?.recordedAt ?? '1970-01-01T00:00:00.000Z',
+    context: seed?.context && typeof seed.context === 'object' && !Array.isArray(seed.context)
+      ? { ...seed.context }
+      : {},
+  }
 }
 
 export function createDefaultEntityCognitiveMemory(): EntityCognitiveMemory {
@@ -23,6 +50,9 @@ export function createDefaultEntityCognitiveMemory(): EntityCognitiveMemory {
     policyProfile: createDefaultFlowMindPolicyProfile(),
     adaptiveDecisionProfile: createDefaultFlowMindAdaptiveDecisionProfile(),
     historicalSignals: createDefaultFlowMindHistoricalSignals(),
+    episodicMemory: {
+      entries: [],
+    },
   }
 }
 
@@ -66,6 +96,9 @@ export function hydrateEntityCognitiveMemory(
     historicalSignals: {
       ...base.historicalSignals,
       ...seed?.historicalSignals,
+    },
+    episodicMemory: {
+      entries: (seed?.episodicMemory?.entries ?? base.episodicMemory.entries).map((entry) => hydrateEpisodicMemoryEntry(entry)),
     },
   }
 }

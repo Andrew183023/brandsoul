@@ -5,10 +5,11 @@ import type {
 import type { FlowMindCognitiveState } from '../cognition/cognitiveState.js'
 import type { FlowMindPolicyProfile } from '../cognition/policyProfile.js'
 import type { FlowMindStrategyProfile } from '../cognition/strategyProfile.js'
-import type { EntityCognitiveMemory } from '../memory/entityCognitiveMemory.js'
+import type { EntityCognitiveMemory, EntityEpisodicMemory } from '../memory/entityCognitiveMemory.js'
 import type { CognitiveObjective } from '../objectives/cognitiveObjective.js'
 import type {
   FlowMindDecision,
+  FlowMindDecisionSeed,
   FlowMindDecisionSource,
   FlowMindTerminalAuthority,
 } from './flowMindDecision.js'
@@ -17,7 +18,16 @@ export type FlowMindInput = {
   entityId: string
   input: string
   context: Record<string, unknown>
+  requestedAt?: string
   memory?: Partial<EntityCognitiveMemory>
+  episodicMemory?: {
+    retrieved: Array<EntityEpisodicMemory & {
+      retrievalWeight: number
+      ageDecayWeight: number
+      relevanceWeight: number
+    }>
+    queryTerms: string[]
+  }
   objective?: CognitiveObjective
   interaction?: {
     outcome?: unknown
@@ -36,7 +46,7 @@ export type FlowMindUpdatedProfiles = {
 }
 
 export type FlowMindAdaptiveCoreResult = {
-  decision: FlowMindDecision
+  decision: FlowMindDecisionSeed
   decisionSource: FlowMindDecisionSource
   terminalAuthority?: FlowMindTerminalAuthority
   fallbackConditions: string[]
@@ -45,7 +55,7 @@ export type FlowMindAdaptiveCoreResult = {
 }
 
 export type FlowMindStrategyResult = {
-  decision: FlowMindDecision
+  decision: FlowMindDecisionSeed
   updatedStrategyProfile: FlowMindStrategyProfile
 }
 
@@ -58,7 +68,7 @@ export type FlowMindBehaviorFeedbackResult = {
 
 export type FlowMindDecisionAdapter = {
   name: string
-  resolveBaseDecision?: (input: FlowMindInput, memory: EntityCognitiveMemory) => FlowMindDecision
+  resolveBaseDecision?: (input: FlowMindInput, memory: EntityCognitiveMemory) => FlowMindDecisionSeed
   resolveAdaptiveCore?: (args: {
     input: FlowMindInput
     memory: EntityCognitiveMemory
@@ -69,14 +79,14 @@ export type FlowMindDecisionAdapter = {
     memory: EntityCognitiveMemory
     decision: FlowMindDecision
     allowSemanticRewrite: boolean
-  }) => FlowMindDecision
+  }) => FlowMindDecisionSeed
   applyCognitiveState?: (args: {
     input: FlowMindInput
     memory: EntityCognitiveMemory
     decision: FlowMindDecision
     allowSemanticRewrite: boolean
   }) => {
-    decision: FlowMindDecision
+    decision: FlowMindDecisionSeed
     nextCognitiveState: FlowMindCognitiveState
   }
   applyStrategy?: (args: {

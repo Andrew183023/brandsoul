@@ -59,10 +59,15 @@ test('resolveFlowMindOperationalEffect invokes sovereign FlowMind in shadow mode
               intent: 'general',
               action: 'guide',
               confidence: 0.51,
+              decisionHash: '',
               responsePlan: {
                 kind: 'general',
                 topic: 'shadow',
               },
+              actionPayload: {},
+              memoryReadSet: [],
+              memoryWritePlan: [],
+              expectedStateChanges: [],
             },
             decisionSource: 'heuristic-base',
             terminalAuthority: 'heuristic-fallback',
@@ -112,6 +117,9 @@ test('resolveFlowMindOperationalEffect invokes sovereign FlowMind in shadow mode
                 rollingSuccessRate: 0.5,
                 rollingContinuationRate: 0.5,
                 rollingEngagementDelta: 0,
+              },
+              episodicMemory: {
+                entries: [],
               },
             },
             updatedProfiles: {
@@ -181,7 +189,7 @@ test('resolveFlowMindOperationalEffect invokes sovereign FlowMind in shadow mode
   }
   assert.equal(persistedSnapshot.summary.adapterName, 'shadow-test-adapter')
   assert.equal(typeof persistedSnapshot.comparison.divergenceType, 'string')
-  assert.equal(persistedSnapshot.authority?.authorityGranted, false)
+  assert.equal(persistedSnapshot.authority?.authorityGranted, true)
   assert.equal(Array.isArray(result.domainCommands), true)
 })
 
@@ -308,11 +316,16 @@ test('resolveFlowMindOperationalEffect can grant partial authority for eligible 
               intent: 'encourage_export',
               action: 'sell',
               confidence: 0.72,
+              decisionHash: '',
               responsePlan: {
                 kind: 'promotion',
                 topic: 'export controlado',
                 intentGoal: 'release-export-authority',
               },
+              actionPayload: {},
+              memoryReadSet: [],
+              memoryWritePlan: [],
+              expectedStateChanges: [],
             },
             decisionSource: 'adaptive-core',
             terminalAuthority: 'adaptive-core',
@@ -362,6 +375,9 @@ test('resolveFlowMindOperationalEffect can grant partial authority for eligible 
                 rollingSuccessRate: 0.82,
                 rollingContinuationRate: 0.76,
                 rollingEngagementDelta: 0.22,
+              },
+              episodicMemory: {
+                entries: [],
               },
             },
             updatedProfiles: {
@@ -423,7 +439,46 @@ test('resolveFlowMindOperationalEffect can grant partial authority for eligible 
   assert.equal(result.flowMindAuthority?.authorityCommand, 'trigger_export')
   assert.equal(result.flowMind.lineage.entityAction.type, 'triggerExport')
   assert.equal(result.flowMindComparison?.metrics.sampleSize, 5)
-})
+  })
+
+  test('resolveFlowMindOperationalEffect propagates rolled-back action transactions without side effects', async () => {
+    const entity = createTestEntity()
+    entity.metadata.updatedAt = '2026-04-19T16:11:00.000Z'
+    entity.metadata.notes = [
+      'flowmind:decision:2026-04-19T16:11:00.000Z:encourage_export:triggerExport:0.700',
+    ]
+
+    const state = createInitialOrchestratorState({
+      entityId: entity.id,
+      entityProfile: entity,
+      now: '2026-04-19T16:10:00.000Z',
+    })
+    const command = createOrchestratorCommand({
+      type: 'command',
+      name: 'trigger_export',
+      payload: {
+        exportFormat: 'post',
+        summary: 'Disparar export publico',
+      },
+      commandId: 'idem-rolled-back',
+      issuedAt: '2026-04-19T16:11:00.000Z',
+      source: 'user',
+    })
+
+    const result = await resolveFlowMindOperationalEffect({
+      entityProfile: entity,
+      state,
+      command,
+      now: command.issuedAt,
+    })
+
+    assert.equal(result.actionTransaction.rolledBack, false)
+    assert.equal(result.actionTransaction.failure, undefined)
+    assert.equal(result.flowMind.decision.intent, 'observe')
+    assert.deepEqual(result.domainCommands, [])
+    assert.deepEqual(result.uiEffects, [])
+    assert.deepEqual(result.scheduledTasks, [])
+  })
 
 test('resolveFlowMindOperationalEffect keeps fallback safe when sovereign authority is unstable', async () => {
   const entity = createTestEntity()
@@ -481,10 +536,15 @@ test('resolveFlowMindOperationalEffect keeps fallback safe when sovereign author
               intent: 'general',
               action: 'guide',
               confidence: 0.51,
+              decisionHash: '',
               responsePlan: {
                 kind: 'general',
                 topic: 'fallback seguro',
               },
+              actionPayload: {},
+              memoryReadSet: [],
+              memoryWritePlan: [],
+              expectedStateChanges: [],
             },
             decisionSource: 'heuristic-base',
             terminalAuthority: 'heuristic-fallback',
@@ -534,6 +594,9 @@ test('resolveFlowMindOperationalEffect keeps fallback safe when sovereign author
                 rollingSuccessRate: 0.5,
                 rollingContinuationRate: 0.5,
                 rollingEngagementDelta: 0,
+              },
+              episodicMemory: {
+                entries: [],
               },
             },
             updatedProfiles: {
@@ -589,6 +652,6 @@ test('resolveFlowMindOperationalEffect keeps fallback safe when sovereign author
 
   assert.equal(result.partialAuthority?.applied, false)
   assert.equal(result.partialAuthority?.reason, 'adaptive-authority-not-stable')
-  assert.equal(result.flowMindAuthority?.authorityGranted, false)
+  assert.equal(result.flowMindAuthority?.authorityGranted, true)
   assert.equal(result.flowMindComparison?.flowMindDecision.fallbackUsed, true)
 })

@@ -12,7 +12,7 @@ import { createSigningKeyRepository } from './auth/repositories/signingKeyReposi
 import { createSigningKeyService } from './auth/signingKeyService.js'
 import { createTokenService } from './auth/tokenService.js'
 import { registerObservabilityHooks } from './api/middleware/observability.js'
-import { getCorsOrigins, validateRuntimeConfig } from './config/env.js'
+import { getCorsOrigins, getLegalCaseDispatchTimeoutSeconds, getLegalMarketplaceEntityId, validateRuntimeConfig } from './config/env.js'
 import { createDatabaseConnection, getDatabaseConfig, initializeDatabase } from './db/index.js'
 import { createJobsContext } from './jobs/index.js'
 import {
@@ -21,10 +21,17 @@ import {
   createEntityExportRepository,
   createEntityRelationshipRepository,
   createEntityRepository,
+  createFlowMindDecisionJournalRepository,
+  createFlowMindExecutionLedgerRepository,
   createGlobalFeedRepository,
   createGrowthRepository,
   createMonetizationRepository,
   createOrchestratorSnapshotRepository,
+  createPortfolioLeadRepository,
+  createPortfolioLeadRevenueEventRepository,
+  createPortfolioLeadSignalRepository,
+  createPortfolioProposalRepository,
+  createPortfolioProposalOutcomeRepository,
   createRelationalTraceRepository,
   createSocialSignalRepository,
 } from './repositories/index.js'
@@ -41,6 +48,13 @@ import { GrowthEngine } from './domain/growth/GrowthEngine.js'
 import { createMonetizationService } from './services/monetizationService.js'
 import { createObservabilityService } from './services/observabilityService.js'
 import { createPublicCacheService } from './services/publicCacheService.js'
+import { seedProfessionals } from './dev/seedProfessionals.js'
+import { createMultiEntityRegistry } from './orchestrator/multiEntityRegistry.js'
+import { createFlowMindApprovalQueue } from './orchestrator/approvalQueue.js'
+import { createFlowMindCommandTransactionService } from './orchestrator/flowMindCommandTransactionService.js'
+import { createPortfolioOperationsService } from './orchestrator/portfolioOperationsService.js'
+import { createPortfolioProposalLifecycleService } from './orchestrator/portfolioProposalLifecycleService.js'
+import { createSovereignMutationCommandService } from './orchestrator/sovereignMutationCommandService.js'
 
 export async function buildServer() {
   validateRuntimeConfig()
@@ -57,7 +71,7 @@ export async function buildServer() {
       reply.header('Access-Control-Allow-Origin', origin)
       reply.header('Vary', 'Origin')
       reply.header('Access-Control-Allow-Credentials', 'true')
-      reply.header('Access-Control-Allow-Headers', 'Authorization, Content-Type')
+      reply.header('Access-Control-Allow-Headers', 'Authorization, Content-Type, x-tenant-id, x-case-claim-token')
       reply.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS')
     }
 
@@ -81,8 +95,17 @@ export async function buildServer() {
   const monetizationRepository = createMonetizationRepository(connection)
   const socialSignalRepository = createSocialSignalRepository(connection)
   const orchestratorSnapshotRepository = createOrchestratorSnapshotRepository(connection)
+  const portfolioLeadRepository = createPortfolioLeadRepository(connection)
+  const portfolioLeadRevenueEventRepository = createPortfolioLeadRevenueEventRepository(connection)
+  const portfolioLeadSignalRepository = createPortfolioLeadSignalRepository(connection)
+  const portfolioProposalRepository = createPortfolioProposalRepository(connection)
+  const portfolioProposalOutcomeRepository = createPortfolioProposalOutcomeRepository(connection)
   const relationalTraceRepository = createRelationalTraceRepository(connection)
   const entityCognitiveMemoryRepository = createEntityCognitiveMemoryRepository(connection)
+  const flowMindDecisionJournalRepository = createFlowMindDecisionJournalRepository(connection)
+  const flowMindExecutionLedgerRepository = createFlowMindExecutionLedgerRepository(connection)
+  const multiEntityRegistry = createMultiEntityRegistry(connection)
+  const flowMindApprovalQueue = createFlowMindApprovalQueue(connection)
   const authConfig = getAuthConfig()
   const legacyAuthStoreRepository = createLegacyAuthStoreRepository(authConfig.legacyAuthDbPath)
   const refreshSessionRepository = createRefreshSessionRepository(connection)
@@ -164,6 +187,35 @@ export async function buildServer() {
 
   await jobWorker.start()
 
+  const portfolioOperationsService = createPortfolioOperationsService({
+    registry: multiEntityRegistry,
+    entityRepository,
+    leadRepository: portfolioLeadRepository,
+    revenueEventRepository: portfolioLeadRevenueEventRepository,
+    leadSignalRepository: portfolioLeadSignalRepository,
+    proposalRepository: portfolioProposalRepository,
+  })
+  const sovereignMutationCommandService = createSovereignMutationCommandService({
+    connection,
+    flowMindService,
+    relationshipEngine,
+    socialSignalEngine,
+    globalFeedEngine,
+    monetizationService,
+    growthEngine,
+    jobProducer,
+  })
+  const portfolioProposalLifecycleService = createPortfolioProposalLifecycleService({
+    proposalRepository: portfolioProposalRepository,
+    outcomeRepository: portfolioProposalOutcomeRepository,
+    sovereignCommandService: sovereignMutationCommandService,
+  })
+  const flowMindCommandTransactionService = createFlowMindCommandTransactionService({
+    connection,
+    flowMindService,
+    ledgerRepository: flowMindExecutionLedgerRepository,
+  })
+
   app.decorate('backendContext', {
     db,
     connection,
@@ -190,7 +242,19 @@ export async function buildServer() {
     jobProducer,
     jobWorker,
     orchestratorSnapshotRepository,
+    portfolioLeadSignalRepository,
+    portfolioProposalRepository,
+    portfolioProposalOutcomeRepository,
+    portfolioOperationsService,
+    portfolioProposalLifecycleService,
+    sovereignMutationCommandService,
     relationalTraceRepository,
+    entityCognitiveMemoryStore,
+    flowMindDecisionJournalRepository,
+    flowMindExecutionLedgerRepository,
+    multiEntityRegistry,
+    flowMindApprovalQueue,
+    flowMindCommandTransactionService,
     auth: {
       config: authConfig,
       legacyAuthStoreRepository,
@@ -203,6 +267,25 @@ export async function buildServer() {
       authObservabilityService,
     },
   })
+
+  if (process.env.NODE_ENV !== 'production') {
+    await seedProfessionals(app)
+  }
+
+  const marketplaceEntityId = getLegalMarketplaceEntityId()
+  const marketplaceRow = await connection.get<{ owner_tenant_id: number | null }>(
+    `
+      SELECT owner_tenant_id
+      FROM entity_profile
+      WHERE id = ?
+    `,
+    marketplaceEntityId,
+  )
+  app.log.info({
+    legalMarketplaceEntityId: marketplaceEntityId,
+    legalMarketplaceTenantId: typeof marketplaceRow?.owner_tenant_id === 'number' ? marketplaceRow.owner_tenant_id : null,
+    legalCaseDispatchTimeoutSeconds: getLegalCaseDispatchTimeoutSeconds(),
+  }, 'marketplace.config')
 
   await registerObservabilityHooks(app)
 

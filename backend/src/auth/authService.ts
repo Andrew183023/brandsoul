@@ -188,8 +188,9 @@ export class AuthService {
     name: string
     email: string
     password: string
-    tenantName: string
+    tenantName?: string
     businessModel: 'product' | 'service' | 'hybrid' | 'professional'
+    accountMode?: 'client' | 'owner'
   }, clientContext: RequestClientContext): Promise<AuthTokenBundle> {
     if (!this.signingKeyService.isConfigured()) {
       throw AuthError.authNotConfigured()
@@ -197,9 +198,18 @@ export class AuthService {
 
     const normalizedName = input.name.trim()
     const normalizedEmail = input.email.trim().toLowerCase()
-    const normalizedTenantName = input.tenantName.trim()
+    const accountMode = input.accountMode === 'client' ? 'client' : 'owner'
+    const normalizedTenantName = (input.tenantName ?? '').trim()
+    const resolvedTenantName = accountMode === 'client'
+      ? `Cliente ${normalizedName}`
+      : normalizedTenantName
 
-    if (normalizedName.length < 2 || normalizedEmail.length < 5 || input.password.length < 8 || normalizedTenantName.length < 2) {
+    if (
+      normalizedName.length < 2
+      || normalizedEmail.length < 5
+      || input.password.length < 8
+      || resolvedTenantName.length < 2
+    ) {
       throw AuthError.invalidRegistration()
     }
 
@@ -207,7 +217,7 @@ export class AuthService {
       throw AuthError.emailAlreadyRegistered()
     }
 
-    const tenantSlug = await this.buildUniqueTenantSlug(normalizedTenantName)
+    const tenantSlug = await this.buildUniqueTenantSlug(resolvedTenantName)
     const user = await this.legacyAuthStoreRepository.createUser({
       name: normalizedName,
       email: normalizedEmail,
@@ -218,9 +228,9 @@ export class AuthService {
     }
 
     const tenant = await this.legacyAuthStoreRepository.createTenant({
-      name: normalizedTenantName,
+      name: resolvedTenantName,
       slug: tenantSlug,
-      businessModel: input.businessModel,
+      businessModel: accountMode === 'client' ? 'professional' : input.businessModel,
     })
     if (!tenant) {
       throw AuthError.invalidRegistration('Unable to create tenant.')
@@ -229,7 +239,7 @@ export class AuthService {
     const membership = await this.legacyAuthStoreRepository.createMembership({
       userId: user.id,
       tenantId: tenant.id,
-      role: 'owner',
+      role: accountMode === 'client' ? 'client' : 'owner',
     })
     if (!membership) {
       throw AuthError.invalidRegistration('Unable to create membership.')

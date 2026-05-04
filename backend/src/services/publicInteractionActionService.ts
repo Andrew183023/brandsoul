@@ -1,5 +1,6 @@
 import type { EntityProfile } from '../brain/domain/entity/contracts/EntityProfile.js'
 import type { EntityRepository } from '../repositories/entityRepository.js'
+import type { SovereignMutationCommandService } from '../orchestrator/sovereignMutationCommandService.js'
 
 type PublicInteractionBusinessContext = {
   businessType?: string
@@ -77,9 +78,15 @@ export type LawyerReputationMetrics = {
   closureRate: number
 }
 
-export type PublicInteractionActionDecision = {
-  intent: 'legal_case' | 'none'
+export type PublicInteractionExecutionDecision = {
+  action: 'legal_emergency_cta' | 'none'
+  reason:
+    | 'flowmind-authorized-legal-guidance'
+    | 'flowmind-action-not-eligible'
+    | 'non-legal-entity'
+    | 'legal-signal-not-detected'
   confidence: number
+  flowMindDecision: FlowMindDecisionGate
   slots: {
     description?: string
     city?: string
@@ -88,16 +95,17 @@ export type PublicInteractionActionDecision = {
   missingFields: Array<'descricao' | 'cidade' | 'contato'>
 }
 
+type FlowMindDecisionGate = {
+  intent: string
+  action: string
+  confidence: number
+}
+
 export type PublicInteractionActionResult =
   | {
-    actionType: 'create_legal_case'
-    status: 'created'
-    caseId: string
-    missingFields: Array<'descricao' | 'cidade' | 'contato'>
-  }
-  | {
-    actionType: 'create_legal_case'
-    status: 'needs_input'
+    actionType: 'legal_emergency_cta'
+    status: 'redirect'
+    href: '/legal/emergency'
     missingFields: Array<'descricao' | 'cidade' | 'contato'>
   }
   | {
@@ -110,6 +118,10 @@ const LEGAL_CASE_ASSIGNMENT_FEE_CENTS = 2_000
 
 function clamp(value: number, min = 0, max = 1) {
   return Math.min(max, Math.max(min, value))
+}
+
+function isFlowMindActionEligibleForPublicAction(action: string) {
+  return action === 'support' || action === 'guide'
 }
 
 function normalizeText(value: string) {
@@ -336,15 +348,58 @@ export async function findLegalCaseById(args: {
   return undefined
 }
 
-export function decidePublicInteractionAction(args: {
+export async function claimLegalCaseClientOwnership(args: {
+  repository: EntityRepository
+  sovereignCommandService: SovereignMutationCommandService
+  caseId: string
+  userId: number
+  tenantId: number
+}) {
+  const found = await findLegalCaseById({
+    repository: args.repository,
+    caseId: args.caseId,
+  })
+
+  if (!found) {
+    return undefined
+  }
+
+  if (typeof found.legalCase.creatorUserId === 'number' || typeof found.legalCase.creatorTenantId === 'number') {
+    return found
+  }
+
+  const updatedCase: LegalCaseRecord = {
+    ...found.legalCase,
+    creatorUserId: args.userId,
+    creatorTenantId: args.tenantId,
+  }
+
+  const updatedEntityProfile = writeLegalCase(found.entity.entityProfile as EntityProfile, updatedCase)
+  await args.sovereignCommandService.submitCommand({
+    type: 'entity.profile.persist',
+    commandId: `legal-case-claim:${found.entity.id}:${args.caseId}:${updatedCase.updatedAt}`,
+    entityId: found.entity.id,
+    entityProfile: updatedEntityProfile,
+    updatedAt: updatedCase.updatedAt,
+  })
+
+  return {
+    entity: found.entity,
+    legalCase: updatedCase,
+  }
+}
+
+export function resolvePublicInteractionExecutionDecision(args: {
   entityProfile: EntityProfile
   userMessage: string
   businessContext?: PublicInteractionBusinessContext
-}): PublicInteractionActionDecision {
+  flowMindDecision: FlowMindDecisionGate
+}): PublicInteractionExecutionDecision {
   const { entityProfile, userMessage, businessContext } = args
   const description = extractDescription(userMessage)
   const city = extractCity(userMessage)
   const contact = extractContact(userMessage)
+  const flowMindDecision = args.flowMindDecision
   const legalCue = includesAnyTerm(userMessage, [
     'processo',
     'advogado',
@@ -392,8 +447,25 @@ export function decidePublicInteractionAction(args: {
 
   if (!legalEntity || !legalCue) {
     return {
-      intent: 'none',
+      action: 'none',
+      reason: !legalEntity ? 'non-legal-entity' : 'legal-signal-not-detected',
       confidence,
+      flowMindDecision,
+      slots: {
+        description,
+        city,
+        contact,
+      },
+      missingFields,
+    }
+  }
+
+  if (!isFlowMindActionEligibleForPublicAction(flowMindDecision.action)) {
+    return {
+      action: 'none',
+      reason: 'flowmind-action-not-eligible',
+      confidence,
+      flowMindDecision,
       slots: {
         description,
         city,
@@ -404,8 +476,10 @@ export function decidePublicInteractionAction(args: {
   }
 
   return {
-    intent: 'legal_case',
+    action: 'legal_emergency_cta',
+    reason: 'flowmind-authorized-legal-guidance',
     confidence,
+    flowMindDecision,
     slots: {
       description,
       city,
@@ -419,6 +493,7 @@ export async function createLegalCase(args: {
   entityId: string
   entityProfile: EntityProfile
   repository: EntityRepository
+  sovereignCommandService: SovereignMutationCommandService
   slots: {
     description: string
     city?: string
@@ -467,8 +542,10 @@ export async function createLegalCase(args: {
   }
 
   const updatedEntityProfile = writeLegalCase(args.entityProfile, legalCase)
-  await args.repository.updateEntity({
-    id: args.entityId,
+  await args.sovereignCommandService.submitCommand({
+    type: 'entity.profile.persist',
+    commandId: `legal-case-create:${args.entityId}:${legalCase.id}:${createdAt}`,
+    entityId: args.entityId,
     entityProfile: updatedEntityProfile,
     updatedAt: createdAt,
   })
@@ -478,6 +555,7 @@ export async function createLegalCase(args: {
 
 export async function appendLegalCaseMessage(args: {
   repository: EntityRepository
+  sovereignCommandService: SovereignMutationCommandService
   caseId: string
   role: LegalCaseMessageRole
   text: string
@@ -515,8 +593,10 @@ export async function appendLegalCaseMessage(args: {
   }
 
   const updatedEntityProfile = writeLegalCase(found.entity.entityProfile as EntityProfile, updatedCase)
-  await args.repository.updateEntity({
-    id: found.entity.id,
+  await args.sovereignCommandService.submitCommand({
+    type: 'entity.profile.persist',
+    commandId: `legal-case-message:${found.entity.id}:${args.caseId}:${nextMessage.id}`,
+    entityId: found.entity.id,
     entityProfile: updatedEntityProfile,
     updatedAt: createdAt,
   })
@@ -530,6 +610,7 @@ export async function appendLegalCaseMessage(args: {
 
 export async function assignLegalCase(args: {
   repository: EntityRepository
+  sovereignCommandService: SovereignMutationCommandService
   caseId: string
   lawyerId: string
   now?: string
@@ -575,8 +656,10 @@ export async function assignLegalCase(args: {
   }
 
   const updatedEntityProfile = writeLegalCase(found.entity.entityProfile as EntityProfile, updatedCase)
-  await args.repository.updateEntity({
-    id: found.entity.id,
+  await args.sovereignCommandService.submitCommand({
+    type: 'entity.profile.persist',
+    commandId: `legal-case-assign:${found.entity.id}:${args.caseId}:${changedAt}`,
+    entityId: found.entity.id,
     entityProfile: updatedEntityProfile,
     updatedAt: changedAt,
   })
@@ -590,6 +673,7 @@ export async function assignLegalCase(args: {
 
 export async function closeLegalCase(args: {
   repository: EntityRepository
+  sovereignCommandService: SovereignMutationCommandService
   caseId: string
   rating: number
   feedback?: string
@@ -632,8 +716,10 @@ export async function closeLegalCase(args: {
   }
 
   const updatedEntityProfile = writeLegalCase(found.entity.entityProfile as EntityProfile, updatedCase)
-  await args.repository.updateEntity({
-    id: found.entity.id,
+  await args.sovereignCommandService.submitCommand({
+    type: 'entity.profile.persist',
+    commandId: `legal-case-close:${found.entity.id}:${args.caseId}:${closedAt}`,
+    entityId: found.entity.id,
     entityProfile: updatedEntityProfile,
     updatedAt: closedAt,
   })
@@ -649,72 +735,44 @@ export async function executePublicInteractionAction(args: {
   entityId: string
   entityProfile: EntityProfile
   repository: EntityRepository
-  decision: PublicInteractionActionDecision
+  decision: PublicInteractionExecutionDecision
   initialUserMessage?: string
   creatorActorId?: string
   creatorUserId?: number
   creatorTenantId?: number
   now?: string
 }): Promise<PublicInteractionActionResult> {
-  if (args.decision.intent !== 'legal_case') {
+  if (args.decision.action !== 'legal_emergency_cta' || !isFlowMindActionEligibleForPublicAction(args.decision.flowMindDecision.action)) {
     return {
       actionType: 'none',
       status: 'skipped',
     }
   }
 
-  if (!args.decision.slots.description) {
-    return {
-      actionType: 'create_legal_case',
-      status: 'needs_input',
-      missingFields: args.decision.missingFields,
-    }
-  }
-
-  const legalCase = await createLegalCase({
-    entityId: args.entityId,
-    entityProfile: args.entityProfile,
-    repository: args.repository,
-    slots: {
-      description: args.decision.slots.description,
-      city: args.decision.slots.city,
-      contact: args.decision.slots.contact,
-    },
-    initialUserMessage: args.initialUserMessage,
-    creatorActorId: args.creatorActorId,
-    creatorUserId: args.creatorUserId,
-    creatorTenantId: args.creatorTenantId,
-    now: args.now,
-  })
-
   return {
-    actionType: 'create_legal_case',
-    status: 'created',
-    caseId: legalCase.id,
-    missingFields: args.decision.missingFields.filter((field) => field !== 'descricao'),
+    actionType: 'legal_emergency_cta',
+    status: 'redirect',
+    href: '/legal/emergency',
+    missingFields: args.decision.missingFields,
   }
 }
 
 export function buildPublicInteractionActionResponseText(args: {
   entityName: string
   baseResponseText: string
-  actionDecision: PublicInteractionActionDecision
+  actionDecision: PublicInteractionExecutionDecision
   actionResult: PublicInteractionActionResult
 }) {
-  if (args.actionDecision.intent !== 'legal_case') {
+  if (args.actionDecision.action !== 'legal_emergency_cta') {
     return args.baseResponseText
   }
 
-  if (args.actionResult.actionType === 'create_legal_case' && args.actionResult.status === 'needs_input') {
-    return `Consigo abrir seu caso em ${args.entityName}, mas ainda preciso que voce descreva brevemente o problema para registrar com seguranca.`
-  }
-
-  if (args.actionResult.actionType === 'create_legal_case' && args.actionResult.status === 'created') {
+  if (args.actionResult.actionType === 'legal_emergency_cta' && args.actionResult.status === 'redirect') {
     const missingSuffix = args.actionResult.missingFields.length > 0
       ? ` Ainda preciso de ${args.actionResult.missingFields.join(' e ')} para complementar o atendimento.`
       : ''
 
-    return `Seu caso foi registrado em ${args.entityName} com o identificador ${args.actionResult.caseId}.${missingSuffix}`.trim()
+    return `Para atendimento juridico, use a entrada unica em /legal/emergency.${missingSuffix}`.trim()
   }
 
   return args.baseResponseText

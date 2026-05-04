@@ -8,10 +8,28 @@ import {
   buildLawyerReputationMetrics,
   buildPublicInteractionActionResponseText,
   closeLegalCase,
-  decidePublicInteractionAction,
+  createLegalCase,
   executePublicInteractionAction,
   listLegalCases,
+  resolvePublicInteractionExecutionDecision,
 } from './publicInteractionActionService.js'
+
+function createSovereignCommandStub(getProfile: () => EntityProfile, setProfile: (next: EntityProfile) => void) {
+  return {
+    async submitCommand(command: { entityProfile?: EntityProfile }) {
+      if (command.entityProfile) {
+        setProfile(command.entityProfile)
+      }
+      return {
+        entity: {
+          id: getProfile().id,
+          entityProfile: getProfile(),
+        },
+        changed: true,
+      }
+    },
+  } as never
+}
 
 function createLegalEntity(): EntityProfile {
   return {
@@ -57,22 +75,29 @@ function createLegalEntity(): EntityProfile {
   } as unknown as EntityProfile
 }
 
-test('decidePublicInteractionAction detects legal_case and extracts slots', () => {
-  const decision = decidePublicInteractionAction({
+test('resolvePublicInteractionExecutionDecision derives legal CTA execution from FlowMind decision', () => {
+  const decision = resolvePublicInteractionExecutionDecision({
     entityProfile: createLegalEntity(),
     userMessage: 'Preciso de ajuda urgente com um problema de trabalho em Campinas. Meu contato é 11987654321.',
     businessContext: {
       businessType: 'legal',
     },
+    flowMindDecision: {
+      intent: 'assist',
+      action: 'support',
+      confidence: 0.77,
+    },
   })
 
-  assert.equal(decision.intent, 'legal_case')
+  assert.equal(decision.action, 'legal_emergency_cta')
+  assert.equal(decision.reason, 'flowmind-authorized-legal-guidance')
+  assert.equal(decision.flowMindDecision.action, 'support')
   assert.equal(decision.slots.city, 'Campinas')
   assert.equal(decision.slots.contact, '11987654321')
   assert.ok(decision.slots.description)
 })
 
-test('executePublicInteractionAction creates a legal case and asks for missing data', async () => {
+test('executePublicInteractionAction returns legal emergency CTA and does not create a legal case', async () => {
   const entityProfile = createLegalEntity()
   let updatedProfile: EntityProfile | undefined
 
@@ -86,8 +111,14 @@ test('executePublicInteractionAction creates a legal case and asks for missing d
       },
     } as never,
     decision: {
-      intent: 'legal_case',
+      action: 'legal_emergency_cta',
+      reason: 'flowmind-authorized-legal-guidance',
       confidence: 0.92,
+      flowMindDecision: {
+        intent: 'assist',
+        action: 'support',
+        confidence: 0.77,
+      },
       slots: {
         description: 'Recebi uma cobranca indevida e preciso de orientacao juridica.',
       },
@@ -96,25 +127,27 @@ test('executePublicInteractionAction creates a legal case and asks for missing d
     now: '2026-04-25T12:00:00.000Z',
   })
 
-  assert.equal(actionResult.actionType, 'create_legal_case')
-  assert.equal(actionResult.status, 'created')
-  if (actionResult.status !== 'created') {
-    throw new Error('Expected legal case to be created.')
+  assert.equal(actionResult.actionType, 'legal_emergency_cta')
+  assert.equal(actionResult.status, 'redirect')
+  if (actionResult.status !== 'redirect') {
+    throw new Error('Expected legal emergency CTA redirect.')
   }
-  assert.ok(actionResult.caseId)
+  assert.equal(actionResult.href, '/legal/emergency')
   assert.deepEqual(actionResult.missingFields, ['cidade', 'contato'])
-  assert.ok(updatedProfile?.metadata.notes?.[0]?.startsWith('legal:case:'))
-  const savedCases = updatedProfile ? listLegalCases(updatedProfile) : []
-  assert.equal(savedCases.length, 1)
-  assert.equal(savedCases[0]?.messages.length, 2)
-  assert.equal(savedCases[0]?.timeline.length, 2)
+  assert.equal(updatedProfile, undefined)
 
   const responseText = buildPublicInteractionActionResponseText({
     entityName: 'BrandSoul Legal',
     baseResponseText: 'Resposta base.',
     actionDecision: {
-      intent: 'legal_case',
+      action: 'legal_emergency_cta',
+      reason: 'flowmind-authorized-legal-guidance',
       confidence: 0.92,
+      flowMindDecision: {
+        intent: 'assist',
+        action: 'support',
+        confidence: 0.77,
+      },
       slots: {
         description: 'Recebi uma cobranca indevida.',
       },
@@ -123,17 +156,40 @@ test('executePublicInteractionAction creates a legal case and asks for missing d
     actionResult,
   })
 
-  assert.match(responseText, /identificador/)
+  assert.match(responseText, /\/legal\/emergency/)
   assert.match(responseText, /cidade e contato/)
+})
+
+test('resolvePublicInteractionExecutionDecision skips legal redirect when FlowMind does not authorize the action', () => {
+  const decision = resolvePublicInteractionExecutionDecision({
+    entityProfile: createLegalEntity(),
+    userMessage: 'Preciso de ajuda urgente com um problema de trabalho em Campinas. Meu contato é 11987654321.',
+    businessContext: {
+      businessType: 'legal',
+    },
+    flowMindDecision: {
+      intent: 'observe',
+      action: 'none',
+      confidence: 0,
+    },
+  })
+
+  assert.equal(decision.action, 'none')
+  assert.equal(decision.reason, 'flowmind-action-not-eligible')
+  assert.equal(decision.flowMindDecision.action, 'none')
 })
 
 test('appendLegalCaseMessage keeps conversation inside the case history', async () => {
   const entityProfile = createLegalEntity()
   let persistedProfile = entityProfile
+  const sovereignCommandService = createSovereignCommandStub(() => persistedProfile, (next) => {
+    persistedProfile = next
+  })
 
-  const created = await executePublicInteractionAction({
+  const created = await createLegalCase({
     entityId: entityProfile.id,
     entityProfile,
+    sovereignCommandService,
     repository: {
       async updateEntity(input: { entityProfile: EntityProfile }) {
         persistedProfile = input.entityProfile
@@ -146,27 +202,17 @@ test('appendLegalCaseMessage keeps conversation inside the case history', async 
         }]
       },
     } as never,
-    decision: {
-      intent: 'legal_case',
-      confidence: 0.95,
-      slots: {
-        description: 'Preciso de orientacao sobre um problema com contrato de aluguel.',
-        city: 'Sao Paulo',
-        contact: '11999998888',
-      },
-      missingFields: [],
+    slots: {
+      description: 'Preciso de orientacao sobre um problema com contrato de aluguel.',
+      city: 'Sao Paulo',
+      contact: '11999998888',
     },
     initialUserMessage: 'Preciso de orientacao sobre um problema com contrato de aluguel em Sao Paulo. Meu contato é 11999998888.',
     now: '2026-04-25T12:30:00.000Z',
   })
 
-  assert.equal(created.actionType, 'create_legal_case')
-  assert.equal(created.status, 'created')
-  if (created.status !== 'created') {
-    throw new Error('Expected legal case to be created.')
-  }
-
   const appended = await appendLegalCaseMessage({
+    sovereignCommandService,
     repository: {
       async listEntities() {
         return [{
@@ -179,7 +225,7 @@ test('appendLegalCaseMessage keeps conversation inside the case history', async 
         return null
       },
     } as never,
-    caseId: created.caseId,
+    caseId: created.id,
     role: 'user',
     text: 'Tenho documentos e posso enviar mais detalhes.',
     actorId: 'anon:test:user',
@@ -195,32 +241,29 @@ test('appendLegalCaseMessage keeps conversation inside the case history', async 
 test('assignLegalCase moves an open case to assigned and records timeline', async () => {
   const entityProfile = createLegalEntity()
   let persistedProfile = entityProfile
+  const sovereignCommandService = createSovereignCommandStub(() => persistedProfile, (next) => {
+    persistedProfile = next
+  })
 
-  const created = await executePublicInteractionAction({
+  const created = await createLegalCase({
     entityId: entityProfile.id,
     entityProfile,
+    sovereignCommandService,
     repository: {
       async updateEntity(input: { entityProfile: EntityProfile }) {
         persistedProfile = input.entityProfile
         return null
       },
     } as never,
-    decision: {
-      intent: 'legal_case',
-      confidence: 0.91,
-      slots: {
-        description: 'Preciso de ajuda com uma questao contratual urgente.',
-      },
-      missingFields: ['cidade', 'contato'],
+    slots: {
+      description: 'Preciso de ajuda com uma questao contratual urgente.',
     },
     initialUserMessage: 'Preciso de ajuda com uma questao contratual urgente.',
     now: '2026-04-25T13:00:00.000Z',
   })
-  if (created.status !== 'created') {
-    throw new Error('Expected legal case to be created.')
-  }
 
   const assigned = await assignLegalCase({
+    sovereignCommandService,
     repository: {
       async listEntities() {
         return [{
@@ -233,7 +276,7 @@ test('assignLegalCase moves an open case to assigned and records timeline', asyn
         return null
       },
     } as never,
-    caseId: created.caseId,
+    caseId: created.id,
     lawyerId: 'lawyer-42',
     now: '2026-04-25T13:05:00.000Z',
   })
@@ -248,6 +291,7 @@ test('assignLegalCase moves an open case to assigned and records timeline', asyn
   assert.equal(assigned.legalCase.timeline.at(-1)?.type, 'status_changed')
 
   const secondAttempt = await assignLegalCase({
+    sovereignCommandService,
     repository: {
       async listEntities() {
         return [{
@@ -259,7 +303,7 @@ test('assignLegalCase moves an open case to assigned and records timeline', asyn
         return null
       },
     } as never,
-    caseId: created.caseId,
+    caseId: created.id,
     lawyerId: 'lawyer-99',
   })
 
@@ -387,32 +431,29 @@ test('buildLawyerReputationMetrics aggregates assigned, closed, rated, revenue a
 test('buildLawyerReputationMetrics returns null averages and zero rates when no assigned cases or replies exist', async () => {
   const entityProfile = createLegalEntity()
   let persistedProfile = entityProfile
+  const sovereignCommandService = createSovereignCommandStub(() => persistedProfile, (next) => {
+    persistedProfile = next
+  })
 
-  const created = await executePublicInteractionAction({
+  const created = await createLegalCase({
     entityId: entityProfile.id,
     entityProfile,
+    sovereignCommandService,
     repository: {
       async updateEntity(input: { entityProfile: EntityProfile }) {
         persistedProfile = input.entityProfile
         return null
       },
     } as never,
-    decision: {
-      intent: 'legal_case',
-      confidence: 0.94,
-      slots: {
-        description: 'Preciso de ajuda com uma cobranca contratual.',
-      },
-      missingFields: ['cidade', 'contato'],
+    slots: {
+      description: 'Preciso de ajuda com uma cobranca contratual.',
     },
     initialUserMessage: 'Preciso de ajuda com uma cobranca contratual.',
     now: '2026-04-25T15:00:00.000Z',
   })
-  if (created.status !== 'created') {
-    throw new Error('Expected legal case to be created.')
-  }
 
   await assignLegalCase({
+    sovereignCommandService,
     repository: {
       async listEntities() {
         return [{ id: entityProfile.id, entityProfile: persistedProfile }]
@@ -422,12 +463,13 @@ test('buildLawyerReputationMetrics returns null averages and zero rates when no 
         return null
       },
     } as never,
-    caseId: created.caseId,
+    caseId: created.id,
     lawyerId: 'lawyer-42',
     now: '2026-04-25T15:05:00.000Z',
   })
 
   await closeLegalCase({
+    sovereignCommandService,
     repository: {
       async listEntities() {
         return [{ id: entityProfile.id, entityProfile: persistedProfile }]
@@ -437,7 +479,7 @@ test('buildLawyerReputationMetrics returns null averages and zero rates when no 
         return null
       },
     } as never,
-    caseId: created.caseId,
+    caseId: created.id,
     rating: 5,
     closedBy: 'Smoke Test',
     now: '2026-04-25T15:10:00.000Z',

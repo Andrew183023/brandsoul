@@ -40,6 +40,27 @@ function mapRow(row?: {
 export class EntityEventLogRepository {
   constructor(private readonly db: BackendDatabase) {}
 
+  async getEventById(id: string): Promise<EntityEventLogRecord | null> {
+    const row = await this.db.get<{
+      id: string
+      entity_id: string
+      type: string
+      payload: string
+      timestamp: string
+      caused_by_command_id: string | null
+    }>(
+      `
+        SELECT id, entity_id, type, payload, timestamp, caused_by_command_id
+        FROM entity_event_log
+        WHERE id = ?
+        LIMIT 1
+      `,
+      id,
+    )
+
+    return mapRow(row)
+  }
+
   async logEvent(input: LogEventInput): Promise<EntityEventLogRecord> {
     const event: EntityEventLogRecord = {
       id: input.id ?? createEventId(),

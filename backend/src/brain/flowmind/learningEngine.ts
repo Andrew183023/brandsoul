@@ -1,3 +1,5 @@
+import { normalizeCognitiveInput } from './cognitiveInput.js'
+
 type JsonRecord = Record<string, unknown>
 
 type EntityAction = {
@@ -131,6 +133,7 @@ function resolveSuccess(input: LearningInput) {
 }
 
 function resolveEngagementScore(input: LearningInput) {
+  const safeInput = normalizeCognitiveInput({ ...input })
   const responseScore =
     input.userResponse === 'completed'
       ? 0.86
@@ -145,7 +148,7 @@ function resolveEngagementScore(input: LearningInput) {
               : 0.34
 
   const timeScore = input.timeSpentMs ? clamp(input.timeSpentMs / 180_000) : 0
-  return clamp(Math.max(input.engagementScore ?? 0, responseScore, timeScore))
+  return clamp(Math.max(safeInput.engagementScore, responseScore, timeScore))
 }
 
 function resolveHookSignal(action: EntityAction | undefined, success: boolean, engagementScore: number, at: string): HookSignal {
@@ -492,20 +495,20 @@ function applyNegativeBehaviorFeedback(behaviorState: BehaviorState, at: string)
 
 export function adjustConfidence(
   currentConfidence: number,
-  input: {
+  safeInput: {
     success: boolean
     engagementScore: number
     returnDelayMs?: number
   },
 ) {
   const returnLift =
-    typeof input.returnDelayMs === 'number'
-      ? clamp(1 - input.returnDelayMs / (1000 * 60 * 60 * 24 * 7)) * 0.08
+    typeof safeInput.returnDelayMs === 'number'
+      ? clamp(1 - safeInput.returnDelayMs / (1000 * 60 * 60 * 24 * 7)) * 0.08
       : 0
 
-  const delta = input.success
-    ? 0.04 + input.engagementScore * 0.08 + returnLift
-    : -0.035 - (1 - input.engagementScore) * 0.05
+  const delta = safeInput.success
+    ? 0.04 + safeInput.engagementScore * 0.08 + returnLift
+    : -0.035 - (1 - safeInput.engagementScore) * 0.05
 
   return clamp(currentConfidence + delta)
 }

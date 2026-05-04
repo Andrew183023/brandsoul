@@ -1,5 +1,6 @@
 import type { BackendDatabase } from '../db/index.js'
 import type { DeepPartial, EntityProfileDocument, JsonObject, StoredEntityProfile } from '../domain/entityProfile.js'
+import { traceMutation } from '../sovereignty/authorityBoundary.js'
 
 export type CreateEntityInput<T extends EntityProfileDocument = EntityProfileDocument> = {
   id: string
@@ -89,6 +90,12 @@ export class EntityRepository {
   constructor(private readonly db: BackendDatabase) {}
 
   async createEntity<T extends EntityProfileDocument>(input: CreateEntityInput<T>): Promise<StoredEntityProfile<T>> {
+    traceMutation({
+      source: 'backend/src/repositories/entityRepository.ts#createEntity',
+      type: 'entity',
+      targetId: input.id,
+      whatChanged: 'create entity profile row',
+    })
     const createdAt = input.createdAt ?? new Date().toISOString()
     const updatedAt = input.updatedAt ?? createdAt
 
@@ -214,6 +221,12 @@ export class EntityRepository {
   }
 
   async updateEntity<T extends EntityProfileDocument>(input: UpdateEntityInput<T>): Promise<StoredEntityProfile<T> | null> {
+    traceMutation({
+      source: 'backend/src/repositories/entityRepository.ts#updateEntity',
+      type: 'entity',
+      targetId: input.id,
+      whatChanged: 'replace entity profile document',
+    })
     const updatedAt = input.updatedAt ?? new Date().toISOString()
     const existing = await this.getEntityById<T>(input.id)
 
@@ -239,6 +252,12 @@ export class EntityRepository {
   }
 
   async setEntityOwnership<T extends EntityProfileDocument>(input: SetEntityOwnershipInput): Promise<StoredEntityProfile<T> | null> {
+    traceMutation({
+      source: 'backend/src/repositories/entityRepository.ts#setEntityOwnership',
+      type: 'entity',
+      targetId: input.id,
+      whatChanged: 'update entity ownership fields',
+    })
     const updatedAt = input.updatedAt ?? new Date().toISOString()
     const existing = await this.getEntityById<T>(input.id)
 
@@ -265,6 +284,12 @@ export class EntityRepository {
   async updateRelationalState<T extends EntityProfileDocument = EntityProfileDocument>(
     input: UpdateRelationalStateInput,
   ): Promise<StoredEntityProfile<T> | null> {
+    traceMutation({
+      source: 'backend/src/repositories/entityRepository.ts#updateRelationalState',
+      type: 'entity',
+      targetId: input.entityId,
+      whatChanged: 'patch entity relational state',
+    })
     const existing = await this.getEntityById<T>(input.entityId)
 
     if (!existing) {

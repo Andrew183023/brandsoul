@@ -1,5 +1,6 @@
 import type { BackendDatabase } from '../db/index.js'
 import { hydrateEntityCognitiveMemory, type EntityCognitiveMemory } from '../flowmind/memory/entityCognitiveMemory.js'
+import { traceMutation } from '../sovereignty/authorityBoundary.js'
 
 export type EntityCognitiveMemoryRecord = {
   entityId: string
@@ -54,6 +55,12 @@ export class EntityCognitiveMemoryRepository {
     createdAt?: string
     updatedAt?: string
   }): Promise<EntityCognitiveMemoryRecord> {
+    traceMutation({
+      source: 'backend/src/repositories/entityCognitiveMemoryRepository.ts#save',
+      type: 'memory',
+      targetId: args.entityId,
+      whatChanged: 'persist entity cognitive memory',
+    })
     const existing = await this.getByEntityId(args.entityId)
     const createdAt = existing?.createdAt ?? args.createdAt ?? new Date().toISOString()
     const updatedAt = args.updatedAt ?? new Date().toISOString()

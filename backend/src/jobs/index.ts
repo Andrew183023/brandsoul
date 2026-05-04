@@ -38,6 +38,7 @@ type JobHealthSnapshot = {
 }
 
 type EnqueueOptions = {
+  id?: string
   traceId?: string
   entityId?: string
 }
@@ -85,6 +86,17 @@ type FlowMindExecutionPayload = {
   context?: Record<string, unknown>
 }
 
+type LeadOutreachPayload = {
+  channel: 'email' | 'whatsapp' | 'internal'
+  targetIdentifier: string
+  leadId: string
+  entityId: string
+  signalId: string
+  attributionCommandId: string
+  sourceCommandId: string
+  timestamp: string
+}
+
 type CreateJobsContextArgs = {
   db?: unknown
   assetStorageService?: unknown
@@ -121,7 +133,7 @@ export class JobQueue {
   async enqueue<TPayload extends Record<string, unknown>>(type: string, payload: TPayload, options?: EnqueueOptions) {
     const now = new Date().toISOString()
     const job: JobRecord<TPayload> = {
-      id: createJobId(),
+      id: options?.id ?? createJobId(),
       type,
       status: 'pending',
       payload,
@@ -205,6 +217,10 @@ export class JobProducer {
 
   enqueueFlowMindExecution(payload: FlowMindExecutionPayload, options?: EnqueueOptions) {
     return this.queue.enqueue('FLOWMIND_EXECUTION', payload, options)
+  }
+
+  enqueueLeadOutreach(payload: LeadOutreachPayload, options?: EnqueueOptions) {
+    return this.queue.enqueue('LEAD_OUTREACH_DISPATCH', payload, options)
   }
 }
 

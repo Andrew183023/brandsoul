@@ -32,6 +32,14 @@ type MembershipRow = {
   created_at: string
 }
 
+type MembershipUserRow = MembershipRow & {
+  user_name: string
+  user_email: string
+  user_is_active: number
+  user_created_at: string
+  user_updated_at: string
+}
+
 type PasswordResetTokenRow = {
   id: number
   user_id: number
@@ -48,6 +56,11 @@ export type AuthPasswordResetTokenRecord = {
   expiresAt: string
   usedAt?: string
   createdAt: string
+}
+
+export type AuthMembershipUserRecord = {
+  membership: AuthMembershipRecord
+  user: AuthUserRecord
 }
 
 function mapUserRow(row?: UserRow): AuthUserRecord | null {
@@ -159,6 +172,55 @@ export class LegacyAuthStoreRepository {
       userId,
     )
     return mapMembershipRow(row)
+  }
+
+  async listMembershipUsersByTenant(tenantId: number): Promise<AuthMembershipUserRecord[]> {
+    const db = await this.getDb()
+    const rows = await db.all<MembershipUserRow[]>(
+      `
+        SELECT
+          memberships.id,
+          memberships.user_id,
+          memberships.tenant_id,
+          memberships.role,
+          memberships.created_at,
+          users.name AS user_name,
+          users.email AS user_email,
+          users.is_active AS user_is_active,
+          users.created_at AS user_created_at,
+          users.updated_at AS user_updated_at
+        FROM memberships
+        INNER JOIN users
+          ON users.id = memberships.user_id
+        WHERE memberships.tenant_id = ?
+        ORDER BY memberships.id ASC
+      `,
+      tenantId,
+    )
+
+    return rows
+      .map((row) => {
+        const membership = mapMembershipRow(row)
+        const user = mapUserRow({
+          id: row.user_id,
+          name: row.user_name,
+          email: row.user_email,
+          password_hash: '',
+          is_active: row.user_is_active,
+          created_at: row.user_created_at,
+          updated_at: row.user_updated_at,
+        })
+
+        if (!membership || !user) {
+          return null
+        }
+
+        return {
+          membership,
+          user,
+        }
+      })
+      .filter((record): record is AuthMembershipUserRecord => Boolean(record))
   }
 
   async createUser(input: { name: string; email: string; passwordHash: string }) {
