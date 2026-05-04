@@ -1,12 +1,5 @@
 # BrandSoul
 
-<p align="center">
-  <strong>Give your brand a living voice.</strong><br/><br/>
-  <a href="https://brandsoul-1.onrender.com" target="_blank">
-    🚀 Experience BrandSoul Live
-  </a>
-</p>
-
 > **Giving brands a living voice.**
 
 ![Status](https://img.shields.io/badge/status-beta-ff8a4c)
@@ -192,7 +185,12 @@ ALLOWED_ORIGINS=http://localhost:5173
 RESEND_API_KEY=your_resend_key
 EMAIL_FROM=noreply@yourdomain.com
 PASSWORD_RESET_URL_BASE=http://localhost:5173/reset-password
+LEGAL_MARKETPLACE_ENTITY_ID=entity-flow-core-group-req-moklcdyz-rbs437-6q7un3
+LEGAL_CASE_DISPATCH_TIMEOUT_SECONDS=300
+VITE_LEGAL_MARKETPLACE_ENTITY_ID=entity-flow-core-group-req-moklcdyz-rbs437-6q7un3
 ```
+
+For the TypeScript backend in [backend](c:/flow_core_group/backend), copy [backend/.env.example](c:/flow_core_group/backend/.env.example) to `.env` or `.env.local` before running `npm run dev`.
 
 ---
 
