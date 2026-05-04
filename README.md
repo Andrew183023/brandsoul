@@ -1,252 +1,345 @@
 # BrandSoul
 
-<p align="center">
-  <strong>Give your brand a living voice.</strong><br/><br/>
-  <a href="https://brandsoul-1.onrender.com" target="_blank">
-    🚀 Experience BrandSoul Live
-  </a>
-</p>
+## 1. Project Overview
 
-> **Giving brands a living voice.**
+BrandSoul today is a multi-surface software system for running brand-facing entities with controlled decision logic, persisted state, and an economic funnel. The current repository contains three relevant application surfaces:
 
-![Status](https://img.shields.io/badge/status-beta-ff8a4c)
-![Stack](https://img.shields.io/badge/stack-FastAPI%20%7C%20React-6e86ff)
-![Build](https://img.shields.io/badge/build-passing-3ec590)
-![License](https://img.shields.io/badge/license-MIT-f2f4ff)
+- `backend/`: the current TypeScript backend where FlowMind orchestration, sovereign mutation control, the multi-entity runtime, and the portfolio/economic loop are implemented.
+- `brandsoul-frontend/`: the React frontend that consumes backend projections and admin/public routes.
+- `brandsoul/`: a legacy FastAPI application that still exists in the repository for older product flows and supporting services.
 
----
+The operational core described in this document lives in `backend/`.
 
-## BrandSoul Banner
+### System relationship
 
-**BrandSoul** is a platform where a business gains a living digital identity called **Centelha**.
+- **BrandSoul** is the product and repository boundary.
+- **FlowMind** is the decision and cognitive layer used by the TypeScript backend.
+- The **multi-entity system** manages isolated runtime state, goals, risk, autonomy level, approval state, and recent decision snapshots per entity.
+- The **portfolio system** derives signals, routes leads, tracks funnel progression, reconciles converted revenue, and feeds outcome learning back into entity memory and portfolio metrics.
 
-It does not just answer.
-It speaks with brand personality, understands context, organizes information, and moves people toward action.
+In practical terms, BrandSoul currently operates as a command-driven entity system where FlowMind proposes or informs actions, the sovereign backend controls mutation, and the portfolio layer measures commercial outcomes.
 
----
+## 2. Core Architecture
 
-## Product Vision
+### 2.1 FlowMind
 
-Most chat experiences feel generic, transactional, and forgettable.
+FlowMind is the cognitive engine implemented in `backend/src/flowmind` and exposed to the orchestrator through `backend/src/services/flowMindService.ts`.
 
-BrandSoul was built to solve a more strategic problem:
+#### Decision model
 
-- brands need presence, not just automation
-- service businesses need conversion, not just chat
-- professional brands need guidance, trust, and structure
+The current decision contract is `FlowMindDecisionV2` in `backend/src/flowmind/types/flowMindDecision.ts`.
 
-**Centelha** is the answer.
+It includes:
 
-Instead of a cold bot, BrandSoul creates a brand entity with:
+- `intent`, `action`, and `confidence`
+- a deterministic `decisionHash`
+- a structured `responsePlan`
+- explicit `memoryReadSet`
+- explicit `memoryWritePlan`
+- explicit `expectedStateChanges`
+- optional metadata for memory influence and behavioral influence
 
-- voice
-- tone
-- behavior
-- memory
-- action logic
+The backend normalizes and hashes decision input so repeated evaluation of the same semantic input produces the same decision envelope unless the memory state changes.
 
-This turns the interface from a support widget into a living front layer of the business.
+#### Memory system
 
----
+Entity cognitive memory is persisted per entity and includes:
 
-## What Makes It Different
+- cognitive state
+- strategy profile
+- policy profile
+- adaptive decision profile
+- historical signals
+- episodic memory
 
-- It is not a generic chatbot.
-- It is not only a scheduling form.
-- It is not only a lead capture tool.
+The current implementation reads and writes this state through `backend/src/flowmind/memory` and persists it through `backend/src/repositories/entityCognitiveMemoryRepository.ts`.
 
-BrandSoul combines identity, conversation, guidance, and conversion in one modular system.
+#### Autonomy policy
 
-The result is a product that can:
+FlowMind does not receive unrestricted execution authority.
 
-- represent the brand
-- conduct a service flow
-- organize a case
-- generate a dossier
-- push the next action to WhatsApp or scheduling
+The backend evaluates:
 
----
+- comparison against the legacy/orchestrator decision path
+- divergence and stability metrics
+- fallback rate and adaptive success rate
+- recent error rate and decision stability
+- safe, prohibited, and future command zones
 
-## Mental Demo
+This policy lives in `backend/src/orchestrator/flowMindAuthorityPolicy.ts`. The current contract supports `manual`, `supervised`, `partial`, and `autonomous` levels, but only specific action types and command zones are eligible for higher authority.
 
-Here is the experience in practice:
+### 2.2 Sovereign Command System
 
-1. A visitor enters the public page of a brand.
-2. They meet the **Centelha**, already aligned with that brand's tone and intent.
-3. They start a conversation.
-4. If needed, the flow can shift into service, guidance, emergency, or scheduling.
-5. BrandSoul structures the interaction in real time.
-6. The visitor is guided toward a concrete next step:
-   WhatsApp, booking, case submission, or direct follow-up.
+The sovereign mutation layer is implemented primarily in `backend/src/orchestrator/sovereignMutationCommandService.ts`.
 
-This is where BrandSoul becomes more than chat.
-It becomes operational intelligence on the customer-facing layer.
+Its role is to ensure that state mutation happens through explicit commands instead of ad hoc repository writes.
 
----
+Current responsibilities include:
 
-## Core Features
+- lead routing and lifecycle transitions
+- approval handling
+- entity persistence
+- event append flows
+- legal-case related mutations
+- revenue event persistence
+- outcome learning updates
 
-- Brand AI with personality and contextual behavior
-- Professional guidance mode with controlled language
-- Emergency-oriented flow with guided case intake
-- Live dossier generation during orientation
-- Evidence collection with photo, video, and audio metadata
-- WhatsApp forwarding with structured summaries
-- Scheduling flow with recurring availability
-- Multiple attendance modes:
-  presencial, online, and in-home
-- Admin panel for configuring identity, behavior, CTA, public experience, and operations
+#### Executor
 
----
+FlowMind action execution is handled through `backend/src/brain/flowmind/flowMindActionExecutor.ts` and the operational orchestration path in `backend/src/orchestrator/flowMindOperationalService.ts`.
 
-## Architecture
+The executor validates actions, applies policy, emits follow-up commands, generates UI effects and scheduled tasks, and runs protected mutations inside an authority context.
 
-BrandSoul is organized as a modular full-stack system.
+#### Idempotency
 
-- **Frontend**
-  React + TypeScript + Vite
-- **Backend**
-  FastAPI + Pydantic + SQLite
-- **AI Layer**
-  OpenAI
-- **Messaging / Recovery**
-  Resend for password recovery email
-- **Operational Channels**
-  WhatsApp redirection and action-driven flows
+Idempotency is implemented with command IDs plus execution ledger checks. Replayed commands are detected and returned as unchanged when the ledger already contains a committed record for the same command.
 
-### High-Level Flow
+#### Ledger
 
-```text
-User
-  ↓
-Public Brand Page
-  ↓
-Centelha Experience Layer
-  ↓
-FastAPI Backend
-  ↓
-Brand Config + Catalog + Scheduling + Guidance Logic
-  ↓
-OpenAI / WhatsApp / Email / Admin Operations
+The execution ledger is persisted through `backend/src/repositories/flowMindExecutionLedgerRepository.ts`.
+
+Current ledger states are:
+
+- `pending`
+- `committed`
+- `rolled_back`
+- `failed`
+
+This ledger is used to make command replay safe and to prevent duplicate event append or duplicate state transitions.
+
+### 2.3 Entity Runtime
+
+The entity runtime loop is implemented in `backend/src/orchestrator/entityRuntimeLoop.ts`.
+
+It runs a controlled loop with the following phases:
+
+- observe
+- evaluate
+- execute
+- cooldown
+
+The runtime derives scores such as:
+
+- health score
+- lead generation score
+- memory confidence
+- autonomy readiness
+- risk score
+- goal priority score
+- episodic memory relevance
+
+It also prioritizes active goals and evaluates triggers such as:
+
+- lead score drop
+- growth stagnation
+- opportunity detected
+- memory pattern detected
+- portfolio gap detected
+
+Autonomy level affects the loop interval and whether certain actions can proceed directly, require approval, or are blocked.
+
+## 3. Economic Loop (Real State)
+
+The implemented economic loop in the TypeScript backend is:
+
+`signal -> lead -> funnel -> outcome -> revenue -> learning`
+
+### What is implemented and persisted
+
+#### Routed leads
+
+Portfolio signals are derived and persisted, then routed into leads per entity. The portfolio layer currently works with explicit persisted records for signals, leads, proposals, revenue events, and entity metrics.
+
+#### Lead lifecycle
+
+The current lead lifecycle is persisted with these practical states:
+
+- routed
+- qualified
+- contacted
+- converted
+- lost
+
+Lifecycle timestamps and transition events are stored. Current tests validate:
+
+- manual lifecycle progression
+- autonomous progression from routed to converted when thresholds are met
+- autonomous loss marking when timeout or failure signals are present
+- replay safety for converted and lost leads
+
+#### Reconciled revenue model
+
+Converted revenue is not read only from the lead row. It is reconciled through a dedicated revenue event model persisted in `entity_portfolio_lead_revenue_event` and surfaced back into:
+
+- lead payload metadata
+- funnel metrics
+- per-entity portfolio metrics
+
+The current reconciled model stores values such as:
+
+- amount
+- invoice ID
+- payment ID
+- contract ID
+- validation method
+
+#### Outcome-based learning
+
+Lead outcomes are fed back into entity cognitive memory and registry state. Converted and lost outcomes create learning signals that affect later opportunity scoring and preserve lifecycle path history in episodic memory.
+
+### What is real today
+
+- signals are persisted
+- routed leads are persisted
+- lifecycle transitions are persisted
+- converted revenue events are persisted
+- funnel and portfolio metrics are computed from persisted records
+- outcome learning writes back into memory and runtime state
+- replay protection is validated in tests
+
+### What is not yet fully real
+
+- there is no general-purpose autonomous external fulfillment layer that independently closes the loop with third-party systems end to end
+- reconciled revenue accepts externally validated identifiers and methods, but the repository does not yet implement a broad connector framework for invoice, payment, or CRM systems
+- execution remains controlled by internal commands, workers, and approval boundaries rather than unconstrained external automation
+
+## 4. Market Intelligence
+
+Market intelligence is partially implemented inside the portfolio layer.
+
+### Implemented direction
+
+The current system derives opportunity and commercial pressure from:
+
+- recent social and public interaction signals
+- marketplace demand signals for legal entities
+- performance gaps
+- content opportunity gaps
+- persisted lead conversion outcomes
+- reconciled revenue contribution
+- per-entity risk and autonomy readiness
+
+Current read models compute:
+
+- `opportunityScore`
+- `conversionScore`
+- `revenuePotential`
+- `cacEstimate`
+- `ltvEstimate`
+- `roiEstimate`
+
+### Limitations
+
+- the system is currently driven mainly by internal and first-party signals, not by live external market feeds
+- scoring is deterministic and heuristic-based, not a statistical model trained on external datasets
+- the implementation is useful for prioritization and routing, but it is not a standalone market intelligence platform
+
+## 5. Safety And Guarantees
+
+### No mutation outside the sovereign command system
+
+The repository enforces a mutation authority boundary in `backend/src/sovereignty/authorityBoundary.ts`. Protected mutation paths log their caller chain and throw if they are executed outside the executor authority context.
+
+### Idempotency guarantees
+
+Command handlers consult the execution ledger before mutating state. If a committed command is replayed, the handler returns the current persisted result without duplicating effects.
+
+### Replay safety
+
+Replay safety is currently validated for lead conversion, lost-lead handling, and other sovereign command paths that depend on the execution ledger.
+
+### Authority boundary enforcement
+
+FlowMind decisions do not directly mutate state. They pass through:
+
+- policy checks
+- safe action mapping
+- executor validation
+- sovereign command handling
+- transaction boundaries
+
+This keeps side effects auditable and bounded.
+
+## 6. Current Capabilities
+
+Only the following capabilities are documented here because they are implemented and validated in the current backend:
+
+- autonomous lead funnel progression under controlled conditions
+- revenue reconciliation for converted leads
+- outcome-based learning written into entity cognitive memory
+- multi-entity isolation for memory, events, and runtime state
+- decision scoring for divergence, stability, fallback, risk, conversion, and opportunity
+
+## 7. Limitations
+
+- there is no full autonomous external execution layer for arbitrary third-party systems
+- the system depends on controlled loops, background workers, and explicit sovereign command handlers
+- market intelligence is partial and largely first-party; there is no live general external ingestion mesh
+- the FlowMind service still supports degraded and fallback modes when the cognitive adapter is unavailable
+- parts of the repository still include legacy application surfaces, including the FastAPI app in `brandsoul/`
+- some backend routes still contain legacy fallback paths in adjacent domains such as case access and migration boundaries
+
+## 8. Development
+
+### Run the current backend
+
+```bash
+cd backend
+npm install
+Copy-Item .env.example .env
+npm run dev
 ```
 
----
+The current TypeScript backend entrypoint is `src/server.ts`.
+
+### Run backend tests
+
+```bash
+cd backend
+npm test
+```
+
+The backend test runner resolves all `*.test.ts` files under `backend/src` through `backend/scripts/run-tests.mjs`.
+
+### Minimum checks before commit
+
+At minimum, these commands should pass before committing backend work:
+
+```bash
+cd backend
+npm run build
+npm test
+```
+
+If a change touches the React application, `brandsoul-frontend` should also build successfully before commit.
+
+### Git warning
+
+Do not use `git add .` in this repository.
+
+The repository frequently contains local databases, temporary assets, frontend work in progress, and other unrelated changes. Stage explicit paths only.
+
+## 9. Architecture Principles
+
+- **FlowMind is the decision source of truth inside the TypeScript backend.** The orchestrator still compares and governs it, but behavior should not be reimplemented in the frontend.
+- **The system is command-driven.** Mutations are represented as commands and logged effects instead of direct repository edits.
+- **No side effects outside the executor boundary.** Protected mutations require an authority context.
+- **Determinism is preferred.** Decision normalization, hashing, replay checks, and ledger-backed execution are used to keep behavior auditable.
+
+## 10. Roadmap
+
+Near-term work that follows directly from the current implementation:
+
+- harden the external execution bridge around controlled third-party confirmation paths
+- expand market signal ingestion beyond current first-party and derived signals
+- connect more real-world feedback into the learning loop with less manual bridging
 
 ## Repository Structure
 
 ```text
 flow_core_group/
-├── brandsoul/            # FastAPI backend
+├── backend/              # Current TypeScript backend and FlowMind orchestration layer
 ├── brandsoul-frontend/   # React frontend
-└── README.md             # Product overview
+├── brandsoul/            # Legacy FastAPI application still present in the repo
+└── README.md
 ```
-
----
-
-## Run Locally
-
-### Backend
-
-```bash
-cd brandsoul
-pip install -r requirements.txt
-uvicorn main:app --reload
-```
-
-Backend default URL:
-
-```text
-http://127.0.0.1:8000
-```
-
-Swagger:
-
-```text
-http://127.0.0.1:8000/docs
-```
-
-### Frontend
-
-```bash
-cd brandsoul-frontend
-npm install
-npm run dev
-```
-
-Frontend default URL:
-
-```text
-http://localhost:5173
-```
-
----
-
-## Environment
-
-Example variables commonly used in development:
-
-```env
-OPENAI_API_KEY=your_key
-JWT_SECRET=your_secret
-ALLOWED_ORIGINS=http://localhost:5173
-RESEND_API_KEY=your_resend_key
-EMAIL_FROM=noreply@yourdomain.com
-PASSWORD_RESET_URL_BASE=http://localhost:5173/reset-password
-```
-
----
-
-## Roadmap
-
-- [x] Brand conversation with Centelha
-- [x] Admin editing for identity and behavior
-- [x] Professional guidance mode
-- [x] Case dossier generation
-- [x] WhatsApp forwarding
-- [x] Intelligent scheduling
-- [x] Multiple attendance modes
-- [x] Password recovery flow
-- [ ] Real-time notifications
-- [ ] Dedicated mobile app
-- [ ] Marketplace and ecosystem integrations
-- [ ] Deeper business analytics layer
-
----
-
-## Future Direction
-
-BrandSoul is being designed as more than a single-product interface.
-
-The long-term vision is an ecosystem where:
-
-- brands operate with living AI identities
-- service businesses convert from conversation to operation
-- professional brands guide with safety and structure
-- workflows move naturally into messaging, scheduling, and decision systems
-- multiple business entities can evolve into an interoperable network
-
-This is the foundation for a broader layer of business intelligence where identity, action, and automation are merged.
-
----
-
-## Why It Matters
-
-The future of digital presence is not static branding.
-
-It is **responsive identity**.
-
-BrandSoul turns brand expression into something alive, operational, and conversion-oriented.
-
----
-
-## Author
-
-**Andrew Michael de Oliveira**  
-Founder, **Flow Core Group**
-
----
-
-## License
-
-MIT
-
