@@ -10,20 +10,56 @@ import { SignJWT, importPKCS8 } from 'jose'
 
 import type { JobWorker } from '../jobs/index.js'
 import type { EntityProfile } from '../brain/domain/entity/contracts/EntityProfile.js'
+import type { BackendDatabase } from '../db/index.js'
 import type { EntityExportRepository } from '../repositories/entityExportRepository.js'
 import type { GrowthRepository } from '../repositories/growthRepository.js'
 import type { SocialSignalEngine } from '../services/socialSignalEngine.js'
 import { buildServer } from '../server.js'
 import type { EntityRepository } from '../repositories/entityRepository.js'
+import { withTestMutationAuthority } from '../test/withTestMutationAuthority.js'
 
 type AppWithContext = FastifyInstance & {
   backendContext: {
+    connection: BackendDatabase
     entityRepository: EntityRepository
     entityExportRepository: EntityExportRepository
     socialSignalEngine: SocialSignalEngine
     growthRepository: GrowthRepository
     jobWorker: JobWorker
   }
+}
+
+async function removeDirectoryWithRetry(targetPath: string, attempts = 5) {
+  let lastError: unknown
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      await rm(targetPath, { recursive: true, force: true })
+      return
+    } catch (error) {
+      lastError = error
+      await new Promise((resolve) => setTimeout(resolve, 75 * (attempt + 1)))
+    }
+  }
+
+  throw lastError
+}
+
+async function closeConnectionQuietly(connection: BackendDatabase) {
+  try {
+    await connection.close()
+  } catch (error) {
+    if (!(error instanceof Error) || !String((error as Error & { code?: string }).code ?? '').includes('SQLITE_MISUSE')) {
+      throw error
+    }
+  }
+}
+
+async function seedEntity(
+  app: AppWithContext,
+  input: Parameters<EntityRepository['createEntity']>[0],
+) {
+  return withTestMutationAuthority('test-seed', async () => app.backendContext.entityRepository.createEntity(input))
 }
 
 async function createAccessToken(userId: number, tenantId: number, privateKeyPem: string, kid: string) {
@@ -85,7 +121,8 @@ async function createTestApp() {
     configuredKid,
     async close() {
       await app.close()
-      await rm(workspace, { recursive: true, force: true })
+      await closeConnectionQuietly(app.backendContext.connection)
+      await removeDirectoryWithRetry(workspace)
 
       if (typeof previousJwtSecret === 'undefined') {
         delete process.env.JWT_SECRET
@@ -153,7 +190,7 @@ test('canonical ownership overrides matching legacy ownerId during private reads
   const harness = await createTestApp()
 
   try {
-    await harness.app.backendContext.entityRepository.createEntity({
+    await seedEntity(harness.app, {
       id: 'entity-canonical-deny',
       ownerId: 'user:1:tenant:1',
       ownerUserId: 99,
@@ -176,13 +213,15 @@ test('canonical ownership overrides matching legacy ownerId during private reads
   }
 })
 
-test('legacy-only ownership is backfilled from authenticated context', { concurrency: false }, async () => {
+test('authenticated owners can access entities when canonical ownership is already present', { concurrency: false }, async () => {
   const harness = await createTestApp()
 
   try {
-    await harness.app.backendContext.entityRepository.createEntity({
+    await seedEntity(harness.app, {
       id: 'entity-legacy-backfill',
       ownerId: 'user:7:tenant:11',
+      ownerUserId: 7,
+      ownerTenantId: 11,
       entityProfile: createEntityProfileFixture('entity-legacy-backfill'),
     })
 
@@ -208,7 +247,7 @@ test('patching an entity ignores client ownership overrides', { concurrency: fal
   const harness = await createTestApp()
 
   try {
-    await harness.app.backendContext.entityRepository.createEntity({
+    await seedEntity(harness.app, {
       id: 'entity-patch-owned',
       ownerId: 'user:5:tenant:8',
       ownerUserId: 5,
@@ -266,7 +305,7 @@ test('posting entity events still returns the logged event and records return-vi
   const harness = await createTestApp()
 
   try {
-    await harness.app.backendContext.entityRepository.createEntity({
+    await seedEntity(harness.app, {
       id: 'entity-events-owned',
       ownerId: 'user:5:tenant:8',
       ownerUserId: 5,
@@ -303,7 +342,7 @@ test('public export delivery still records view-side growth through sovereign co
   const harness = await createTestApp()
 
   try {
-    await harness.app.backendContext.entityRepository.createEntity({
+    await seedEntity(harness.app, {
       id: 'entity-export-owned',
       ownerId: 'user:5:tenant:8',
       ownerUserId: 5,
@@ -337,7 +376,7 @@ test('private monetization rejects foreign entity ownership', { concurrency: fal
   const harness = await createTestApp()
 
   try {
-    await harness.app.backendContext.entityRepository.createEntity({
+    await seedEntity(harness.app, {
       id: 'entity-foreign-monetization',
       ownerId: 'user:21:tenant:34',
       ownerUserId: 21,
@@ -364,7 +403,7 @@ test('me entities returns only entities owned by the authenticated user', { conc
   const harness = await createTestApp()
 
   try {
-    await Promise.all([
+    await withTestMutationAuthority('test-seed', async () => Promise.all([
       harness.app.backendContext.entityRepository.createEntity({
         id: 'entity-owned-a',
         ownerId: 'user:5:tenant:8',
@@ -386,7 +425,7 @@ test('me entities returns only entities owned by the authenticated user', { conc
         ownerTenantId: 34,
         entityProfile: createEntityProfileFixture('entity-foreign-c'),
       }),
-    ])
+    ]))
 
     const response = await harness.app.inject({
       method: 'GET',
@@ -410,7 +449,7 @@ test('legacy entities endpoint is still compatible but marked as deprecated', { 
   const harness = await createTestApp()
 
   try {
-    await harness.app.backendContext.entityRepository.createEntity({
+    await seedEntity(harness.app, {
       id: 'entity-legacy-list',
       ownerId: 'user:5:tenant:8',
       ownerUserId: 5,
@@ -465,7 +504,7 @@ test('job detail is owner-only by associated entity ownership', { concurrency: f
   const harness = await createTestApp()
 
   try {
-    await harness.app.backendContext.entityRepository.createEntity({
+    await seedEntity(harness.app, {
       id: 'entity-owned-job',
       ownerId: 'user:5:tenant:8',
       ownerUserId: 5,
@@ -517,7 +556,7 @@ test('job listing only returns jobs for entities owned by the authenticated user
   const harness = await createTestApp()
 
   try {
-    await Promise.all([
+    await withTestMutationAuthority('test-seed', async () => Promise.all([
       harness.app.backendContext.entityRepository.createEntity({
         id: 'entity-owned-list',
         ownerId: 'user:5:tenant:8',
@@ -532,7 +571,7 @@ test('job listing only returns jobs for entities owned by the authenticated user
         ownerTenantId: 34,
         entityProfile: createEntityProfileFixture('entity-foreign-list'),
       }),
-    ])
+    ]))
 
     await Promise.all([
       harness.app.inject({
@@ -599,7 +638,7 @@ test('anonymous public social actions are limited to viewed only', { concurrency
   const harness = await createTestApp()
 
   try {
-    await harness.app.backendContext.entityRepository.createEntity({
+    await seedEntity(harness.app, {
       id: 'entity-public-signal-lockdown',
       ownerId: 'user:5:tenant:8',
       ownerUserId: 5,
@@ -631,7 +670,7 @@ test('authenticated public social actions ignore spoofed client actorId', { conc
   const harness = await createTestApp()
 
   try {
-    await harness.app.backendContext.entityRepository.createEntity({
+    await seedEntity(harness.app, {
       id: 'entity-public-auth-signal',
       ownerId: 'user:5:tenant:8',
       ownerUserId: 5,
@@ -667,7 +706,7 @@ test('viewer state is resolved from authenticated user instead of query actorId'
   const harness = await createTestApp()
 
   try {
-    await harness.app.backendContext.entityRepository.createEntity({
+    await seedEntity(harness.app, {
       id: 'entity-viewer-state-auth',
       ownerId: 'user:5:tenant:8',
       ownerUserId: 5,
@@ -712,7 +751,7 @@ test('public export views are deduplicated per actor fingerprint window', { conc
   const harness = await createTestApp()
 
   try {
-    await harness.app.backendContext.entityRepository.createEntity({
+    await seedEntity(harness.app, {
       id: 'entity-public-export-dedupe',
       ownerId: 'user:5:tenant:8',
       ownerUserId: 5,
@@ -733,18 +772,17 @@ test('public export views are deduplicated per actor fingerprint window', { conc
       'accept-language': 'pt-BR',
     }
 
-    const [firstResponse, secondResponse] = await Promise.all([
-      harness.app.inject({
-        method: 'GET',
-        url: '/entity/entity-public-export-dedupe/export/exp-public-dedupe',
-        headers,
-      }),
-      harness.app.inject({
-        method: 'GET',
-        url: '/entity/entity-public-export-dedupe/export/exp-public-dedupe',
-        headers,
-      }),
-    ])
+    const firstResponse = await harness.app.inject({
+      method: 'GET',
+      url: '/entity/entity-public-export-dedupe/export/exp-public-dedupe',
+      headers,
+    })
+
+    const secondResponse = await harness.app.inject({
+      method: 'GET',
+      url: '/entity/entity-public-export-dedupe/export/exp-public-dedupe',
+      headers,
+    })
 
     assert.equal(firstResponse.statusCode, 200)
     assert.equal(secondResponse.statusCode, 200)

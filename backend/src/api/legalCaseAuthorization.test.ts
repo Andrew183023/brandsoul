@@ -16,6 +16,7 @@ import { clearLawyerInboxListenersForTesting, getLawyerInboxListenerCountForTest
 import { clearLawyerInboxEventsTokensForTesting } from '../modules/legalCases/lawyerInboxEventTokens.js'
 import type { EntityRepository } from '../repositories/entityRepository.js'
 import { buildServer } from '../server.js'
+import { withTestMutationAuthority } from '../test/withTestMutationAuthority.js'
 
 type AppWithContext = FastifyInstance & {
   backendContext: {
@@ -88,6 +89,32 @@ function resetLegalCaseTestResources() {
   CaseService.clearAllDispatchTimeoutsForTesting()
   clearLawyerInboxListenersForTesting()
   clearLawyerInboxEventsTokensForTesting()
+}
+
+async function removeDirectoryWithRetry(targetPath: string, attempts = 5) {
+  let lastError: unknown
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      await rm(targetPath, { recursive: true, force: true })
+      return
+    } catch (error) {
+      lastError = error
+      await new Promise((resolve) => setTimeout(resolve, 75 * (attempt + 1)))
+    }
+  }
+
+  throw lastError
+}
+
+async function closeConnectionQuietly(connection: BackendDatabase) {
+  try {
+    await connection.close()
+  } catch (error) {
+    if (!(error instanceof Error) || !String((error as Error & { code?: string }).code ?? '').includes('SQLITE_MISUSE')) {
+      throw error
+    }
+  }
 }
 
 async function closeAllActiveHarnesses() {
@@ -210,7 +237,8 @@ async function createHarness(): Promise<Harness> {
       activeHarnesses.delete(harness)
       resetLegalCaseTestResources()
       await app.close()
-      await rm(workspace, { recursive: true, force: true })
+      await closeConnectionQuietly(app.backendContext.connection)
+      await removeDirectoryWithRetry(workspace)
 
       if (typeof previousJwtSecret === 'undefined') delete process.env.JWT_SECRET
       else process.env.JWT_SECRET = previousJwtSecret
@@ -253,28 +281,30 @@ async function seedLegalActors(harness: Harness) {
   const repository = harness.app.backendContext.entityRepository
   const now = '2026-04-30T10:00:00.000Z'
 
-  await repository.createEntity({
-    id: 'entity-t1-owned',
-    ownerId: 'user:100:tenant:1',
-    ownerUserId: 100,
-    ownerTenantId: 1,
-    entityProfile: createEntityProfileFixture('entity-t1-owned'),
-  })
+  await withTestMutationAuthority('test-seed', async () => {
+    await repository.createEntity({
+      id: 'entity-t1-owned',
+      ownerId: 'user:100:tenant:1',
+      ownerUserId: 100,
+      ownerTenantId: 1,
+      entityProfile: createEntityProfileFixture('entity-t1-owned'),
+    })
 
-  await repository.createEntity({
-    id: 'entity-t2-owned',
-    ownerId: 'user:300:tenant:2',
-    ownerUserId: 300,
-    ownerTenantId: 2,
-    entityProfile: createEntityProfileFixture('entity-t2-owned'),
-  })
+    await repository.createEntity({
+      id: 'entity-t2-owned',
+      ownerId: 'user:300:tenant:2',
+      ownerUserId: 300,
+      ownerTenantId: 2,
+      entityProfile: createEntityProfileFixture('entity-t2-owned'),
+    })
 
-  await repository.createEntity({
-    id: 'entity-marketplace-legal',
-    ownerId: 'user:100:tenant:1',
-    ownerUserId: 100,
-    ownerTenantId: 1,
-    entityProfile: createEntityProfileFixture('entity-marketplace-legal'),
+    await repository.createEntity({
+      id: 'entity-marketplace-legal',
+      ownerId: 'user:100:tenant:1',
+      ownerUserId: 100,
+      ownerTenantId: 1,
+      entityProfile: createEntityProfileFixture('entity-marketplace-legal'),
+    })
   })
 
   await db.run(

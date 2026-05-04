@@ -191,8 +191,8 @@ function buildFallbackEntity(input: ProcessBrandInput): JsonRecord {
 
 export async function processBrandInBackendEngine(input: ProcessBrandInput): Promise<ProcessBrandResult> {
   try {
-    const distModule = await import('../dist/brain/domain/entity/engine/processBrand.js')
-    const processBrand = (distModule as { processBrand?: (entityInput: unknown, options: JsonRecord) => JsonRecord }).processBrand
+    const sourceModule = await import('../brain/domain/entity/engine/processBrand.js')
+    const processBrand = (sourceModule as { processBrand?: (entityInput: unknown, options: JsonRecord) => JsonRecord }).processBrand
 
     if (typeof processBrand === 'function') {
       const entity = processBrand(input.entityInput, {
