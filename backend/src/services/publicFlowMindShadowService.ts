@@ -3,6 +3,7 @@ import type { OrchestratorSnapshotRecord } from '../domain/orchestratorSnapshot.
 import type { FlowMindPort } from './flowMindPort.js'
 import { restoreOrchestratorState, type OrchestratorCommand } from '../orchestrator/orchestratorState.js'
 import type { FlowMindDecision } from '../flowmind/types/flowMindDecision.js'
+import { requireCanonicalEntityIdentity } from '../entities/identity/entityIdentityBuilder.js'
 
 export const PUBLIC_FLOWMIND_SHADOW_NOTE_PREFIX = 'flowmind-public-shadow:'
 
@@ -113,9 +114,8 @@ function resolveFallbackStage(entityProfile: EntityProfile) {
 }
 
 function resolveEntityName(entityProfile: EntityProfile) {
-  return readString(entityProfile.finalForm?.identity?.name)
-    ?? readString(entityProfile.social?.publicName)
-    ?? entityProfile.id
+  const canonicalIdentity = requireCanonicalEntityIdentity(entityProfile, 'publicFlowMindShadowService.resolveEntityName')
+  return canonicalIdentity.identity.canonicalName
 }
 
 function buildPublicShadowCommand(args: {

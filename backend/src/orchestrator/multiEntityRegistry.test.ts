@@ -41,6 +41,23 @@ test('multiEntityRegistry persists and filters entities by lifecycle, autonomy, 
         autonomyReadiness: 0.2,
         riskScore: 0.2,
         actionQueue: [],
+        lastActions: [{
+          actionId: 'action-a',
+          goalType: 'generate_leads',
+          actionType: 'route_lead',
+          confidence: 0.7,
+          opportunityScore: 0.72,
+          executedAt: '2026-05-03T10:00:00.000Z',
+        }],
+        lastOutcomes: [{
+          outcomeId: 'outcome-a',
+          actionId: 'action-a',
+          status: 'success',
+          impactScore: 0.82,
+          conversionEffect: 0.64,
+          observedAt: '2026-05-03T10:05:00.000Z',
+          signalType: 'portfolio.lead.converted',
+        }],
         rollbackState: { active: false },
       })
 
@@ -74,6 +91,8 @@ test('multiEntityRegistry persists and filters entities by lifecycle, autonomy, 
     assert.equal(sandboxEntities.length, 1)
     assert.equal(highRiskEntities.length, 1)
     assert.equal((await registry.getMetrics()).entitiesUnderRollback, 1)
+    assert.equal(sandboxEntities[0]?.lastActions[0]?.actionType, 'route_lead')
+    assert.equal(sandboxEntities[0]?.lastOutcomes[0]?.status, 'success')
 
   } finally {
     await connection?.close()

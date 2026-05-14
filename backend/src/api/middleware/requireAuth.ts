@@ -6,6 +6,9 @@ import { AuthError } from '../../auth/authErrors.js'
 type BackendContext = {
   backendContext: {
     auth: {
+      authService: {
+        validateAuthContext(auth: AuthContext): Promise<unknown>
+      }
       tokenService: {
         verifyAccessToken(token: string): Promise<AuthContext>
       }
@@ -27,6 +30,10 @@ function readBearerToken(request: FastifyRequest) {
 
 function getTokenService(request: FastifyRequest) {
   return ((request.server as FastifyRequest['server'] & BackendContext).backendContext.auth.tokenService)
+}
+
+function getAuthService(request: FastifyRequest) {
+  return ((request.server as FastifyRequest['server'] & BackendContext).backendContext.auth.authService)
 }
 
 function getObservability(request: FastifyRequest) {
@@ -56,6 +63,7 @@ export async function requireAuth(request: FastifyRequest, reply: FastifyReply) 
 
   try {
     request.auth = await getTokenService(request).verifyAccessToken(token)
+    await getAuthService(request).validateAuthContext(request.auth)
   } catch (error) {
     getObservability(request).increment('auth_failures')
     getObservability(request).increment('auth_token_validation_failed')
@@ -84,6 +92,7 @@ export async function optionalAuth(request: FastifyRequest) {
 
   try {
     request.auth = await getTokenService(request).verifyAccessToken(token)
+    await getAuthService(request).validateAuthContext(request.auth)
   } catch {
     request.auth = undefined
   }

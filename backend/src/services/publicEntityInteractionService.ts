@@ -2,6 +2,7 @@ import type { EntityProfile } from '../brain/domain/entity/contracts/EntityProfi
 import type { OrchestratorSnapshotRecord } from '../domain/orchestratorSnapshot.js'
 import type { FlowMindPort } from './flowMindPort.js'
 import type { PublicInteractionActionResult } from './publicInteractionActionService.js'
+import type { RuntimeGovernanceCapability, RuntimeGovernanceDecision, RuntimeMode } from './runtimeGovernanceService.js'
 import {
   evaluatePublicFlowMindShadow,
   type PublicFlowMindShadowBackendDecision,
@@ -32,6 +33,10 @@ export type PublicEntityDecisionResponse = {
   status: 'ready'
   entityId: string
   requestId: string
+  runtimeMode?: RuntimeMode
+  degradedReason?: string
+  blockedCapabilities?: RuntimeGovernanceCapability[]
+  governanceDecision?: RuntimeGovernanceDecision
   decision: {
     responseText: string
     decision: {
@@ -85,6 +90,14 @@ type PublicEntityInteractionBusinessContext = NonNullable<PublicEntityInteractio
 
 function clamp(value: number, min = 0, max = 1) {
   return Math.min(max, Math.max(min, value))
+}
+
+function readCanonicalVisualDefaults(entityProfile?: EntityProfile) {
+  return entityProfile?.canonicalIdentity?.transformation.visualStateDefaults
+}
+
+function readCanonicalEnergyProfile(entityProfile?: EntityProfile) {
+  return entityProfile?.canonicalIdentity?.transformation.interactionEnergyProfile
 }
 
 function normalizeText(value: string) {
@@ -250,13 +263,15 @@ export function resolvePublicEntityInteractionAvailability(args: {
   }
 }
 
-function resolveCognitiveTone(decision: PublicFlowMindShadowBackendDecision) {
+function resolveCognitiveTone(decision: PublicFlowMindShadowBackendDecision, entityProfile?: EntityProfile) {
+  const canonicalTone = readCanonicalVisualDefaults(entityProfile)?.tone
+
   if (decision.authority.semanticFrozen) {
-    return 'stable'
+    return canonicalTone ?? 'stable'
   }
 
   if (decision.fallbackUsed) {
-    return 'guarded'
+    return canonicalTone ?? 'guarded'
   }
 
   if (decision.action === 'sell') {
@@ -294,40 +309,44 @@ function resolveCognitiveSummary(decision: PublicFlowMindShadowBackendDecision) 
   return 'presenca em ajuste contextual'
 }
 
-function resolvePresenceIntensity(currentIntensity: number | undefined, decision: PublicFlowMindShadowBackendDecision) {
-  const baseIntensity = typeof currentIntensity === 'number' ? currentIntensity : 0.56
+function resolvePresenceIntensity(currentIntensity: number | undefined, decision: PublicFlowMindShadowBackendDecision, entityProfile?: EntityProfile) {
+  const visualDefaults = readCanonicalVisualDefaults(entityProfile)
+  const energyProfile = readCanonicalEnergyProfile(entityProfile)
+  const baseIntensity = typeof currentIntensity === 'number' ? currentIntensity : visualDefaults?.intensity ?? 0.56
   const actionDelta =
     decision.action === 'sell'
-      ? 0.08
+      ? energyProfile?.sellBias ?? 0.08
       : decision.action === 'guide'
-        ? 0.04
+        ? energyProfile?.guideBias ?? 0.04
         : decision.action === 'support'
-          ? -0.03
+          ? energyProfile?.supportBias ?? -0.03
           : decision.action === 'refuse'
-            ? -0.06
+            ? energyProfile?.refuseBias ?? -0.06
             : 0.01
 
   return Math.round(clamp(baseIntensity + actionDelta + (decision.authority.decisionSource === 'adaptive-core' ? 0.03 : 0), 0.18, 0.96) * 1000) / 1000
 }
 
-function buildVisualPatch(decision: PublicFlowMindShadowBackendDecision, currentPresenceIntensity: number | undefined) {
-  const confidence = clamp(decision.confidence)
+function buildVisualPatch(decision: PublicFlowMindShadowBackendDecision, currentPresenceIntensity: number | undefined, entityProfile?: EntityProfile) {
+  const visualDefaults = readCanonicalVisualDefaults(entityProfile)
+  const energyProfile = readCanonicalEnergyProfile(entityProfile)
+  const confidence = clamp(visualDefaults?.confidence ?? decision.confidence)
   const actionBias =
     decision.action === 'sell'
-      ? 0.08
+      ? energyProfile?.sellBias ?? 0.08
       : decision.action === 'guide'
-        ? 0.04
+        ? energyProfile?.guideBias ?? 0.04
         : decision.action === 'support'
-          ? -0.05
+          ? energyProfile?.supportBias ?? -0.05
           : decision.action === 'refuse'
-            ? -0.08
+            ? energyProfile?.refuseBias ?? -0.08
             : 0
-  const intensity = resolvePresenceIntensity(currentPresenceIntensity, decision)
+  const intensity = resolvePresenceIntensity(currentPresenceIntensity, decision, entityProfile)
   const confidenceBias = (confidence - 0.5) * 0.18
 
   return {
     visualState: {
-      tone: resolveCognitiveTone(decision),
+      tone: resolveCognitiveTone(decision, entityProfile),
       intensity,
       confidence,
       semanticFrozen: decision.authority.semanticFrozen,
@@ -403,7 +422,7 @@ export async function resolvePublicEntityInteraction(args: {
     return undefined
   }
 
-  const resolvedIntensity = resolvePresenceIntensity(args.currentPresenceIntensity, decision)
+  const resolvedIntensity = resolvePresenceIntensity(args.currentPresenceIntensity, decision, args.entityProfile)
   const totalLatencyMs = Math.max(decision.latencyMs, Date.now() - startedAt)
   const fallbackOccurred = decision.fallbackUsed
 
@@ -425,10 +444,10 @@ export async function resolvePublicEntityInteraction(args: {
       decisionSource: decision.authority.decisionSource,
       terminalAuthority: decision.authority.terminalAuthority,
       semanticFrozen: decision.authority.semanticFrozen,
-      visualPatch: buildVisualPatch(decision, args.currentPresenceIntensity),
+      visualPatch: buildVisualPatch(decision, args.currentPresenceIntensity, args.entityProfile),
       updatedPresenceIndicators: {
         cognitiveIndicator: {
-          tone: resolveCognitiveTone(decision),
+          tone: resolveCognitiveTone(decision, args.entityProfile),
           summary: resolveCognitiveSummary(decision),
           confidence: Math.round(clamp(decision.confidence) * 1000) / 1000,
         },

@@ -1,6 +1,7 @@
 import type { EntityProfile } from '../brain/domain/entity/contracts/EntityProfile.js'
 import type { RuntimeControl } from '../brain/domain/orchestration/contracts/RuntimeControl.js'
 import type { RuntimeSceneSpec, RuntimeStageBudget } from '../brain/domain/rendering/contracts/RuntimeSceneSpec.js'
+import { requireCanonicalEntityIdentity } from '../entities/identity/entityIdentityBuilder.js'
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -111,6 +112,8 @@ export function buildRuntimeSceneProjection(args: {
     return undefined
   }
 
+  const canonicalIdentity = requireCanonicalEntityIdentity(profile, 'runtimeSceneProjection.buildRuntimeSceneProjection')
+
   // Public/entity smoke data can exist before the full runtime scene spec is materialized.
   // In that case, skip renderSpec projection instead of crashing the presence route.
   if (
@@ -208,7 +211,7 @@ export function buildRuntimeSceneProjection(args: {
       secondary,
       shapeTint: hexToNumber(accent),
       edgeTint: hexToNumber(secondary),
-      originSource: profile.social.publicName || profile.id,
+      originSource: canonicalIdentity.identity.canonicalName,
       layerVisibility: {
         ...profile.finalForm.layerVisibility,
         ...args.runtimeControl.layerVisibility,

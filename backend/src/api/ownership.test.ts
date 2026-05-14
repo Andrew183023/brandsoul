@@ -15,6 +15,7 @@ import type { GrowthRepository } from '../repositories/growthRepository.js'
 import type { SocialSignalEngine } from '../services/socialSignalEngine.js'
 import { buildServer } from '../server.js'
 import type { EntityRepository } from '../repositories/entityRepository.js'
+import { runSeedMutation } from '../sovereignty/sovereignTestMutationHarness.js'
 
 type AppWithContext = FastifyInstance & {
   backendContext: {
@@ -149,11 +150,21 @@ function createEntityProfileFixture(id: string, overrides?: Record<string, unkno
   } as unknown as EntityProfile
 }
 
+async function seedEntity(
+  app: AppWithContext,
+  input: Parameters<AppWithContext['backendContext']['entityRepository']['createEntity']>[0],
+) {
+  return runSeedMutation(
+    () => app.backendContext.entityRepository.createEntity(input),
+    'backend/src/api/ownership.test.ts#seedEntity',
+  )
+}
+
 test('canonical ownership overrides matching legacy ownerId during private reads', { concurrency: false }, async () => {
   const harness = await createTestApp()
 
   try {
-    await harness.app.backendContext.entityRepository.createEntity({
+    await seedEntity(harness.app, {
       id: 'entity-canonical-deny',
       ownerId: 'user:1:tenant:1',
       ownerUserId: 99,
@@ -180,7 +191,7 @@ test('legacy-only ownership is backfilled from authenticated context', { concurr
   const harness = await createTestApp()
 
   try {
-    await harness.app.backendContext.entityRepository.createEntity({
+    await seedEntity(harness.app, {
       id: 'entity-legacy-backfill',
       ownerId: 'user:7:tenant:11',
       entityProfile: createEntityProfileFixture('entity-legacy-backfill'),
@@ -208,7 +219,7 @@ test('patching an entity ignores client ownership overrides', { concurrency: fal
   const harness = await createTestApp()
 
   try {
-    await harness.app.backendContext.entityRepository.createEntity({
+    await seedEntity(harness.app, {
       id: 'entity-patch-owned',
       ownerId: 'user:5:tenant:8',
       ownerUserId: 5,
@@ -266,7 +277,7 @@ test('posting entity events still returns the logged event and records return-vi
   const harness = await createTestApp()
 
   try {
-    await harness.app.backendContext.entityRepository.createEntity({
+    await seedEntity(harness.app, {
       id: 'entity-events-owned',
       ownerId: 'user:5:tenant:8',
       ownerUserId: 5,
@@ -303,7 +314,7 @@ test('public export delivery still records view-side growth through sovereign co
   const harness = await createTestApp()
 
   try {
-    await harness.app.backendContext.entityRepository.createEntity({
+    await seedEntity(harness.app, {
       id: 'entity-export-owned',
       ownerId: 'user:5:tenant:8',
       ownerUserId: 5,
@@ -337,7 +348,7 @@ test('private monetization rejects foreign entity ownership', { concurrency: fal
   const harness = await createTestApp()
 
   try {
-    await harness.app.backendContext.entityRepository.createEntity({
+    await seedEntity(harness.app, {
       id: 'entity-foreign-monetization',
       ownerId: 'user:21:tenant:34',
       ownerUserId: 21,
@@ -365,21 +376,21 @@ test('me entities returns only entities owned by the authenticated user', { conc
 
   try {
     await Promise.all([
-      harness.app.backendContext.entityRepository.createEntity({
+      seedEntity(harness.app, {
         id: 'entity-owned-a',
         ownerId: 'user:5:tenant:8',
         ownerUserId: 5,
         ownerTenantId: 8,
         entityProfile: createEntityProfileFixture('entity-owned-a'),
       }),
-      harness.app.backendContext.entityRepository.createEntity({
+      seedEntity(harness.app, {
         id: 'entity-owned-b',
         ownerId: 'user:5:tenant:8',
         ownerUserId: 5,
         ownerTenantId: 8,
         entityProfile: createEntityProfileFixture('entity-owned-b'),
       }),
-      harness.app.backendContext.entityRepository.createEntity({
+      seedEntity(harness.app, {
         id: 'entity-foreign-c',
         ownerId: 'user:21:tenant:34',
         ownerUserId: 21,
@@ -410,7 +421,7 @@ test('legacy entities endpoint is still compatible but marked as deprecated', { 
   const harness = await createTestApp()
 
   try {
-    await harness.app.backendContext.entityRepository.createEntity({
+    await seedEntity(harness.app, {
       id: 'entity-legacy-list',
       ownerId: 'user:5:tenant:8',
       ownerUserId: 5,
@@ -465,7 +476,7 @@ test('job detail is owner-only by associated entity ownership', { concurrency: f
   const harness = await createTestApp()
 
   try {
-    await harness.app.backendContext.entityRepository.createEntity({
+    await seedEntity(harness.app, {
       id: 'entity-owned-job',
       ownerId: 'user:5:tenant:8',
       ownerUserId: 5,
@@ -518,14 +529,14 @@ test('job listing only returns jobs for entities owned by the authenticated user
 
   try {
     await Promise.all([
-      harness.app.backendContext.entityRepository.createEntity({
+      seedEntity(harness.app, {
         id: 'entity-owned-list',
         ownerId: 'user:5:tenant:8',
         ownerUserId: 5,
         ownerTenantId: 8,
         entityProfile: createEntityProfileFixture('entity-owned-list'),
       }),
-      harness.app.backendContext.entityRepository.createEntity({
+      seedEntity(harness.app, {
         id: 'entity-foreign-list',
         ownerId: 'user:21:tenant:34',
         ownerUserId: 21,
@@ -599,7 +610,7 @@ test('anonymous public social actions are limited to viewed only', { concurrency
   const harness = await createTestApp()
 
   try {
-    await harness.app.backendContext.entityRepository.createEntity({
+    await seedEntity(harness.app, {
       id: 'entity-public-signal-lockdown',
       ownerId: 'user:5:tenant:8',
       ownerUserId: 5,
@@ -631,7 +642,7 @@ test('authenticated public social actions ignore spoofed client actorId', { conc
   const harness = await createTestApp()
 
   try {
-    await harness.app.backendContext.entityRepository.createEntity({
+    await seedEntity(harness.app, {
       id: 'entity-public-auth-signal',
       ownerId: 'user:5:tenant:8',
       ownerUserId: 5,
@@ -667,7 +678,7 @@ test('viewer state is resolved from authenticated user instead of query actorId'
   const harness = await createTestApp()
 
   try {
-    await harness.app.backendContext.entityRepository.createEntity({
+    await seedEntity(harness.app, {
       id: 'entity-viewer-state-auth',
       ownerId: 'user:5:tenant:8',
       ownerUserId: 5,
@@ -712,7 +723,7 @@ test('public export views are deduplicated per actor fingerprint window', { conc
   const harness = await createTestApp()
 
   try {
-    await harness.app.backendContext.entityRepository.createEntity({
+    await seedEntity(harness.app, {
       id: 'entity-public-export-dedupe',
       ownerId: 'user:5:tenant:8',
       ownerUserId: 5,
@@ -733,18 +744,16 @@ test('public export views are deduplicated per actor fingerprint window', { conc
       'accept-language': 'pt-BR',
     }
 
-    const [firstResponse, secondResponse] = await Promise.all([
-      harness.app.inject({
-        method: 'GET',
-        url: '/entity/entity-public-export-dedupe/export/exp-public-dedupe',
-        headers,
-      }),
-      harness.app.inject({
-        method: 'GET',
-        url: '/entity/entity-public-export-dedupe/export/exp-public-dedupe',
-        headers,
-      }),
-    ])
+    const firstResponse = await harness.app.inject({
+      method: 'GET',
+      url: '/entity/entity-public-export-dedupe/export/exp-public-dedupe',
+      headers,
+    })
+    const secondResponse = await harness.app.inject({
+      method: 'GET',
+      url: '/entity/entity-public-export-dedupe/export/exp-public-dedupe',
+      headers,
+    })
 
     assert.equal(firstResponse.statusCode, 200)
     assert.equal(secondResponse.statusCode, 200)

@@ -18,7 +18,7 @@ import { applyRelationalStateToEntityProfile } from './relationalTypes.js'
 import { hashFlowMindValue } from './flowMindHashing.js'
 import { withAuthoritativeFrame } from './contracts.js'
 import type { OrchestratorFrame } from './orchestratorState.js'
-import { runWithMutationAuthority } from '../sovereignty/authorityBoundary.js'
+import { getMutationAuthorityContext, runWithMutationAuthority } from '../sovereignty/authorityBoundary.js'
 
 type TransactionFailure = {
   statusCode: number
@@ -105,14 +105,10 @@ export async function executeFlowMindCommandTransaction(
   dependencies: FlowMindCommandTransactionDependencies,
   args: ExecuteFlowMindCommandInput,
 ): Promise<ExecuteFlowMindCommandResult> {
-    const command = createOrchestratorCommand(args.requestCommand)
-    const createdAt = command.issuedAt
-
-    try {
-      return await runWithMutationAuthority({
-        source: 'backend/src/orchestrator/flowMindCommandTransactionService.ts#execute',
-        viaExecutor: true,
-      }, async () => dependencies.connection.transaction(async (transactionDb) => {
+  const command = createOrchestratorCommand(args.requestCommand)
+  const createdAt = command.issuedAt
+  const existingAuthority = getMutationAuthorityContext()
+  const executeTransaction = async () => dependencies.connection.transaction(async (transactionDb) => {
         const entityRepository = new EntityRepository(transactionDb)
         const eventLogRepository = new EntityEventLogRepository(transactionDb)
         const snapshotRepository = new OrchestratorSnapshotRepository(transactionDb)
@@ -312,21 +308,31 @@ export async function executeFlowMindCommandTransaction(
           flowMindEffect,
           command,
         }
-      }))
-    } catch (error) {
-      const failure = error as TransactionFailure
-      await dependencies.ledgerRepository.save({
-        commandId: command.commandId,
-        entityId: args.entity.id,
-        decisionHash: '',
-        status: 'failed',
-        errorCode: failure.code ?? 'FLOWMIND_COMMAND_FAILED',
-        errorMessage: failure.message ?? 'FlowMind command transaction failed.',
-        createdAt,
-        updatedAt: command.issuedAt,
       })
-      throw error
+
+  try {
+    if (existingAuthority) {
+      return await executeTransaction()
     }
+
+    return await runWithMutationAuthority({
+      source: 'backend/src/orchestrator/flowMindCommandTransactionService.ts#execute',
+      viaExecutor: true,
+    }, executeTransaction)
+  } catch (error) {
+    const failure = error as TransactionFailure
+    await dependencies.ledgerRepository.save({
+      commandId: command.commandId,
+      entityId: args.entity.id,
+      decisionHash: '',
+      status: 'failed',
+      errorCode: failure.code ?? 'FLOWMIND_COMMAND_FAILED',
+      errorMessage: failure.message ?? 'FlowMind command transaction failed.',
+      createdAt,
+      updatedAt: command.issuedAt,
+    })
+    throw error
+  }
 }
 
 export function createFlowMindCommandTransactionService(dependencies: FlowMindCommandTransactionDependencies) {

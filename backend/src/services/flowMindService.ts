@@ -7,6 +7,7 @@ import {
   type EntityCognitiveMemoryStore,
   type FlowMindDecisionAdapter,
 } from '../flowmind/index.js'
+import { requireCanonicalEntityIdentity } from '../entities/identity/entityIdentityBuilder.js'
 import type { OrchestratorCommand, OrchestratorState } from '../orchestrator/orchestratorState.js'
 import type {
   FlowMindAdapterLoadStatus,
@@ -252,20 +253,38 @@ function buildCommandInput(command: OrchestratorCommand, state: OrchestratorStat
   }
 }
 
-function resolveObjectiveFromEntityProfile(
+export function resolveObjectiveFromEntityProfile(
   entityProfile: EntityProfile,
   command: OrchestratorCommand,
 ): CognitiveObjective | undefined {
+  requireCanonicalEntityIdentity(entityProfile, 'flowMindService.resolveObjectiveFromEntityProfile')
   const exportFormats = Array.isArray(entityProfile.export?.formatsEnabled)
     ? entityProfile.export.formatsEnabled
     : []
   const languageStyle = entityProfile.context?.styleAnswers?.languageStyle
+  const canonicalBehavior = entityProfile.canonicalIdentity?.persona.responseBehaviorProfile
 
   if (command.name === 'trigger_export') {
     return {
       type: 'convert',
       priority: 0.8,
       constraints: ['orchestrator-shadow-mode'],
+    }
+  }
+
+  if (canonicalBehavior?.primaryObjective === 'guide') {
+    return {
+      type: 'engage',
+      priority: 0.6,
+      constraints: ['backend-native-persona-guide'],
+    }
+  }
+
+  if (canonicalBehavior?.primaryObjective === 'educate') {
+    return {
+      type: 'educate',
+      priority: 0.52,
+      constraints: ['backend-native-persona-educate'],
     }
   }
 
@@ -293,6 +312,7 @@ function resolveObjectiveFromEntityProfile(
 }
 
 function buildFlowMindContext(input: FlowMindServiceInvocation) {
+  const canonicalIdentity = requireCanonicalEntityIdentity(input.entityProfile, 'flowMindService.buildFlowMindContext')
   const exportFormats = Array.isArray(input.entityProfile.export?.formatsEnabled)
     ? input.entityProfile.export.formatsEnabled
     : []
@@ -313,9 +333,15 @@ function buildFlowMindContext(input: FlowMindServiceInvocation) {
     },
     entity: {
       profileId: input.entityProfile.id,
+      canonicalName: canonicalIdentity.identity.canonicalName,
+      canonicalSlug: canonicalIdentity.identity.canonicalSlug,
+      entityType: canonicalIdentity.identity.entityType,
       brandCategory: input.entityProfile.context?.brandCategory,
       actionStyle: styleAnswers?.actionStyle,
       languageStyle: styleAnswers?.languageStyle,
+      communicationStyle: canonicalIdentity.persona.communicationStyle,
+      governanceProfile: canonicalIdentity.runtime.governanceProfile,
+      memoryProfile: canonicalIdentity.runtime.memoryProfile,
       hasExports: exportFormats.length > 0,
       confidence: input.entityProfile.metadata.confidence,
     },
@@ -385,7 +411,16 @@ class FlowMindService implements FlowMindPort {
       }, {
         adapter: this.adapter,
       })
-    } catch {
+    } catch (error) {
+      if (
+        typeof error === 'object'
+        && error !== null
+        && 'code' in error
+        && (error as { code?: string }).code === 'ENTITY_CANONICAL_IDENTITY_REQUIRED'
+      ) {
+        throw error
+      }
+
       return createDegradedCognitionResult({
         mode: effectiveMode,
         invokedAt,

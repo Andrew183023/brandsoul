@@ -109,6 +109,7 @@ function createFallbackBaseDecision(input: FlowMindInput): FlowMindDecision {
   const activeGoals = extractPrioritizedGoals(input.context)
   const triggers = extractAutonomousTriggers(input.context)
   const scores = extractStateScores(input.context)
+  const valueLoop = extractValueLoop(input.context)
   const topGoal = activeGoals[0]
   const createEntityOpportunity =
     topGoal?.type === 'create_entities'
@@ -139,6 +140,8 @@ function createFallbackBaseDecision(input: FlowMindInput): FlowMindDecision {
       actionPayload: {
         triggerSet: activeGoals.map((goal) => goal.type),
         triggerReason: 'opportunity-lead-gap-memory-aligned',
+        opportunityScore: valueLoop.opportunityScore,
+        outcomePattern: valueLoop.outcomePattern,
       },
       memoryReadSet: [],
       memoryWritePlan: [],
@@ -149,6 +152,132 @@ function createFallbackBaseDecision(input: FlowMindInput): FlowMindDecision {
         source: 'continuous-goal-prioritization',
         topGoal: topGoal.type,
         triggerSummary: triggers,
+        valueLoop,
+      },
+    }
+  }
+
+  if (topGoal?.type === 'generate_leads' && (valueLoop.opportunityScore >= 0.62 || triggers.leadScoreDrop)) {
+    const routeLeadConfidence = clampFlowMindConfidence(
+      0.42
+      + (topGoal.priorityScore * 0.14)
+      + (scores.leadGenerationScore * 0.16)
+      + (valueLoop.leadSignalStrength * 0.18)
+      + (valueLoop.outcomePattern.successRate * 0.1)
+      + (scores.memoryRelevance * 0.08),
+    )
+    const routeLeadAction = valueLoop.leadSignalStrength >= 0.66 || valueLoop.outcomePattern.conversionMomentum >= 0.56
+      ? 'route_lead'
+      : 'expand_presence'
+
+    return {
+      intent: 'growth',
+      action: routeLeadAction,
+      confidence: routeLeadConfidence,
+      decisionHash: '',
+      responsePlan: {
+        kind: 'general',
+        topic: 'generate_leads',
+        intentGoal: 'convert-opportunity-into-qualified-lead',
+        requiredData: [],
+        constraints: [],
+        optionalCloseStyle: 'contextual-clarity',
+      },
+      actionPayload: {
+        goalType: topGoal.type,
+        leadSignalStrength: valueLoop.leadSignalStrength,
+        opportunityScore: valueLoop.opportunityScore,
+        outcomePattern: valueLoop.outcomePattern,
+        measurementPlan: 'track-qualified-contact-conversion',
+      },
+      memoryReadSet: [],
+      memoryWritePlan: [],
+      expectedStateChanges: [],
+      statePatch: {},
+      memoryCandidates: [],
+      metadata: {
+        source: 'value-loop-growth',
+        selectedGoal: topGoal.type,
+        triggerSummary: triggers,
+        valueLoop,
+      },
+    }
+  }
+
+  if (topGoal?.type === 'expand_presence' && (valueLoop.opportunityScore >= 0.58 || triggers.opportunityDetected)) {
+    return {
+      intent: 'presence',
+      action: 'expand_presence',
+      confidence: clampFlowMindConfidence(
+        0.4
+        + (topGoal.priorityScore * 0.16)
+        + (valueLoop.outcomePattern.successRate * 0.1)
+        + (scores.memoryRelevance * 0.1)
+        + (scores.autonomyWeight * 0.08),
+      ),
+      decisionHash: '',
+      responsePlan: {
+        kind: 'general',
+        topic: 'expand_presence',
+        intentGoal: 'increase-surface-area-for-opportunity-detection',
+        requiredData: [],
+        constraints: [],
+        optionalCloseStyle: 'contextual-clarity',
+      },
+      actionPayload: {
+        goalType: topGoal.type,
+        opportunityScore: valueLoop.opportunityScore,
+        outcomePattern: valueLoop.outcomePattern,
+        measurementPlan: 'track-exposure-click-response',
+      },
+      memoryReadSet: [],
+      memoryWritePlan: [],
+      expectedStateChanges: [],
+      statePatch: {},
+      memoryCandidates: [],
+      metadata: {
+        source: 'value-loop-presence',
+        selectedGoal: topGoal.type,
+        valueLoop,
+      },
+    }
+  }
+
+  if (topGoal?.type === 'optimize_performance' && (triggers.growthStagnation || valueLoop.outcomePattern.failureRate >= 0.34)) {
+    return {
+      intent: 'stabilize',
+      action: 'optimize_performance',
+      confidence: clampFlowMindConfidence(
+        0.38
+        + (topGoal.priorityScore * 0.14)
+        + (valueLoop.outcomePattern.failureRate * 0.16)
+        + (scores.healthScore * 0.08)
+        + (scores.memoryRelevance * 0.08),
+      ),
+      decisionHash: '',
+      responsePlan: {
+        kind: 'general',
+        topic: 'optimize_performance',
+        intentGoal: 'improve-future-execution-quality',
+        requiredData: [],
+        constraints: [],
+        optionalCloseStyle: 'contextual-clarity',
+      },
+      actionPayload: {
+        goalType: topGoal.type,
+        opportunityScore: valueLoop.opportunityScore,
+        failureRate: valueLoop.outcomePattern.failureRate,
+        measurementPlan: 'track-health-lead-memory-recovery',
+      },
+      memoryReadSet: [],
+      memoryWritePlan: [],
+      expectedStateChanges: [],
+      statePatch: {},
+      memoryCandidates: [],
+      metadata: {
+        source: 'value-loop-optimization',
+        selectedGoal: topGoal.type,
+        valueLoop,
       },
     }
   }
@@ -178,6 +307,7 @@ function createFallbackBaseDecision(input: FlowMindInput): FlowMindDecision {
       topGoal: topGoalTopic,
       triggers,
       scores,
+      valueLoop,
     },
     memoryReadSet: [],
     memoryWritePlan: [],
@@ -188,6 +318,7 @@ function createFallbackBaseDecision(input: FlowMindInput): FlowMindDecision {
       topGoal: topGoalTopic,
       triggerSummary: triggers,
       weighting: scores,
+      valueLoop,
     },
   }
 }
@@ -244,8 +375,30 @@ function extractStateScores(context: FlowMindInput['context']) {
     healthScore: clampFlowMindConfidence(typeof scores.healthScore === 'number' ? scores.healthScore : 0.5),
     leadGenerationScore: clampFlowMindConfidence(typeof scores.leadGenerationScore === 'number' ? scores.leadGenerationScore : 0.5),
     memoryRelevance: clampFlowMindConfidence(typeof scores.memoryRelevance === 'number' ? scores.memoryRelevance : 0.5),
+    opportunityScore: clampFlowMindConfidence(typeof scores.opportunityScore === 'number' ? scores.opportunityScore : 0.5),
+    leadSignalStrength: clampFlowMindConfidence(typeof scores.leadSignalStrength === 'number' ? scores.leadSignalStrength : 0.5),
     autonomyWeight,
     autonomyLevel,
+  }
+}
+
+function extractValueLoop(context: FlowMindInput['context']) {
+  const lastActions = Array.isArray(context.lastActions) ? context.lastActions : []
+  const lastOutcomes = Array.isArray(context.lastOutcomes) ? context.lastOutcomes : []
+  const summary = isRecord(context.outcomeSummary) ? context.outcomeSummary : {}
+  const scores = isRecord(context.runtimeScores) ? context.runtimeScores : {}
+
+  return {
+    opportunityScore: clampFlowMindConfidence(typeof scores.opportunityScore === 'number' ? scores.opportunityScore : 0.5),
+    leadSignalStrength: clampFlowMindConfidence(typeof scores.leadSignalStrength === 'number' ? scores.leadSignalStrength : 0.5),
+    lastActions: canonicalizeDeterministicValue(lastActions),
+    lastOutcomes: canonicalizeDeterministicValue(lastOutcomes),
+    outcomePattern: {
+      successRate: clampFlowMindConfidence(typeof summary.successRate === 'number' ? summary.successRate : 0.5),
+      failureRate: clampFlowMindConfidence(typeof summary.failureRate === 'number' ? summary.failureRate : 0.2),
+      averageImpact: clampFlowMindConfidence(typeof summary.averageImpact === 'number' ? summary.averageImpact : 0.5),
+      conversionMomentum: clampFlowMindConfidence(typeof summary.conversionMomentum === 'number' ? summary.conversionMomentum : 0.5),
+    },
   }
 }
 
@@ -360,6 +513,9 @@ function createEpisodeFromDecision(args: {
       args.decision.intent,
       args.decision.action,
       args.input.objective?.type ?? '',
+      typeof (args.qualifiedOutcome as Record<string, unknown> | undefined)?.outcomeStatus === 'string'
+        ? String((args.qualifiedOutcome as Record<string, unknown>).outcomeStatus)
+        : '',
       ...args.queryTerms,
     ]),
     relevanceScore: clampFlowMindConfidence(args.decision.confidence),
@@ -368,6 +524,8 @@ function createEpisodeFromDecision(args: {
       objective: args.input.objective?.type,
       queryTerms: args.queryTerms,
       qualifiedOutcome: args.qualifiedOutcome,
+      actionPayload: args.decision.actionPayload,
+      decisionContext: args.decision.metadata,
     }),
   }
 }
@@ -468,14 +626,20 @@ function enrichHistoricalSignals(memory: EntityCognitiveMemory, interactionOutco
   const interactionSuccess = typeof outcomeRecord.interactionSuccess === 'number' ? outcomeRecord.interactionSuccess : 0.5
   const userContinuation = outcomeRecord.userContinuation === true ? 1 : 0
   const engagementDelta = typeof outcomeRecord.engagementDelta === 'number' ? outcomeRecord.engagementDelta : 0
+  const conversionEffect = typeof outcomeRecord.conversionEffect === 'number' ? outcomeRecord.conversionEffect : engagementDelta
+  const reinforcement = outcomeRecord.outcomeStatus === 'success'
+    ? 0.08
+    : outcomeRecord.outcomeStatus === 'failure'
+      ? -0.06
+      : 0
 
   return {
     ...memory.historicalSignals,
     totalInteractions: memory.historicalSignals.totalInteractions + 1,
     reliableEvidenceCount: memory.historicalSignals.reliableEvidenceCount + 1,
-    rollingSuccessRate: clampFlowMindConfidence((memory.historicalSignals.rollingSuccessRate + interactionSuccess) / 2),
+    rollingSuccessRate: clampFlowMindConfidence(((memory.historicalSignals.rollingSuccessRate + interactionSuccess) / 2) + reinforcement),
     rollingContinuationRate: clampFlowMindConfidence((memory.historicalSignals.rollingContinuationRate + userContinuation) / 2),
-    rollingEngagementDelta: (memory.historicalSignals.rollingEngagementDelta + engagementDelta) / 2,
+    rollingEngagementDelta: (memory.historicalSignals.rollingEngagementDelta + engagementDelta + conversionEffect) / 2,
   }
 }
 

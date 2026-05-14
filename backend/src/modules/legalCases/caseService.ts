@@ -1,5 +1,6 @@
 import type { BackendDatabase } from '../../db/index.js'
 import { getLegalCaseDispatchTimeoutSeconds } from '../../config/env.js'
+import { buildSemanticFingerprint, getSemanticMutationExecutor } from '../../sovereignty/semanticMutationExecutor.js'
 
 import { CaseRepository, createCaseRepository } from './caseRepository.js'
 import { getLawyerInboxChannel, publish, type LawyerInboxEvent, type LawyerInboxEventType } from './lawyerInboxEvents.js'
@@ -469,40 +470,88 @@ export class CaseService {
   }
 
   async createCase(input: CreateCaseInput): Promise<CaseRecord> {
-    const createdCase = await this.db.transaction(async (tx) => {
-      const repository = this.repositoryFactory(tx)
-      const legalCase = await repository.createCase(input)
+    const { result: createdCase } = await getSemanticMutationExecutor().executeSemanticMutation({
+      authoritySource: 'backend/src/modules/legalCases/caseService.ts#createCase',
+      intent: {
+        intentId: `legal-case-create:${input.tenantId}:${input.caseNumber ?? 'none'}:${input.title}:${input.entityId ?? 'entityless'}`,
+        intentType: 'legal.case.create',
+        domain: 'legal_case',
+        actor: 'public',
+        targetRef: {
+          entityId: input.entityId ?? undefined,
+          tenantId: String(input.tenantId),
+        },
+        semanticPurpose: 'open a legal case record and establish the initial case timeline',
+        expectedInstitutionalEffect: ['legal_case_opened', 'initial_case_timeline_recorded'],
+        riskLevel: 'high',
+        replayRelevant: true,
+        continuityRelevant: true,
+        authRelevant: false,
+        createdAt: new Date().toISOString(),
+      },
+      captureBeforeState: () => ({
+        tenantId: input.tenantId,
+        entityId: input.entityId ?? null,
+      }),
+      executePersistence: () => this.db.transaction(async (tx) => {
+        const repository = this.repositoryFactory(tx)
+        const legalCase = await repository.createCase(input)
 
-      if (input.initialMessage?.body) {
-        await repository.addMessage({
+        if (input.initialMessage?.body) {
+          await repository.addMessage({
+            tenantId: input.tenantId,
+            caseId: legalCase.id,
+            authorProfessionalId: input.initialMessage.authorProfessionalId,
+            body: input.initialMessage.body,
+            messageType: input.initialMessage.messageType,
+            messageStatus: input.initialMessage.messageStatus,
+            direction: input.initialMessage.direction,
+            channel: input.initialMessage.channel,
+            subject: input.initialMessage.subject,
+            content: input.initialMessage.content,
+            attachments: input.initialMessage.attachments,
+            sentAt: input.initialMessage.sentAt,
+          })
+        }
+
+        await repository.addTimelineEvent({
           tenantId: input.tenantId,
           caseId: legalCase.id,
-          authorProfessionalId: input.initialMessage.authorProfessionalId,
-          body: input.initialMessage.body,
-          messageType: input.initialMessage.messageType,
-          messageStatus: input.initialMessage.messageStatus,
-          direction: input.initialMessage.direction,
-          channel: input.initialMessage.channel,
-          subject: input.initialMessage.subject,
-          content: input.initialMessage.content,
-          attachments: input.initialMessage.attachments,
-          sentAt: input.initialMessage.sentAt,
+          eventType: 'created',
+          actorProfessionalId: input.initialMessage?.authorProfessionalId ?? input.leadProfessionalId,
+          payload: {
+            entityId: legalCase.entityId ?? null,
+            status: legalCase.status,
+            priority: legalCase.priority,
+          },
         })
-      }
 
-      await repository.addTimelineEvent({
-        tenantId: input.tenantId,
-        caseId: legalCase.id,
-        eventType: 'created',
-        actorProfessionalId: input.initialMessage?.authorProfessionalId ?? input.leadProfessionalId,
-        payload: {
-          entityId: legalCase.entityId ?? null,
-          status: legalCase.status,
-          priority: legalCase.priority,
-        },
-      })
-
-      return legalCase
+        return legalCase
+      }),
+      captureAfterState: (persisted) => ({
+        caseId: persisted.id,
+        tenantId: persisted.tenantId,
+        status: persisted.status,
+        entityId: persisted.entityId ?? null,
+      }),
+      deriveEffect: ({ intent, beforeState, afterState, sovereignAttestation }) => ({
+        effectId: `${intent.intentId}:effect`,
+        intentId: intent.intentId,
+        effectType: 'legal.case.create.completed',
+        domain: intent.domain,
+        beforeFingerprint: buildSemanticFingerprint(beforeState),
+        afterFingerprint: buildSemanticFingerprint(afterState),
+        changedFields: ['case', 'case_message', 'case_timeline'],
+        institutionalMeaning: 'a legal case now exists as an institutional service obligation for the tenant',
+        replayFingerprint: buildSemanticFingerprint({
+          intentType: intent.intentType,
+          beforeState,
+          afterState,
+        }),
+        continuityLineageHash: sovereignAttestation.lineageHash,
+        mutationLineageHash: '',
+        verified: false,
+      }),
     })
 
     console.info('case.created', {

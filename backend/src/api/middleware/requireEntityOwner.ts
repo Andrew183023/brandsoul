@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 
 import type { EntityRepository } from '../../repositories/entityRepository.js'
 import type { StoredEntityProfile } from '../../domain/entityProfile.js'
+import { getInstitutionalSovereignMutationGate } from '../../sovereignty/institutionalSovereignMutationGate.js'
 import { getRequestAuth } from './requireAuth.js'
 
 type BackendContext = {
@@ -109,11 +110,26 @@ export async function requireEntityOwner(request: FastifyRequest, reply: Fastify
   const validatedOwnership = validateEntityOwnership(entity, auth.userId, auth.tenantId)
   if (validatedOwnership) {
     if (validatedOwnership.source === 'legacy-backfilled') {
-      const updatedEntity = await getRepository(request.server).setEntityOwnership({
-        id: entity.id,
-        ownerId: validatedOwnership.ownerId,
-        ownerUserId: validatedOwnership.ownerUserId,
-        ownerTenantId: validatedOwnership.ownerTenantId,
+      const updatedEntity = await getInstitutionalSovereignMutationGate().evaluateAndExecute({
+        authoritySource: 'backend/src/api/middleware/requireEntityOwner.ts#legacyBackfill',
+        context: {
+          mutationType: 'entity.ownership.backfill',
+          mutationScope: 'entity',
+          requestedCapability: 'orchestrator.command.execute',
+          runtimeMode: 'normal',
+          continuityMode: 'institutional_safe',
+          replayVerificationState: 'verified',
+          attestationIntegrity: 'verified',
+          recoveryRequired: false,
+          actor: 'admin',
+          traceId: request.traceId ?? request.id,
+        },
+        work: () => getRepository(request.server).setEntityOwnership({
+          id: entity.id,
+          ownerId: validatedOwnership.ownerId,
+          ownerUserId: validatedOwnership.ownerUserId,
+          ownerTenantId: validatedOwnership.ownerTenantId,
+        }),
       })
 
       request.log.warn({

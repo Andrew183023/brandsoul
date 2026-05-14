@@ -285,3 +285,36 @@ test('flowMindService derives invokedAt deterministically from injected state wh
   assert.deepEqual(first?.summary.invokedAt, '2026-05-03T12:00:00.000Z')
   assert.deepEqual(first, second)
 })
+
+test('flowMindService fails closed when canonical identity is missing', async () => {
+  const adapter = await loadBrandSoulShadowAdapter()
+  assert.ok(adapter)
+
+  const entity = createTestEntity()
+  delete entity.canonicalIdentity
+
+  const state = createInitialOrchestratorState({
+    entityId: entity.id,
+    entityProfile: entity,
+    now: '2026-05-03T12:00:00.000Z',
+  })
+  const command = createOrchestratorCommand({
+    type: 'command',
+    name: 'trigger_export',
+    source: 'user',
+  })
+  const service = createFlowMindService({
+    mode: 'shadow',
+    adapter,
+  })
+
+  await assert.rejects(
+    service.evaluateOrchestratorCommand({
+      entityProfile: entity,
+      state,
+      command,
+      now: '2026-05-03T12:01:00.000Z',
+    }),
+    /ENTITY_CANONICAL_IDENTITY_REQUIRED/,
+  )
+})

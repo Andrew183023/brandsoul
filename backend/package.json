@@ -6,8 +6,16 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
+    "guard:auth-sovereignty": "node scripts/check-auth-sovereignty-guard.mjs",
+    "guard:semantic-mutation": "node scripts/check-semantic-mutation-invariant.mjs",
+    "guard:sovereign-mutation": "node scripts/check-sovereign-mutation-guard.mjs",
     "test": "node scripts/run-tests.mjs",
+    "test:hermetic": "node scripts/run-hermetic-tests.mjs",
+    "ci:readiness": "node scripts/ciReadinessAudit.mjs",
     "start": "node dist/server.js"
+  },
+  "engines": {
+    "node": ">=20 <21"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

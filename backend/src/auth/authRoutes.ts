@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 
 import { getRequestAuth, requireAuth } from '../api/middleware/requireAuth.js'
 import { isAuthError, toAuthErrorResponse } from './authErrors.js'
+import { InstitutionalSovereignMutationBlockedError } from '../sovereignty/institutionalSovereignMutationGate.js'
 
 type BackendContext = {
   backendContext: {
@@ -15,14 +16,20 @@ type BackendContext = {
           businessModel: 'product' | 'service' | 'hybrid' | 'professional'
           accountMode?: 'client' | 'owner'
         }, clientContext: { ip?: string; userAgent?: string }): Promise<unknown>
-        login(email: string, password: string, clientContext: { ip?: string; userAgent?: string }): Promise<unknown>
+        login(
+          email: string,
+          password: string,
+          clientContext: { ip?: string; userAgent?: string },
+          selection?: { tenantId?: number; tenantSlug?: string },
+        ): Promise<unknown>
         requestPasswordReset(email: string): Promise<unknown>
         resetPasswordWithToken(token: string, newPassword: string): Promise<unknown>
         refresh(rawRefreshToken: string, clientContext: { ip?: string; userAgent?: string }): Promise<unknown>
         logout(rawRefreshToken?: string): Promise<void>
         logoutAll(userId: number, tenantId: number): Promise<void>
         getCurrentUser(userId: number): Promise<unknown>
-        getCurrentTenant(tenantId: number): Promise<unknown>
+        getCurrentTenant(userId: number, tenantId: number): Promise<unknown>
+        validateAuthContext(auth: { userId: number; tenantId: number; roles: string[] }): Promise<unknown>
       }
       jwksService: {
         getJwks(): Promise<{ keys: Array<Record<string, unknown>> }>
@@ -49,6 +56,18 @@ function getClientContext(request: FastifyRequest) {
 function sendAuthError(reply: FastifyReply, error: unknown) {
   if (isAuthError(error)) {
     return reply.status(error.statusCode).send(toAuthErrorResponse(error))
+  }
+
+  if (error instanceof InstitutionalSovereignMutationBlockedError) {
+    return reply.status(error.statusCode).send({
+      status: 'failed',
+      error: {
+        code: error.code,
+        message: error.message,
+      },
+      attestation: error.attestation,
+      blockedCapabilities: error.blockedCapabilities,
+    })
   }
 
   return reply.status(500).send({
@@ -106,9 +125,13 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     }
   })
 
-  app.post<{ Body: { email?: string; password?: string } }>('/auth/login', async (request, reply) => {
+  app.post<{ Body: { email?: string; password?: string; tenant_id?: number; tenant_slug?: string } }>('/auth/login', async (request, reply) => {
     const email = request.body?.email?.trim().toLowerCase()
     const password = request.body?.password ?? ''
+    const tenantId = Number.isInteger(request.body?.tenant_id) && Number(request.body?.tenant_id) > 0
+      ? Number(request.body?.tenant_id)
+      : undefined
+    const tenantSlug = request.body?.tenant_slug?.trim().toLowerCase() || undefined
 
     if (!email || !password) {
       return reply.status(400).send({
@@ -121,7 +144,10 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     }
 
     try {
-      const result = await getAuthService(app).login(email, password, getClientContext(request))
+      const result = await getAuthService(app).login(email, password, getClientContext(request), {
+        tenantId,
+        tenantSlug,
+      })
       return reply.send(result)
     } catch (error) {
       return sendAuthError(reply, error)
@@ -215,7 +241,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       })
     }
 
-    const tenant = await getAuthService(app).getCurrentTenant(auth.tenantId)
+    const tenant = await getAuthService(app).getCurrentTenant(auth.userId, auth.tenantId)
     if (!tenant) {
       return reply.status(403).send({
         status: 'failed',

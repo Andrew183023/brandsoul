@@ -8,10 +8,16 @@ import type { JobProducer } from '../../jobs/index.js'
 import type { MonetizationService } from '../../services/monetizationService.js'
 import type { ObservabilityService } from '../../services/observabilityService.js'
 import type { PublicCacheService } from '../../services/publicCacheService.js'
+import {
+  InstitutionalContinuityBlockedError,
+  type InstitutionalContinuityGovernanceService,
+} from '../../services/institutionalContinuityGovernanceService.js'
+import type { RuntimeGovernanceService } from '../../services/runtimeGovernanceService.js'
 import type { GlobalFeedEngine } from '../../services/globalFeedEngine.js'
 import type { RelationshipEngine } from '../../services/relationshipEngine.js'
 import type { SocialSignalEngine } from '../../services/socialSignalEngine.js'
 import type { GrowthEngine } from '../../domain/growth/GrowthEngine.js'
+import { getInstitutionalSovereignMutationGate } from '../../sovereignty/institutionalSovereignMutationGate.js'
 import type { FlowMindPort } from '../../services/flowMindPort.js'
 import { mapEntityProfileToPublicProfile } from '../../services/publicProfileMapper.js'
 import { buildPublicPresenceResponse } from '../../services/publicPresenceProjection.js'
@@ -72,6 +78,13 @@ import type {
 import { processBrandInBackendEngine } from '../../services/entityEngineService.js'
 import type { EntityRepository } from '../../repositories/entityRepository.js'
 import type { BackendDatabase } from '../../db/index.js'
+import { ensureCanonicalEntityIdentity } from '../../entities/identity/entityIdentityBuilder.js'
+import {
+  applyLegacySparkCompatibilityWrite,
+  readLegacySparkCompatibility,
+  type LegacySparkGatewayResponse,
+} from '../../entities/identity/entityLegacySemanticGateway.js'
+import type { LegacySparkCompatibilityPayload } from '../../entities/identity/entitySparkCompatibilityAdapter.js'
 import { requireAuth, getRequestAuth, optionalAuth } from '../middleware/requireAuth.js'
 import { buildLegacyOwnerId, requireEntityOwner, validateEntityOwnership } from '../middleware/requireEntityOwner.js'
 import { createRateLimit } from '../middleware/rateLimit.js'
@@ -112,6 +125,8 @@ type BackendContext = {
     publicCacheService: PublicCacheService
     flowMindService?: FlowMindPort
     sovereignMutationCommandService: SovereignMutationCommandService
+    institutionalContinuityGovernance: InstitutionalContinuityGovernanceService
+    runtimeGovernance: RuntimeGovernanceService
   }
 }
 
@@ -244,6 +259,14 @@ function getSovereignMutationCommandService(app: FastifyInstance) {
   return (app as FastifyInstance & BackendContext).backendContext.sovereignMutationCommandService
 }
 
+function getRuntimeGovernanceService(app: FastifyInstance) {
+  return (app as FastifyInstance & BackendContext).backendContext.runtimeGovernance
+}
+
+function getInstitutionalContinuityGovernanceService(app: FastifyInstance) {
+  return (app as FastifyInstance & BackendContext).backendContext.institutionalContinuityGovernance
+}
+
 function getObservability(app: FastifyInstance) {
   return (app as FastifyInstance & BackendContext).backendContext.observability
 }
@@ -282,6 +305,11 @@ function createExportRecordId() {
 
 function createDiagnosisArtifactId() {
   return `diag-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function applyLegacyCompatibilityHeaders(reply: FastifyReply, semanticAuthority: string) {
+  reply.header('X-BrandSoul-Legacy-Compatibility', 'true')
+  reply.header('X-BrandSoul-Semantic-Authority', semanticAuthority)
 }
 
 function trackCaseRouteMetric(
@@ -328,11 +356,26 @@ async function getOwnedEntityForAuth(app: FastifyInstance, entityId: string, aut
   }
 
   if (ownership.source === 'legacy-backfilled') {
-    const updatedEntity = await getRepository(app).setEntityOwnership({
-      id: entity.id,
-      ownerId: ownership.ownerId,
-      ownerUserId: ownership.ownerUserId,
-      ownerTenantId: ownership.ownerTenantId,
+    const updatedEntity = await getInstitutionalSovereignMutationGate().evaluateAndExecute({
+      authoritySource: 'backend/src/api/routes/entity.ts#legacyBackfill',
+      context: {
+        mutationType: 'entity.ownership.backfill',
+        mutationScope: 'entity',
+        requestedCapability: 'orchestrator.command.execute',
+        runtimeMode: getRuntimeGovernanceService(app).getStatus().runtimeMode,
+        continuityMode: getInstitutionalContinuityGovernanceService(app).getStatus().continuityMode,
+        replayVerificationState: 'verified',
+        attestationIntegrity: 'verified',
+        recoveryRequired: getInstitutionalContinuityGovernanceService(app).getStatus().recoveryRequired,
+        actor: 'admin',
+        traceId: `entity-ownership-backfill:${entity.id}`,
+      },
+      work: () => getRepository(app).setEntityOwnership({
+        id: entity.id,
+        ownerId: ownership.ownerId,
+        ownerUserId: ownership.ownerUserId,
+        ownerTenantId: ownership.ownerTenantId,
+      }),
     })
 
     return {
@@ -1792,8 +1835,16 @@ export async function registerEntityRoutes(app: FastifyInstance) {
     }
 
     const requestId = request.body.requestId ?? createRequestId()
+    const auth = getRequestAuth(request)!
+    const ownerContext = resolveAuthenticatedOwnerContext(auth)
+    const now = new Date().toISOString()
     const engineResult = await processBrandInBackendEngine({
       requestId,
+      createdAt: now,
+      authoritySeed: {
+        tenantId: ownerContext.ownerTenantId,
+        userId: ownerContext.ownerUserId,
+      },
       entityInput: request.body.entityInput,
       manifestation: request.body.manifestation,
       runtimeControl: request.body.runtimeControl,
@@ -1803,11 +1854,12 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       return reply.status(422).send(engineResult)
     }
 
-    const auth = getRequestAuth(request)!
-    const ownerContext = resolveAuthenticatedOwnerContext(auth)
-    const entity = applyOwnerContextToEntityProfile({
+    const entity = ensureCanonicalEntityIdentity(applyOwnerContextToEntityProfile({
       ...(engineResult.entity as EntityProfileDocument),
-    }, ownerContext)
+    }, ownerContext), {
+      tenantId: ownerContext.ownerTenantId,
+      createdAt: now,
+    })
     const entityId = String(entity.id)
     const storedResult = await getSovereignMutationCommandService(app).submitCommand({
       type: 'entity.create',
@@ -1817,10 +1869,10 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       ownerUserId: ownerContext.ownerUserId,
       ownerTenantId: ownerContext.ownerTenantId,
       entityProfile: entity,
-      now: new Date().toISOString(),
+      now,
       event: {
         type: 'entity.created',
-        timestamp: new Date().toISOString(),
+        timestamp: now,
         payload: {
           requestId,
           ownerId: ownerContext.ownerId,
@@ -1895,6 +1947,172 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
       entity: entity.entityProfile,
+    }
+  })
+
+  app.get<{ Params: { id: string } }>('/entity/:id/legacy/spark', { preHandler: [requireAuth, requireEntityOwner] }, async (request, reply) => {
+    const entity = request.entityRecord!
+    const response = readLegacySparkCompatibility(entity.entityProfile as EntityProfile)
+    getObservability(app).incrementMetric('legacy_semantic_bypass_detected_total', 1, { route: '/entity/:id/legacy/spark' })
+    getObservability(app).incrementMetric('backend_compat_gateway_requests_total', 1, { route: '/entity/:id/legacy/spark', method: 'GET' })
+    applyLegacyCompatibilityHeaders(reply, response.metadata.semanticAuthority)
+
+    return {
+      status: 'ready',
+      entityId: entity.id,
+      ...response,
+    }
+  })
+
+  app.put<{ Params: { id: string }; Body: LegacySparkCompatibilityPayload }>('/entity/:id/legacy/spark', { preHandler: [requireAuth, requireEntityOwner, privateWriteRateLimit] }, async (request, reply) => {
+    const entity = request.entityRecord!
+    const updated = applyLegacySparkCompatibilityWrite({
+      entityProfile: entity.entityProfile as EntityProfile,
+      payload: request.body,
+      tenantId: entity.ownerTenantId,
+      createdAt: entity.createdAt,
+    })
+
+    const commandId = `entity-legacy-spark:${entity.id}:${createRequestId()}`
+    const result = await getSovereignMutationCommandService(app).submitCommand({
+      type: 'entity.profile.persist',
+      commandId,
+      entityId: entity.id,
+      entityProfile: updated.entityProfile,
+      updatedAt: new Date().toISOString(),
+      event: {
+        type: 'entity.legacy.spark.persisted',
+        timestamp: new Date().toISOString(),
+        payload: {
+          changed: updated.changed,
+          semanticAuthority: updated.metadata.semanticAuthority,
+        },
+      },
+    }) as EntityMutationResult
+
+    const response: LegacySparkGatewayResponse = {
+      payload: readLegacySparkCompatibility((result.entity?.entityProfile ?? updated.entityProfile) as EntityProfile).payload,
+      metadata: updated.metadata,
+    }
+    getObservability(app).incrementMetric('legacy_semantic_bypass_detected_total', 1, { route: '/entity/:id/legacy/spark' })
+    getObservability(app).incrementMetric('backend_compat_gateway_requests_total', 1, { route: '/entity/:id/legacy/spark', method: 'PUT' })
+    applyLegacyCompatibilityHeaders(reply, response.metadata.semanticAuthority)
+
+    return {
+      status: 'ready',
+      entityId: entity.id,
+      changed: updated.changed,
+      ...response,
+    }
+  })
+
+  app.get<{ Params: { id: string } }>('/api/entities/:id/spark', { preHandler: [requireAuth, requireEntityOwner] }, async (request, reply) => {
+    const entity = request.entityRecord!
+    const response = readLegacySparkCompatibility(entity.entityProfile as EntityProfile)
+    getObservability(app).incrementMetric('backend_compat_gateway_requests_total', 1, { route: '/api/entities/:id/spark', method: 'GET' })
+    applyLegacyCompatibilityHeaders(reply, response.metadata.semanticAuthority)
+
+    return {
+      status: 'ready',
+      entityId: entity.id,
+      ...response,
+    }
+  })
+
+  app.put<{ Params: { id: string }; Body: LegacySparkCompatibilityPayload }>('/api/entities/:id/spark', { preHandler: [requireAuth, requireEntityOwner, privateWriteRateLimit] }, async (request, reply) => {
+    const entity = request.entityRecord!
+    const updated = applyLegacySparkCompatibilityWrite({
+      entityProfile: entity.entityProfile as EntityProfile,
+      payload: request.body,
+      tenantId: entity.ownerTenantId,
+      createdAt: entity.createdAt,
+    })
+
+    const commandId = `entity-api-compat-spark:${entity.id}:${createRequestId()}`
+    const result = await getSovereignMutationCommandService(app).submitCommand({
+      type: 'entity.profile.persist',
+      commandId,
+      entityId: entity.id,
+      entityProfile: updated.entityProfile,
+      updatedAt: new Date().toISOString(),
+      event: {
+        type: 'entity.legacy.spark.persisted',
+        timestamp: new Date().toISOString(),
+        payload: {
+          changed: updated.changed,
+          semanticAuthority: updated.metadata.semanticAuthority,
+          compatibilityRoute: '/api/entities/:id/spark',
+        },
+      },
+    }) as EntityMutationResult
+
+    const response: LegacySparkGatewayResponse = {
+      payload: readLegacySparkCompatibility((result.entity?.entityProfile ?? updated.entityProfile) as EntityProfile).payload,
+      metadata: updated.metadata,
+    }
+    getObservability(app).incrementMetric('backend_compat_gateway_requests_total', 1, { route: '/api/entities/:id/spark', method: 'PUT' })
+    applyLegacyCompatibilityHeaders(reply, response.metadata.semanticAuthority)
+
+    return {
+      status: 'ready',
+      entityId: entity.id,
+      changed: updated.changed,
+      ...response,
+    }
+  })
+
+  app.get<{ Params: { id: string } }>('/api/entities/:id/persona', { preHandler: [requireAuth, requireEntityOwner] }, async (request, reply) => {
+    const entity = request.entityRecord!
+    const response = readLegacySparkCompatibility(entity.entityProfile as EntityProfile)
+    getObservability(app).incrementMetric('backend_compat_gateway_requests_total', 1, { route: '/api/entities/:id/persona', method: 'GET' })
+    applyLegacyCompatibilityHeaders(reply, response.metadata.semanticAuthority)
+
+    return {
+      status: 'ready',
+      entityId: entity.id,
+      ...response,
+    }
+  })
+
+  app.put<{ Params: { id: string }; Body: LegacySparkCompatibilityPayload }>('/api/entities/:id/persona', { preHandler: [requireAuth, requireEntityOwner, privateWriteRateLimit] }, async (request, reply) => {
+    const entity = request.entityRecord!
+    const updated = applyLegacySparkCompatibilityWrite({
+      entityProfile: entity.entityProfile as EntityProfile,
+      payload: request.body,
+      tenantId: entity.ownerTenantId,
+      createdAt: entity.createdAt,
+    })
+
+    const commandId = `entity-api-compat-persona:${entity.id}:${createRequestId()}`
+    const result = await getSovereignMutationCommandService(app).submitCommand({
+      type: 'entity.profile.persist',
+      commandId,
+      entityId: entity.id,
+      entityProfile: updated.entityProfile,
+      updatedAt: new Date().toISOString(),
+      event: {
+        type: 'entity.legacy.persona.persisted',
+        timestamp: new Date().toISOString(),
+        payload: {
+          changed: updated.changed,
+          semanticAuthority: updated.metadata.semanticAuthority,
+          compatibilityRoute: '/api/entities/:id/persona',
+        },
+      },
+    }) as EntityMutationResult
+
+    const response: LegacySparkGatewayResponse = {
+      payload: readLegacySparkCompatibility((result.entity?.entityProfile ?? updated.entityProfile) as EntityProfile).payload,
+      metadata: updated.metadata,
+    }
+    getObservability(app).incrementMetric('backend_compat_gateway_requests_total', 1, { route: '/api/entities/:id/persona', method: 'PUT' })
+    applyLegacyCompatibilityHeaders(reply, response.metadata.semanticAuthority)
+
+    return {
+      status: 'ready',
+      entityId: entity.id,
+      changed: updated.changed,
+      ...response,
     }
   })
 
@@ -2497,6 +2715,20 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       allowDebug: request.body.context?.allowDebug === true,
     })
 
+    const runtimeGovernance = getRuntimeGovernanceService(app)
+    const continuityGovernance = getInstitutionalContinuityGovernanceService(app)
+    const continuityMetadata = continuityGovernance.evaluateCapability({
+      capability: 'public.read.low_risk',
+      riskLevel: 'low',
+    })
+    if (!continuityMetadata.continuityDecision.allowed) {
+      throw new InstitutionalContinuityBlockedError(continuityMetadata)
+    }
+    const responseGovernance = runtimeGovernance.evaluateCapability({
+      capability: 'public.interaction.respond',
+      riskLevel: 'low',
+    })
+
     if (!interaction) {
       getObservability(app).incrementMetric('public_entity_interaction_failed_total', 1, {
         reason: 'backend-decision-unavailable',
@@ -2523,17 +2755,34 @@ export async function registerEntityRoutes(app: FastifyInstance) {
     const actor = resolveSocialActor(request, request.params.id, 'case:create')
     const auth = getRequestAuth(request)
 
-    const actionResult = await executePublicInteractionAction({
-      entityId: request.params.id,
-      entityProfile: entity.entityProfile as EntityProfile,
-      repository: getRepository(app),
-      decision: executionDecision,
-      initialUserMessage: request.body.userMessage.trim(),
-      creatorActorId: actor.actorId,
-      creatorUserId: auth?.userId,
-      creatorTenantId: auth?.tenantId,
-      now: interaction.telemetry.evaluatedAt,
+    const actionGovernance = runtimeGovernance.evaluateCapability({
+      capability: 'public.interaction.action.execute',
+      riskLevel: 'high',
     })
+
+    const actionResult = actionGovernance.governanceDecision.allowed
+      ? await executePublicInteractionAction({
+        entityId: request.params.id,
+        entityProfile: entity.entityProfile as EntityProfile,
+        repository: getRepository(app),
+        decision: executionDecision,
+        initialUserMessage: request.body.userMessage.trim(),
+        creatorActorId: actor.actorId,
+        creatorUserId: auth?.userId,
+        creatorTenantId: auth?.tenantId,
+        now: interaction.telemetry.evaluatedAt,
+      })
+      : {
+        actionType: 'none' as const,
+        status: 'skipped' as const,
+      }
+
+    if (!actionGovernance.governanceDecision.allowed) {
+      getObservability(app).incrementMetric('runtime_governance_capability_blocked_total', 1, {
+        capability: actionGovernance.governanceDecision.capability,
+        runtimeMode: actionGovernance.runtimeMode,
+      })
+    }
 
     const responseText = buildPublicInteractionActionResponseText({
       entityName: publicPresence.entity.name,
@@ -2544,6 +2793,16 @@ export async function registerEntityRoutes(app: FastifyInstance) {
 
     const interactionWithAction = {
       ...interaction,
+      runtimeMode: responseGovernance.runtimeMode,
+      degradedReason: responseGovernance.degradedReason,
+      blockedCapabilities: responseGovernance.blockedCapabilities,
+      continuityMode: continuityMetadata.continuityMode,
+      persistenceTruthfulness: continuityMetadata.persistenceTruthfulness,
+      recoveryRequired: continuityMetadata.recoveryRequired,
+      degradedMemoryFallbackActive: continuityMetadata.degradedMemoryFallbackActive,
+      governanceDecision: actionGovernance.governanceDecision.allowed
+        ? responseGovernance.governanceDecision
+        : actionGovernance.governanceDecision,
       decision: {
         ...interaction.decision,
         responseText,

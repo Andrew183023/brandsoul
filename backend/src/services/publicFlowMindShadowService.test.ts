@@ -156,3 +156,69 @@ test('buildPublicFlowMindShadowSnapshot calculates divergence and fallback histo
   assert.ok(secondSnapshot.comparison.semanticInconsistencies.includes('intent-mismatch'))
   assert.ok(secondSnapshot.comparison.semanticInconsistencies.includes('response-text-drift'))
 })
+
+test('evaluatePublicFlowMindShadow fails closed when canonical identity is missing', async () => {
+  const entity = createTestEntity()
+  delete entity.canonicalIdentity
+
+  await assert.rejects(
+    evaluatePublicFlowMindShadow({
+      entityProfile: entity,
+      requestId: 'shadow-missing-canonical',
+      userMessage: 'teste',
+      now: '2026-04-20T10:00:00.000Z',
+      flowMindService: {
+        mode: 'shadow',
+        async evaluateOrchestratorCommand() {
+          return {
+            mode: 'shadow',
+            summary: {
+              mode: 'shadow',
+              adapterName: 'shadow-test-adapter',
+              adapterLoadStatus: 'loaded',
+              invokedAt: '2026-04-20T10:00:00.000Z',
+              decisionSource: 'adaptive-core',
+              terminalAuthority: 'adaptive-core',
+              semanticFrozen: true,
+              lowRiskLaneUsed: false,
+              fallbackConditions: [],
+              fallbackUsed: false,
+              decision: {
+                intent: 'assist',
+                action: 'support',
+                confidence: 0.77,
+              },
+              objectiveType: 'engage',
+            },
+            output: {
+              decision: {
+                intent: 'assist',
+                action: 'support',
+                confidence: 0.77,
+                decisionHash: '',
+                responsePlan: {
+                  kind: 'support',
+                  topic: 'presenca publica',
+                  requiredData: ['clareza de contexto'],
+                  optionalCloseStyle: 'contextual-clarity',
+                },
+                actionPayload: {},
+                memoryReadSet: [],
+                memoryWritePlan: [],
+                expectedStateChanges: [],
+              },
+              decisionSource: 'adaptive-core',
+              terminalAuthority: 'adaptive-core',
+              semanticFrozen: true,
+              lowRiskLaneUsed: false,
+              fallbackConditions: [],
+              updatedMemory: {} as never,
+              updatedProfiles: {} as never,
+            },
+          }
+        },
+      },
+    }),
+    /ENTITY_CANONICAL_IDENTITY_REQUIRED/,
+  )
+})

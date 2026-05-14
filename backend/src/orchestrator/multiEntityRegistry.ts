@@ -28,6 +28,34 @@ export type MultiEntityGoalRecord = Record<string, unknown> & {
   enabled?: boolean
 }
 
+export type MultiEntityOutcomeStatus = 'success' | 'failure' | 'neutral'
+
+export type MultiEntityActionRecord = {
+  actionId: string
+  goalType: MultiEntityInternalGoalType
+  actionType: string
+  confidence: number
+  opportunityScore: number
+  executedAt: string
+  context?: Record<string, unknown>
+}
+
+export type MultiEntityOutcomeRecord = {
+  outcomeId: string
+  actionId?: string
+  status: MultiEntityOutcomeStatus
+  impactScore: number
+  conversionEffect: number
+  observedAt: string
+  signalType: string
+  context?: Record<string, unknown>
+}
+
+export type MultiEntityDecisionSnapshot = Record<string, unknown> & {
+  lastActions?: MultiEntityActionRecord[]
+  lastOutcomes?: MultiEntityOutcomeRecord[]
+}
+
 export type MultiEntityRegistryRecord = {
   entityId: string
   entityType: string
@@ -44,13 +72,17 @@ export type MultiEntityRegistryRecord = {
   autonomyReadiness: number
   riskScore: number
   actionQueue: Array<Record<string, unknown>>
-  lastDecisionSnapshot?: Record<string, unknown>
+  lastActions: MultiEntityActionRecord[]
+  lastOutcomes: MultiEntityOutcomeRecord[]
+  lastDecisionSnapshot?: MultiEntityDecisionSnapshot
   rollbackState: MultiEntityRollbackState
   createdAt: string
   updatedAt: string
 }
 
-export type RegisterMultiEntityInput = Omit<MultiEntityRegistryRecord, 'createdAt' | 'updatedAt'> & {
+export type RegisterMultiEntityInput = Omit<MultiEntityRegistryRecord, 'createdAt' | 'updatedAt' | 'lastActions' | 'lastOutcomes'> & {
+  lastActions?: MultiEntityActionRecord[]
+  lastOutcomes?: MultiEntityOutcomeRecord[]
   createdAt?: string
   updatedAt?: string
 }
@@ -71,7 +103,9 @@ export type UpdateMultiEntityStateInput = {
   autonomyReadiness?: number
   riskScore?: number
   actionQueue?: Array<Record<string, unknown>>
-  lastDecisionSnapshot?: Record<string, unknown>
+  lastActions?: MultiEntityActionRecord[]
+  lastOutcomes?: MultiEntityOutcomeRecord[]
+  lastDecisionSnapshot?: MultiEntityDecisionSnapshot
   rollbackState?: MultiEntityRollbackState
   updatedAt?: string
 }
@@ -119,6 +153,84 @@ function normalizeGoalType(value: unknown): MultiEntityInternalGoalType {
     return value
   }
   return 'optimize_performance'
+}
+
+function normalizeGoalReference(value: unknown): MultiEntityInternalGoalType {
+  return normalizeGoalType(value)
+}
+
+function normalizeOutcomeStatus(value: unknown): MultiEntityOutcomeStatus {
+  if (value === 'success' || value === 'failure' || value === 'neutral') {
+    return value
+  }
+  return 'neutral'
+}
+
+function normalizeActionRecords(input: unknown): MultiEntityActionRecord[] {
+  if (!Array.isArray(input)) {
+    return []
+  }
+
+  return input
+    .filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null && !Array.isArray(entry))
+    .map((entry, index) => ({
+      actionId: typeof entry.actionId === 'string' ? entry.actionId : `action-${index}`,
+      goalType: normalizeGoalReference(entry.goalType),
+      actionType: typeof entry.actionType === 'string' ? entry.actionType : 'observe_context',
+      confidence: clamp(asFiniteNumber(entry.confidence, 0.5)),
+      opportunityScore: clamp(asFiniteNumber(entry.opportunityScore, 0.5)),
+      executedAt: typeof entry.executedAt === 'string' ? entry.executedAt : '1970-01-01T00:00:00.000Z',
+      context: typeof entry.context === 'object' && entry.context !== null && !Array.isArray(entry.context)
+        ? entry.context as Record<string, unknown>
+        : {},
+    }))
+    .sort((left, right) => right.executedAt.localeCompare(left.executedAt))
+    .slice(0, 8)
+}
+
+function normalizeOutcomeRecords(input: unknown): MultiEntityOutcomeRecord[] {
+  if (!Array.isArray(input)) {
+    return []
+  }
+
+  return input
+    .filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null && !Array.isArray(entry))
+    .map((entry, index) => ({
+      outcomeId: typeof entry.outcomeId === 'string' ? entry.outcomeId : `outcome-${index}`,
+      actionId: typeof entry.actionId === 'string' ? entry.actionId : undefined,
+      status: normalizeOutcomeStatus(entry.status),
+      impactScore: clamp(asFiniteNumber(entry.impactScore, 0.5)),
+      conversionEffect: clamp(asFiniteNumber(entry.conversionEffect, 0), -1, 1),
+      observedAt: typeof entry.observedAt === 'string' ? entry.observedAt : '1970-01-01T00:00:00.000Z',
+      signalType: typeof entry.signalType === 'string' ? entry.signalType : 'unknown',
+      context: typeof entry.context === 'object' && entry.context !== null && !Array.isArray(entry.context)
+        ? entry.context as Record<string, unknown>
+        : {},
+    }))
+    .sort((left, right) => right.observedAt.localeCompare(left.observedAt))
+    .slice(0, 8)
+}
+
+function normalizeDecisionSnapshot(
+  snapshot: unknown,
+  lastActions?: MultiEntityActionRecord[],
+  lastOutcomes?: MultiEntityOutcomeRecord[],
+): MultiEntityDecisionSnapshot | undefined {
+  const base = typeof snapshot === 'object' && snapshot !== null && !Array.isArray(snapshot)
+    ? { ...(snapshot as Record<string, unknown>) }
+    : {}
+  const normalizedLastActions = normalizeActionRecords(lastActions ?? base.lastActions)
+  const normalizedLastOutcomes = normalizeOutcomeRecords(lastOutcomes ?? base.lastOutcomes)
+
+  if (Object.keys(base).length === 0 && normalizedLastActions.length === 0 && normalizedLastOutcomes.length === 0) {
+    return undefined
+  }
+
+  return {
+    ...base,
+    lastActions: normalizedLastActions,
+    lastOutcomes: normalizedLastOutcomes,
+  }
 }
 
 function buildDefaultGoal(type: MultiEntityInternalGoalType): MultiEntityGoalRecord {
@@ -232,7 +344,9 @@ function mapRow(row?: {
     autonomyReadiness: clamp(row.autonomy_readiness),
     riskScore: clamp(row.risk_score),
     actionQueue: parseJsonRecord(row.action_queue_json, []),
-    lastDecisionSnapshot: parseJsonRecord(row.last_decision_snapshot_json, undefined),
+    lastActions: normalizeActionRecords(parseJsonRecord<Record<string, unknown> | undefined>(row.last_decision_snapshot_json, undefined)?.lastActions),
+    lastOutcomes: normalizeOutcomeRecords(parseJsonRecord<Record<string, unknown> | undefined>(row.last_decision_snapshot_json, undefined)?.lastOutcomes),
+    lastDecisionSnapshot: normalizeDecisionSnapshot(parseJsonRecord(row.last_decision_snapshot_json, undefined)),
     rollbackState: parseJsonRecord(row.rollback_state_json, { active: false }),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -310,7 +424,7 @@ export class MultiEntityRegistry {
       clamp(input.autonomyReadiness),
       clamp(input.riskScore),
       JSON.stringify(input.actionQueue ?? []),
-      JSON.stringify(input.lastDecisionSnapshot ?? null),
+      JSON.stringify(normalizeDecisionSnapshot(input.lastDecisionSnapshot, input.lastActions, input.lastOutcomes) ?? null),
       JSON.stringify(input.rollbackState ?? { active: false }),
       createdAt,
       updatedAt,
@@ -352,6 +466,8 @@ export class MultiEntityRegistry {
       autonomyReadiness: input.autonomyReadiness ?? existing.autonomyReadiness,
       riskScore: input.riskScore ?? existing.riskScore,
       actionQueue: input.actionQueue ?? existing.actionQueue,
+      lastActions: input.lastActions ?? existing.lastActions,
+      lastOutcomes: input.lastOutcomes ?? existing.lastOutcomes,
       lastDecisionSnapshot: typeof input.lastDecisionSnapshot === 'undefined'
         ? existing.lastDecisionSnapshot
         : input.lastDecisionSnapshot,

@@ -1,5 +1,6 @@
 import type { EntityIntent } from '../domain/entity/contracts/EntityIntent.js'
 import type { EntityProfile } from '../domain/entity/contracts/EntityProfile.js'
+import { ensureCanonicalEntityIdentity } from '../../entities/identity/entityIdentityBuilder.js'
 
 export function createContext(overrides?: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -33,7 +34,7 @@ export function createIntent(args?: {
 export function createTestEntity(): EntityProfile {
   const now = '2026-04-19T12:00:00.000Z'
 
-  return {
+  const entity = {
     id: 'entity-test',
     schemaVersion: 1,
     source: 'backend-engine',
@@ -248,4 +249,10 @@ export function createTestEntity(): EntityProfile {
       notes: [],
     },
   } as unknown as EntityProfile
+
+  return ensureCanonicalEntityIdentity(entity, {
+    tenantId: 1,
+    createdAt: now,
+    preserveEntityId: entity.id,
+  })
 }

@@ -1,6 +1,7 @@
 import type { EntityProfile } from '../brain/domain/entity/contracts/EntityProfile.js'
 import type { EntityRepository } from '../repositories/entityRepository.js'
 import type { SovereignMutationCommandService } from '../orchestrator/sovereignMutationCommandService.js'
+import { buildSemanticFingerprint, getSemanticMutationExecutor } from '../sovereignty/semanticMutationExecutor.js'
 
 type PublicInteractionBusinessContext = {
   businessType?: string
@@ -749,12 +750,58 @@ export async function executePublicInteractionAction(args: {
     }
   }
 
-  return {
-    actionType: 'legal_emergency_cta',
-    status: 'redirect',
-    href: '/legal/emergency',
-    missingFields: args.decision.missingFields,
-  }
+  const { result } = await getSemanticMutationExecutor().executeSemanticMutation({
+    authoritySource: 'backend/src/services/publicInteractionActionService.ts#executePublicInteractionAction',
+    intent: {
+      intentId: `public-action:${args.entityId}:${args.decision.action}:${args.now ?? new Date().toISOString()}`,
+      intentType: 'public.interaction.action.execute',
+      domain: 'entity',
+      actor: 'public',
+      targetRef: {
+        entityId: args.entityId,
+        userId: args.creatorUserId !== undefined ? String(args.creatorUserId) : undefined,
+        tenantId: args.creatorTenantId !== undefined ? String(args.creatorTenantId) : undefined,
+      },
+      semanticPurpose: 'issue a governed legal emergency call-to-action for a public interaction',
+      expectedInstitutionalEffect: ['public_action_redirect_issued'],
+      riskLevel: 'high',
+      replayRelevant: true,
+      continuityRelevant: false,
+      authRelevant: false,
+      createdAt: args.now ?? new Date().toISOString(),
+    },
+    captureBeforeState: () => ({
+      action: args.decision.action,
+      missingFields: args.decision.missingFields,
+    }),
+    executePersistence: async () => ({
+      actionType: 'legal_emergency_cta' as const,
+      status: 'redirect' as const,
+      href: '/legal/emergency' as const,
+      missingFields: args.decision.missingFields,
+    }),
+    captureAfterState: (persisted) => persisted,
+    deriveEffect: ({ intent, beforeState, afterState, sovereignAttestation }) => ({
+      effectId: `${intent.intentId}:effect`,
+      intentId: intent.intentId,
+      effectType: 'public.interaction.action.redirected',
+      domain: intent.domain,
+      beforeFingerprint: buildSemanticFingerprint(beforeState),
+      afterFingerprint: buildSemanticFingerprint(afterState),
+      changedFields: ['publicInteraction.redirect'],
+      institutionalMeaning: 'the institution explicitly redirected a public legal inquiry into the governed intake path',
+      replayFingerprint: buildSemanticFingerprint({
+        intentType: intent.intentType,
+        beforeState,
+        afterState,
+      }),
+      continuityLineageHash: sovereignAttestation.lineageHash,
+      mutationLineageHash: '',
+      verified: false,
+    }),
+  })
+
+  return result
 }
 
 export function buildPublicInteractionActionResponseText(args: {

@@ -17,6 +17,82 @@ import type { RuntimeControl } from '../../orchestration/contracts/RuntimeContro
 import type { RenderOutput } from '../../rendering/contracts/RenderOutput.js'
 import type { EntityBusinessConfig } from '../../../../domain/entityBusinessConfig.js'
 
+export type CanonicalEntityType =
+  | 'brand'
+  | 'store'
+  | 'services'
+  | 'legal'
+  | 'professional'
+  | 'institutional'
+
+export type CanonicalSparkState = 'stable' | 'focused' | 'guided' | 'expansive' | 'protected'
+export type CanonicalSparkLifecycleState = 'genesis' | 'initialized' | 'active' | 'evolving'
+
+export type CanonicalResponseBehaviorProfile = {
+  primaryObjective: 'engage' | 'educate' | 'support' | 'guide' | 'convert'
+  riskTolerance: 'low' | 'medium' | 'high'
+  channelMode: 'public' | 'hybrid' | 'private'
+}
+
+export type CanonicalVisualStateDefaults = {
+  tone: string
+  intensity: number
+  confidence: number
+}
+
+export type CanonicalInteractionEnergyProfile = {
+  baseline: number
+  supportBias: number
+  guideBias: number
+  sellBias: number
+  refuseBias: number
+}
+
+export type CanonicalEntityIdentity = {
+  identity: {
+    entityId: string
+    entityType: CanonicalEntityType
+    canonicalName: string
+    canonicalSlug: string
+    identityVersion: number
+    genesisFingerprint: string
+  }
+  spark: {
+    sparkTone: string
+    sparkPower: string
+    sparkArchetype: string
+    sparkState: CanonicalSparkState
+    sparkLifecycleState: CanonicalSparkLifecycleState
+  }
+  persona: {
+    businessDescription?: string
+    personalityTraits: string[]
+    communicationStyle: string
+    escalationStyle: string
+    responseBehaviorProfile: CanonicalResponseBehaviorProfile
+  }
+  transformation: {
+    auraProfile: string
+    visualStateDefaults: CanonicalVisualStateDefaults
+    transformationMode: string
+    interactionEnergyProfile: CanonicalInteractionEnergyProfile
+  }
+  runtime: {
+    runtimeIdentityVersion: number
+    runtimeBindingVersion: number
+    governanceProfile: {
+      replaySafe: boolean
+      mutationAuthority: 'sovereign-backend'
+      evidenceMode: 'append-only'
+    }
+    memoryProfile: {
+      scope: 'entity'
+      persistence: 'backend-native'
+      isolation: 'tenant-scoped'
+    }
+  }
+}
+
 export type EntityProfile = {
   id: string
   ownerId?: string
@@ -41,6 +117,7 @@ export type EntityProfile = {
     value: EntityAccumulatedValue
   }
   finalForm: EntityFinalForm
+  canonicalIdentity?: CanonicalEntityIdentity
   runtime?: {
     control?: RuntimeControl
     renderOutput?: RenderOutput

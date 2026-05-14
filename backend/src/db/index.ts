@@ -10,6 +10,10 @@ import {
   type BackendDatabase,
   type DatabaseConfig,
 } from './dbClient.js'
+import {
+  migrateAdaptiveEquilibriumEvidenceSchema,
+  validateAdaptiveEquilibriumEvidenceSchema,
+} from './adaptiveEvidenceSchemaMigration.js'
 
 const sqliteSchema = `
   CREATE TABLE IF NOT EXISTS entity_profile (
@@ -362,6 +366,578 @@ const sqliteSchema = `
     CHECK (status IN ('pending', 'committed', 'rolled_back', 'failed'))
   );
 
+  CREATE TABLE IF NOT EXISTS flowmind_opportunities (
+    id TEXT PRIMARY KEY,
+    market_signal_id TEXT NOT NULL,
+    keyword TEXT NOT NULL,
+    category TEXT NOT NULL,
+    economic_relevance REAL NOT NULL,
+    lead_probability TEXT NOT NULL,
+    opportunity_score REAL NOT NULL,
+    detected_at TEXT NOT NULL,
+    top_entity_id TEXT,
+    top_entity_name TEXT,
+    confidence REAL,
+    suggested_action TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (lead_probability IN ('low', 'medium', 'high')),
+    CHECK (category IN ('legal', 'real_estate', 'finance', 'logistics', 'commerce', 'ai', 'agro', 'general', 'noise'))
+  );
+
+  CREATE TABLE IF NOT EXISTS flowmind_opportunity_proposals (
+    proposal_id TEXT PRIMARY KEY,
+    source_opportunity_id TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    entity_name TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    confidence REAL NOT NULL,
+    reasoning TEXT NOT NULL,
+    governance_status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    approved_at TEXT,
+    rejected_at TEXT,
+    updated_at TEXT NOT NULL,
+    CHECK (governance_status IN ('pending', 'approved', 'rejected'))
+  );
+
+  CREATE TABLE IF NOT EXISTS flowmind_sovereign_executions (
+    execution_id TEXT PRIMARY KEY,
+    proposal_id TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    execution_status TEXT NOT NULL,
+    generated_lead_id TEXT,
+    revenue_attributed REAL,
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    result_summary TEXT,
+    CHECK (execution_status IN ('pending', 'running', 'completed', 'failed'))
+  );
+
+  CREATE TABLE IF NOT EXISTS flowmind_revenue_attribution (
+    attribution_id TEXT PRIMARY KEY,
+    market_signal_id TEXT NOT NULL,
+    opportunity_id TEXT NOT NULL,
+    proposal_id TEXT NOT NULL,
+    execution_id TEXT NOT NULL,
+    lead_id TEXT NOT NULL,
+    revenue_event_id TEXT,
+    attributed_revenue REAL NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS flowmind_learning_ledger (
+    learning_event_id TEXT PRIMARY KEY,
+    attribution_id TEXT NOT NULL,
+    market_signal_id TEXT NOT NULL,
+    opportunity_id TEXT NOT NULL,
+    proposal_id TEXT NOT NULL,
+    execution_id TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    category TEXT NOT NULL,
+    signal_keyword TEXT NOT NULL,
+    outcome_type TEXT NOT NULL,
+    attributed_revenue REAL NOT NULL,
+    conversion_success INTEGER NOT NULL,
+    observed_at TEXT NOT NULL,
+    CHECK (outcome_type IN ('revenue_positive', 'revenue_negative', 'conversion_positive', 'conversion_negative')),
+    CHECK (conversion_success IN (0, 1))
+  );
+
+  CREATE TABLE IF NOT EXISTS flowmind_learning_checkpoint (
+    checkpoint_id TEXT PRIMARY KEY,
+    runtime_name TEXT NOT NULL,
+    last_processed_attribution_id TEXT,
+    last_processed_attributed_at TEXT,
+    checkpoint_version INTEGER NOT NULL DEFAULT 1,
+    lineage_key TEXT,
+    lineage_metadata_json TEXT,
+    checkpoint_payload_json TEXT,
+    continuity_fingerprint TEXT,
+    checkpoint_attestation_state TEXT,
+    attestation_lineage_hash TEXT,
+    replay_verification_metadata_json TEXT,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS flowmind_negative_outcomes (
+    outcome_id TEXT PRIMARY KEY,
+    outcome_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    market_signal_id TEXT NOT NULL,
+    opportunity_id TEXT NOT NULL,
+    proposal_id TEXT NOT NULL,
+    execution_id TEXT NOT NULL,
+    category TEXT NOT NULL,
+    signal_keyword TEXT NOT NULL,
+    detected_at TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    metadata_json TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS flowmind_negative_attribution (
+    attribution_id TEXT PRIMARY KEY,
+    outcome_id TEXT NOT NULL,
+    signal_id TEXT,
+    opportunity_id TEXT,
+    proposal_id TEXT,
+    execution_id TEXT,
+    entity_id TEXT,
+    category TEXT,
+    keyword TEXT,
+    outcome_type TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    reason TEXT,
+    attributed_at TEXT NOT NULL,
+    occurred_at TEXT NOT NULL,
+    detected_at TEXT NOT NULL,
+    source_runtime TEXT NOT NULL,
+    detector_version TEXT NOT NULL,
+    lineage_quality TEXT NOT NULL,
+    metadata_json TEXT,
+    created_at TEXT NOT NULL,
+    CHECK (severity IN ('low', 'medium', 'high', 'critical')),
+    CHECK (lineage_quality IN ('complete', 'partial', 'synthetic', 'missing'))
+  );
+
+  CREATE TABLE IF NOT EXISTS flowmind_economic_memory (
+    memory_id TEXT PRIMARY KEY,
+    memory_scope TEXT NOT NULL,
+    category TEXT NOT NULL,
+    signal_keyword TEXT NOT NULL,
+    entity_id TEXT,
+    success_count INTEGER NOT NULL,
+    failure_count INTEGER NOT NULL,
+    sample_count INTEGER NOT NULL DEFAULT 0,
+    minimum_sample_count INTEGER NOT NULL DEFAULT 3,
+    total_revenue REAL NOT NULL,
+    average_conversion REAL NOT NULL,
+    time_decay_weight REAL NOT NULL DEFAULT 1,
+    decay_half_life_days INTEGER NOT NULL DEFAULT 30,
+    last_seen_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (memory_scope IN ('signal', 'category', 'entity'))
+  );
+
+  CREATE TABLE IF NOT EXISTS flowmind_shadow_projections (
+    projection_id TEXT PRIMARY KEY,
+    market_signal_id TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    base_score REAL NOT NULL,
+    adaptive_score REAL NOT NULL,
+    score_delta REAL NOT NULL,
+    adaptive_multiplier REAL NOT NULL,
+    projection_type TEXT NOT NULL,
+    generated_at TEXT NOT NULL,
+    CHECK (projection_type IN ('opportunity_ranking', 'proposal_confidence', 'entity_priority'))
+  );
+
+  CREATE TABLE IF NOT EXISTS flowmind_shadow_comparisons (
+    comparison_id TEXT PRIMARY KEY,
+    market_signal_id TEXT NOT NULL,
+    live_decision TEXT NOT NULL,
+    shadow_decision TEXT NOT NULL,
+    divergence_type TEXT NOT NULL,
+    divergence_score REAL NOT NULL,
+    estimated_economic_delta REAL NOT NULL,
+    generated_at TEXT NOT NULL,
+    CHECK (divergence_type IN ('score_delta_shift', 'ranking_shift', 'threshold_crossed', 'no_divergence'))
+  );
+
+  CREATE TABLE IF NOT EXISTS flowmind_adaptive_equilibrium_evidence (
+    evidence_id TEXT PRIMARY KEY,
+    evidence_type TEXT NOT NULL,
+    replay_consistency_equilibrium REAL NOT NULL,
+    reinforcement_escalation_persistence REAL NOT NULL,
+    saturation_equilibrium REAL NOT NULL,
+    oscillation_damping REAL NOT NULL,
+    projection_stability_convergence REAL NOT NULL,
+    ranking_diversity_preservation REAL NOT NULL,
+    entropy_evolution REAL NOT NULL,
+    projection_lock_in_persistence REAL NOT NULL,
+    low_confidence_amplification_persistence REAL NOT NULL,
+    replay_degradation_persistence REAL NOT NULL,
+    governance_classification TEXT NOT NULL,
+    recommendation TEXT NOT NULL,
+    sustained_equilibrium_evidence INTEGER NOT NULL,
+    replay_fingerprint TEXT NOT NULL,
+    heatmap_snapshot_json TEXT NOT NULL DEFAULT '{}',
+    evidence_contract_version TEXT NOT NULL DEFAULT 'legacy-unversioned',
+    semantic_version_metadata_json TEXT NOT NULL DEFAULT '{}',
+    reducer_semantic_metadata_json TEXT NOT NULL DEFAULT '{}',
+    evidence_generation_metadata_json TEXT NOT NULL DEFAULT '{}',
+    generated_at TEXT NOT NULL,
+    recorded_at TEXT NOT NULL,
+    CHECK (evidence_type IN ('adaptive_equilibrium_evidence')),
+    CHECK (governance_classification IN ('SAFE', 'CAUTION', 'UNSAFE')),
+    CHECK (recommendation IN ('do_not_rollout')),
+    CHECK (sustained_equilibrium_evidence IN (0, 1))
+  );
+
+  CREATE TABLE IF NOT EXISTS flowmind_governance_evidence_timeline (
+    event_id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    event_timestamp TEXT NOT NULL,
+    classification TEXT NOT NULL,
+    recommendation TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    trigger_factors_json TEXT NOT NULL,
+    replay_fingerprint TEXT NOT NULL,
+    longitudinal_window TEXT NOT NULL,
+    source_evidence_id TEXT NOT NULL,
+    recorded_at TEXT NOT NULL,
+    CHECK (event_type IN (
+      'classification_transition',
+      'recommendation_evolution',
+      'replay_collapse',
+      'instability_spike',
+      'saturation_spike',
+      'reinforcement_escalation',
+      'equilibrium_degradation',
+      'replay_degradation_evolution',
+      'evidence_milestone'
+    )),
+    CHECK (classification IN ('SAFE', 'CAUTION', 'UNSAFE')),
+    CHECK (recommendation IN ('do_not_rollout')),
+    CHECK (severity IN ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')),
+    CHECK (longitudinal_window IN ('short', 'medium', 'long'))
+  );
+
+  CREATE TABLE IF NOT EXISTS flowmind_institutional_continuity_state (
+    state_id TEXT PRIMARY KEY,
+    continuity_mode TEXT NOT NULL,
+    persistence_truthfulness TEXT NOT NULL,
+    recovery_required INTEGER NOT NULL DEFAULT 0,
+    degraded_memory_fallback_active INTEGER NOT NULL DEFAULT 0,
+    unsafe_shutdown_detected INTEGER NOT NULL DEFAULT 0,
+    replay_continuity_state TEXT NOT NULL,
+    restart_integrity_state TEXT NOT NULL,
+    shutdown_integrity_state TEXT NOT NULL,
+    blocked_capabilities_json TEXT NOT NULL DEFAULT '[]',
+    last_reason TEXT,
+    last_transition_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (continuity_mode IN ('institutional_safe', 'degraded_memory', 'continuity_untrusted', 'recovery_required')),
+    CHECK (persistence_truthfulness IN ('guaranteed', 'degraded', 'untrusted')),
+    CHECK (recovery_required IN (0, 1)),
+    CHECK (degraded_memory_fallback_active IN (0, 1)),
+    CHECK (unsafe_shutdown_detected IN (0, 1))
+  );
+
+  CREATE TABLE IF NOT EXISTS flowmind_runtime_continuity_attestation (
+    attestation_id TEXT PRIMARY KEY,
+    runtime_id TEXT NOT NULL,
+    continuity_epoch TEXT NOT NULL,
+    lineage_hash TEXT NOT NULL,
+    replay_fingerprint TEXT,
+    queue_fingerprint TEXT,
+    checkpoint_fingerprint TEXT,
+    shutdown_phase TEXT NOT NULL,
+    attestation_status TEXT NOT NULL,
+    verified_on_recovery INTEGER NOT NULL DEFAULT 0,
+    reconstructed_on_recovery INTEGER NOT NULL DEFAULT 0,
+    reconstruction_lineage_hash TEXT,
+    reconstruction_source TEXT,
+    generated_at TEXT NOT NULL,
+    CHECK (shutdown_phase IN ('runtime_flush', 'queue_drain', 'checkpoint_flush', 'replay_flush', 'shutdown_complete')),
+    CHECK (attestation_status IN ('pending', 'attested', 'failed')),
+    CHECK (verified_on_recovery IN (0, 1)),
+    CHECK (reconstructed_on_recovery IN (0, 1))
+  );
+
+  CREATE TABLE IF NOT EXISTS flowmind_sovereign_mutation_attestation (
+    mutation_id TEXT PRIMARY KEY,
+    mutation_type TEXT NOT NULL,
+    mutation_scope TEXT NOT NULL,
+    governance_decision TEXT NOT NULL,
+    runtime_mode TEXT NOT NULL,
+    continuity_mode TEXT NOT NULL,
+    replay_verification_state TEXT NOT NULL,
+    attestation_integrity TEXT NOT NULL,
+    trace_id TEXT NOT NULL,
+    lineage_hash TEXT NOT NULL,
+    executed INTEGER NOT NULL DEFAULT 0,
+    persisted INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    CHECK (governance_decision IN ('allowed', 'blocked', 'degraded_allowed')),
+    CHECK (executed IN (0, 1)),
+    CHECK (persisted IN (0, 1))
+  );
+
+  CREATE TABLE IF NOT EXISTS flowmind_sovereign_mutation_registry (
+    mutation_id TEXT PRIMARY KEY,
+    mutation_lineage_hash TEXT NOT NULL,
+    replay_fingerprint TEXT,
+    semantic_intent_id TEXT,
+    continuity_epoch TEXT,
+    effect_fingerprint TEXT,
+    result_fingerprint TEXT,
+    replay_result_shape TEXT,
+    execution_class TEXT NOT NULL,
+    first_execution_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    execution_count INTEGER NOT NULL DEFAULT 0,
+    replay_count INTEGER NOT NULL DEFAULT 0,
+    recovery_count INTEGER NOT NULL DEFAULT 0,
+    deduplicated_count INTEGER NOT NULL DEFAULT 0,
+    last_execution_state TEXT NOT NULL,
+    lineage_hash TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS flowmind_sovereign_node (
+    node_id TEXT PRIMARY KEY,
+    node_class TEXT NOT NULL,
+    institutional_plane_id TEXT NOT NULL,
+    lineage_plane_id TEXT NOT NULL,
+    replay_plane_id TEXT NOT NULL,
+    authority_plane_id TEXT NOT NULL,
+    persistence_plane_id TEXT NOT NULL,
+    node_epoch TEXT NOT NULL,
+    startup_attestation_hash TEXT NOT NULL,
+    registered_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (node_class IN ('primary', 'secondary', 'observer', 'replay', 'recovery'))
+  );
+
+  CREATE TABLE IF NOT EXISTS flowmind_distributed_lineage (
+    lineage_id TEXT PRIMARY KEY,
+    originating_node_id TEXT NOT NULL,
+    continuity_epoch TEXT NOT NULL,
+    replay_fingerprint TEXT,
+    mutation_lineage_hash TEXT,
+    semantic_lineage_hash TEXT,
+    attestation_lineage_hash TEXT,
+    distributed_sequence INTEGER NOT NULL,
+    distributed_clock_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS flowmind_sovereign_quorum (
+    quorum_id TEXT PRIMARY KEY,
+    participating_nodes_json TEXT NOT NULL,
+    active_nodes_json TEXT NOT NULL,
+    quorum_health TEXT NOT NULL,
+    quorum_continuity_state TEXT NOT NULL,
+    consensus_mode TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (quorum_health IN ('healthy', 'degraded', 'split_brain_risk', 'unsafe')),
+    CHECK (quorum_continuity_state IN ('verified', 'partial', 'unsafe')),
+    CHECK (consensus_mode IN ('single_writer', 'advisory', 'shadow', 'disabled'))
+  );
+
+  CREATE TABLE IF NOT EXISTS flowmind_distributed_attestation (
+    attestation_id TEXT PRIMARY KEY,
+    node_id TEXT NOT NULL,
+    attestation_plane TEXT NOT NULL,
+    lineage_hash TEXT NOT NULL,
+    continuity_epoch TEXT NOT NULL,
+    distributed_clock_hash TEXT NOT NULL,
+    attested_at TEXT NOT NULL,
+    CHECK (attestation_plane IN ('replay', 'continuity', 'recovery', 'governance', 'semantic'))
+  );
+
+  CREATE TABLE IF NOT EXISTS flowmind_replay_federation_state (
+    federation_event_id TEXT PRIMARY KEY,
+    node_id TEXT NOT NULL,
+    source_node_id TEXT,
+    event_type TEXT NOT NULL,
+    continuity_epoch TEXT NOT NULL,
+    replay_fingerprint TEXT,
+    lineage_ids_json TEXT NOT NULL,
+    plane_sync_metadata_json TEXT NOT NULL,
+    continuity_verified INTEGER NOT NULL DEFAULT 0,
+    distributed_clock_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    CHECK (event_type IN ('export', 'import')),
+    CHECK (continuity_verified IN (0, 1))
+  );
+
+  CREATE TABLE IF NOT EXISTS flowmind_distributed_recovery_epoch (
+    recovery_epoch_id TEXT PRIMARY KEY,
+    node_id TEXT NOT NULL,
+    recovery_epoch TEXT NOT NULL,
+    continuity_epoch TEXT NOT NULL,
+    recovery_state TEXT NOT NULL,
+    federated_coordination_state TEXT NOT NULL,
+    replay_restoration_marker TEXT,
+    metadata_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    CHECK (federated_coordination_state IN ('metadata_only', 'coordinating', 'observed'))
+  );
+
+  CREATE TRIGGER IF NOT EXISTS flowmind_distributed_lineage_no_update
+  BEFORE UPDATE ON flowmind_distributed_lineage
+  BEGIN
+    SELECT RAISE(ABORT, 'flowmind_distributed_lineage is append-only');
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS flowmind_distributed_lineage_no_delete
+  BEFORE DELETE ON flowmind_distributed_lineage
+  BEGIN
+    SELECT RAISE(ABORT, 'flowmind_distributed_lineage is append-only');
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS flowmind_distributed_attestation_no_update
+  BEFORE UPDATE ON flowmind_distributed_attestation
+  BEGIN
+    SELECT RAISE(ABORT, 'flowmind_distributed_attestation is append-only');
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS flowmind_distributed_attestation_no_delete
+  BEFORE DELETE ON flowmind_distributed_attestation
+  BEGIN
+    SELECT RAISE(ABORT, 'flowmind_distributed_attestation is append-only');
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS flowmind_replay_federation_state_no_update
+  BEFORE UPDATE ON flowmind_replay_federation_state
+  BEGIN
+    SELECT RAISE(ABORT, 'flowmind_replay_federation_state is append-only');
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS flowmind_replay_federation_state_no_delete
+  BEFORE DELETE ON flowmind_replay_federation_state
+  BEGIN
+    SELECT RAISE(ABORT, 'flowmind_replay_federation_state is append-only');
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS flowmind_distributed_recovery_epoch_no_update
+  BEFORE UPDATE ON flowmind_distributed_recovery_epoch
+  BEGIN
+    SELECT RAISE(ABORT, 'flowmind_distributed_recovery_epoch is append-only');
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS flowmind_distributed_recovery_epoch_no_delete
+  BEFORE DELETE ON flowmind_distributed_recovery_epoch
+  BEGIN
+    SELECT RAISE(ABORT, 'flowmind_distributed_recovery_epoch is append-only');
+  END;
+
+  CREATE TABLE IF NOT EXISTS flowmind_auth_sovereign_attestation (
+    mutation_id TEXT PRIMARY KEY,
+    auth_scope TEXT NOT NULL,
+    governance_decision TEXT NOT NULL,
+    continuity_mode TEXT NOT NULL,
+    runtime_mode TEXT NOT NULL,
+    replay_verification_state TEXT NOT NULL,
+    attestation_integrity TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    target_user_id TEXT NULL,
+    target_tenant_id TEXT NULL,
+    target_session_id TEXT NULL,
+    lineage_hash TEXT NOT NULL,
+    persisted INTEGER NOT NULL DEFAULT 0,
+    executed INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS flowmind_semantic_mutation_attestation (
+    intent_id TEXT PRIMARY KEY,
+    effect_id TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    intent_type TEXT NOT NULL,
+    semantic_purpose TEXT NOT NULL,
+    institutional_meaning TEXT NOT NULL,
+    risk_level TEXT NOT NULL,
+    replay_relevant INTEGER NOT NULL DEFAULT 0,
+    continuity_relevant INTEGER NOT NULL DEFAULT 0,
+    auth_relevant INTEGER NOT NULL DEFAULT 0,
+    before_fingerprint TEXT NULL,
+    after_fingerprint TEXT NULL,
+    replay_fingerprint TEXT NOT NULL,
+    continuity_lineage_hash TEXT NOT NULL,
+    mutation_lineage_hash TEXT NOT NULL,
+    verified INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS flowmind_semantic_replay_result (
+    replay_fingerprint TEXT,
+    semantic_intent_id TEXT NOT NULL,
+    mutation_lineage_hash TEXT NOT NULL,
+    result_shape_hash TEXT NOT NULL,
+    payload_snapshot TEXT NOT NULL,
+    semantic_integrity TEXT NOT NULL,
+    replay_result_state TEXT NOT NULL,
+    lineage_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    CHECK (semantic_integrity IN ('verified', 'partial', 'invalid')),
+    CHECK (replay_result_state IN ('original', 'hydrated', 'reconstructed', 'fallback-safe', 'invalid'))
+  );
+
+  CREATE TRIGGER IF NOT EXISTS flowmind_semantic_replay_result_no_update
+  BEFORE UPDATE ON flowmind_semantic_replay_result
+  BEGIN
+    SELECT RAISE(ABORT, 'flowmind_semantic_replay_result is append-only');
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS flowmind_semantic_replay_result_no_delete
+  BEFORE DELETE ON flowmind_semantic_replay_result
+  BEGIN
+    SELECT RAISE(ABORT, 'flowmind_semantic_replay_result is append-only');
+  END;
+
+  CREATE TABLE IF NOT EXISTS flowmind_sovereign_persistence_queue (
+    queue_event_id TEXT PRIMARY KEY,
+    operation_id TEXT NOT NULL,
+    persistence_domain TEXT NOT NULL,
+    execution_priority TEXT NOT NULL,
+    execution_class TEXT NOT NULL,
+    queue_state TEXT NOT NULL,
+    queue_lineage_hash TEXT NOT NULL,
+    lease_lineage_hash TEXT,
+    mutation_lineage_hash TEXT,
+    replay_fingerprint TEXT,
+    continuity_epoch TEXT,
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    error_code TEXT,
+    error_message TEXT,
+    actor_id TEXT,
+    requested_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    CHECK (persistence_domain IN ('governance', 'replay', 'semantic', 'auth', 'checkpoint', 'queue', 'runtime', 'entity')),
+    CHECK (execution_priority IN ('critical', 'high', 'normal', 'background')),
+    CHECK (execution_class IN ('runtime', 'replay', 'recovery', 'governance', 'auth')),
+    CHECK (queue_state IN ('queued', 'started', 'completed', 'failed', 'retry', 'lease_acquired', 'lease_conflict', 'deduplicated'))
+  );
+
+  CREATE TRIGGER IF NOT EXISTS flowmind_sovereign_persistence_queue_no_update
+  BEFORE UPDATE ON flowmind_sovereign_persistence_queue
+  BEGIN
+    SELECT RAISE(ABORT, 'flowmind_sovereign_persistence_queue is append-only');
+  END;
+
+  CREATE TRIGGER IF NOT EXISTS flowmind_sovereign_persistence_queue_no_delete
+  BEFORE DELETE ON flowmind_sovereign_persistence_queue
+  BEGIN
+    SELECT RAISE(ABORT, 'flowmind_sovereign_persistence_queue is append-only');
+  END;
+
+  CREATE TABLE IF NOT EXISTS flowmind_recovery_attestation (
+    recovery_id TEXT PRIMARY KEY,
+    recovery_state TEXT NOT NULL,
+    replay_restored INTEGER NOT NULL DEFAULT 0,
+    lineage_reconciled INTEGER NOT NULL DEFAULT 0,
+    continuity_restored INTEGER NOT NULL DEFAULT 0,
+    semantic_integrity_verified INTEGER NOT NULL DEFAULT 0,
+    reconstructed_attestations INTEGER NOT NULL DEFAULT 0,
+    replay_drift_detected INTEGER NOT NULL DEFAULT 0,
+    recovery_lineage_hash TEXT NOT NULL,
+    verified INTEGER NOT NULL DEFAULT 0,
+    replay_restoration_state TEXT NOT NULL,
+    lineage_reconciliation_state TEXT NOT NULL,
+    continuity_restoration_state TEXT NOT NULL,
+    semantic_integrity_state TEXT NOT NULL,
+    attestation_reconstruction_state TEXT NOT NULL,
+    recovery_lockdown_state TEXT NOT NULL,
+    institutional_unlock_allowed INTEGER NOT NULL DEFAULT 0,
+    recovery_metadata_json TEXT,
+    started_at TEXT NOT NULL,
+    completed_at TEXT
+  );
+
   CREATE TABLE IF NOT EXISTS auth_refresh_session (
     id TEXT PRIMARY KEY,
     family_id TEXT NOT NULL,
@@ -439,6 +1015,87 @@ const sqliteSchema = `
     CHECK (issued_by_flow IN ('login', 'refresh', 'service_exchange', 'admin_issue')),
     CHECK (expires_at > issued_at)
   );
+
+  CREATE TABLE IF NOT EXISTS flow_auth_user (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    legacy_source TEXT,
+    legacy_id INTEGER,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (email),
+    UNIQUE (legacy_source, legacy_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS flow_auth_tenant (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    legacy_source TEXT,
+    legacy_id INTEGER,
+    name TEXT NOT NULL,
+    slug TEXT NOT NULL,
+    business_model TEXT NOT NULL,
+    plan TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (slug),
+    UNIQUE (legacy_source, legacy_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS flow_auth_membership (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    legacy_source TEXT,
+    legacy_id INTEGER,
+    user_id INTEGER NOT NULL,
+    tenant_id INTEGER NOT NULL,
+    role TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE (legacy_source, legacy_id),
+    UNIQUE (user_id, tenant_id),
+    FOREIGN KEY (user_id) REFERENCES flow_auth_user(id) ON DELETE CASCADE,
+    FOREIGN KEY (tenant_id) REFERENCES flow_auth_tenant(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS flow_auth_password_reset_token (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    legacy_source TEXT,
+    legacy_id INTEGER,
+    user_id INTEGER NOT NULL,
+    token TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used_at TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE (token),
+    UNIQUE (legacy_source, legacy_id),
+    FOREIGN KEY (user_id) REFERENCES flow_auth_user(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS flow_auth_audit_event (
+    id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    user_id INTEGER,
+    tenant_id INTEGER,
+    actor_user_id INTEGER,
+    actor_tenant_id INTEGER,
+    outcome TEXT NOT NULL,
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES flow_auth_user(id) ON DELETE SET NULL,
+    FOREIGN KEY (tenant_id) REFERENCES flow_auth_tenant(id) ON DELETE SET NULL,
+    FOREIGN KEY (actor_user_id) REFERENCES flow_auth_user(id) ON DELETE SET NULL,
+    FOREIGN KEY (actor_tenant_id) REFERENCES flow_auth_tenant(id) ON DELETE SET NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS flowmind_schema_migrations (
+    migration_key TEXT PRIMARY KEY,
+    applied_at TEXT NOT NULL,
+    details_json TEXT NOT NULL DEFAULT '{}'
+  );
 `
 
 const indexStatements = [
@@ -506,6 +1163,93 @@ const indexStatements = [
   'CREATE INDEX IF NOT EXISTS idx_entity_portfolio_proposal_outcome_evaluated_at ON entity_portfolio_proposal_outcome(evaluated_at)',
   'CREATE INDEX IF NOT EXISTS idx_flowmind_decision_journal_entity_created_at ON flowmind_decision_journal(entity_id, created_at)',
   'CREATE INDEX IF NOT EXISTS idx_flowmind_execution_ledger_entity_status ON flowmind_execution_ledger(entity_id, status)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_opportunities_market_signal_id ON flowmind_opportunities(market_signal_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_opportunities_category ON flowmind_opportunities(category)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_opportunities_detected_at ON flowmind_opportunities(detected_at)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_opportunity_proposals_source_opportunity_id ON flowmind_opportunity_proposals(source_opportunity_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_opportunity_proposals_entity_id ON flowmind_opportunity_proposals(entity_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_opportunity_proposals_governance_status ON flowmind_opportunity_proposals(governance_status)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_opportunity_proposals_created_at ON flowmind_opportunity_proposals(created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_revenue_attribution_market_signal_id ON flowmind_revenue_attribution(market_signal_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_revenue_attribution_opportunity_id ON flowmind_revenue_attribution(opportunity_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_revenue_attribution_lead_id ON flowmind_revenue_attribution(lead_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_revenue_attribution_revenue_event_id ON flowmind_revenue_attribution(revenue_event_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_revenue_attribution_created_at ON flowmind_revenue_attribution(created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_learning_ledger_attribution_id ON flowmind_learning_ledger(attribution_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_learning_ledger_category ON flowmind_learning_ledger(category)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_learning_ledger_signal_keyword ON flowmind_learning_ledger(signal_keyword)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_learning_ledger_observed_at ON flowmind_learning_ledger(observed_at)',
+  'CREATE UNIQUE INDEX IF NOT EXISTS idx_flowmind_learning_checkpoint_runtime_name ON flowmind_learning_checkpoint(runtime_name)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_runtime_continuity_attestation_runtime_epoch ON flowmind_runtime_continuity_attestation(runtime_id, continuity_epoch)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_runtime_continuity_attestation_generated_at ON flowmind_runtime_continuity_attestation(generated_at)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_runtime_continuity_attestation_phase_status ON flowmind_runtime_continuity_attestation(shutdown_phase, attestation_status)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_runtime_continuity_attestation_reconstructed ON flowmind_runtime_continuity_attestation(reconstructed_on_recovery, continuity_epoch)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_sovereign_mutation_attestation_created_at ON flowmind_sovereign_mutation_attestation(created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_sovereign_mutation_attestation_scope ON flowmind_sovereign_mutation_attestation(mutation_scope, governance_decision)',
+  'CREATE UNIQUE INDEX IF NOT EXISTS idx_flowmind_sovereign_mutation_registry_lineage_hash ON flowmind_sovereign_mutation_registry(mutation_lineage_hash)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_sovereign_mutation_registry_last_seen_at ON flowmind_sovereign_mutation_registry(last_seen_at)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_sovereign_mutation_registry_execution_class ON flowmind_sovereign_mutation_registry(execution_class, last_execution_state)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_sovereign_node_registered_at ON flowmind_sovereign_node(registered_at)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_sovereign_node_authority_plane ON flowmind_sovereign_node(authority_plane_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_sovereign_node_persistence_plane ON flowmind_sovereign_node(persistence_plane_id)',
+  'CREATE UNIQUE INDEX IF NOT EXISTS idx_flowmind_distributed_lineage_sequence ON flowmind_distributed_lineage(distributed_sequence)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_distributed_lineage_continuity_epoch ON flowmind_distributed_lineage(continuity_epoch, distributed_sequence)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_distributed_lineage_replay_fingerprint ON flowmind_distributed_lineage(replay_fingerprint)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_distributed_lineage_mutation_hash ON flowmind_distributed_lineage(mutation_lineage_hash)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_distributed_attestation_continuity_plane ON flowmind_distributed_attestation(continuity_epoch, attestation_plane)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_distributed_attestation_lineage_hash ON flowmind_distributed_attestation(lineage_hash)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_replay_federation_state_event_type ON flowmind_replay_federation_state(event_type, created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_replay_federation_state_continuity_epoch ON flowmind_replay_federation_state(continuity_epoch)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_distributed_recovery_epoch_recovery_epoch ON flowmind_distributed_recovery_epoch(recovery_epoch)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_distributed_recovery_epoch_continuity_epoch ON flowmind_distributed_recovery_epoch(continuity_epoch)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_auth_sovereign_attestation_scope ON flowmind_auth_sovereign_attestation(auth_scope, governance_decision)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_auth_sovereign_attestation_created_at ON flowmind_auth_sovereign_attestation(created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_semantic_mutation_attestation_domain ON flowmind_semantic_mutation_attestation(domain, verified)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_semantic_mutation_attestation_created_at ON flowmind_semantic_mutation_attestation(created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_semantic_replay_result_intent_created_at ON flowmind_semantic_replay_result(semantic_intent_id, created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_semantic_replay_result_replay_fingerprint ON flowmind_semantic_replay_result(replay_fingerprint)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_semantic_replay_result_shape_hash ON flowmind_semantic_replay_result(result_shape_hash)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_sovereign_persistence_queue_operation_id ON flowmind_sovereign_persistence_queue(operation_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_sovereign_persistence_queue_domain_state_created_at ON flowmind_sovereign_persistence_queue(persistence_domain, queue_state, created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_sovereign_persistence_queue_replay_fingerprint ON flowmind_sovereign_persistence_queue(replay_fingerprint)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_sovereign_persistence_queue_lineage ON flowmind_sovereign_persistence_queue(queue_lineage_hash, lease_lineage_hash)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_sovereign_persistence_queue_priority_created_at ON flowmind_sovereign_persistence_queue(execution_priority, created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_recovery_attestation_started_at ON flowmind_recovery_attestation(started_at)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_recovery_attestation_state ON flowmind_recovery_attestation(recovery_state, verified)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_negative_outcomes_outcome_type ON flowmind_negative_outcomes(outcome_type)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_negative_outcomes_entity_id ON flowmind_negative_outcomes(entity_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_negative_outcomes_category ON flowmind_negative_outcomes(category)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_negative_outcomes_signal_keyword ON flowmind_negative_outcomes(signal_keyword)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_negative_outcomes_detected_at ON flowmind_negative_outcomes(detected_at)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_negative_attribution_outcome_id ON flowmind_negative_attribution(outcome_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_negative_attribution_signal_id ON flowmind_negative_attribution(signal_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_negative_attribution_opportunity_id ON flowmind_negative_attribution(opportunity_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_negative_attribution_proposal_id ON flowmind_negative_attribution(proposal_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_negative_attribution_execution_id ON flowmind_negative_attribution(execution_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_negative_attribution_entity_id ON flowmind_negative_attribution(entity_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_negative_attribution_outcome_type ON flowmind_negative_attribution(outcome_type)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_negative_attribution_occurred_at ON flowmind_negative_attribution(occurred_at)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_negative_attribution_lineage_quality ON flowmind_negative_attribution(lineage_quality)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_negative_attribution_detected_at ON flowmind_negative_attribution(detected_at)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_economic_memory_scope ON flowmind_economic_memory(memory_scope)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_economic_memory_category ON flowmind_economic_memory(category)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_economic_memory_signal_keyword ON flowmind_economic_memory(signal_keyword)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_economic_memory_entity_id ON flowmind_economic_memory(entity_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_economic_memory_total_revenue ON flowmind_economic_memory(total_revenue)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_shadow_projections_market_signal_id ON flowmind_shadow_projections(market_signal_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_shadow_projections_entity_id ON flowmind_shadow_projections(entity_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_shadow_projections_generated_at ON flowmind_shadow_projections(generated_at)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_shadow_comparisons_market_signal_id ON flowmind_shadow_comparisons(market_signal_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_shadow_comparisons_generated_at ON flowmind_shadow_comparisons(generated_at)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_shadow_comparisons_divergence_type ON flowmind_shadow_comparisons(divergence_type)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_adaptive_equilibrium_evidence_generated_at ON flowmind_adaptive_equilibrium_evidence(generated_at)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_adaptive_equilibrium_evidence_classification ON flowmind_adaptive_equilibrium_evidence(governance_classification)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_adaptive_equilibrium_evidence_replay_fingerprint ON flowmind_adaptive_equilibrium_evidence(replay_fingerprint)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_governance_evidence_timeline_timestamp ON flowmind_governance_evidence_timeline(event_timestamp)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_governance_evidence_timeline_classification ON flowmind_governance_evidence_timeline(classification)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_governance_evidence_timeline_type ON flowmind_governance_evidence_timeline(event_type)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_governance_evidence_timeline_replay_fingerprint ON flowmind_governance_evidence_timeline(replay_fingerprint)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_governance_evidence_timeline_source_evidence_id ON flowmind_governance_evidence_timeline(source_evidence_id)',
   'CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_refresh_session_token_hash ON auth_refresh_session(token_hash)',
   'CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_refresh_session_token_fingerprint ON auth_refresh_session(token_fingerprint)',
   'CREATE INDEX IF NOT EXISTS idx_auth_refresh_session_user_tenant_status ON auth_refresh_session(user_id, tenant_id, status)',
@@ -520,6 +1264,21 @@ const indexStatements = [
   'CREATE INDEX IF NOT EXISTS idx_auth_access_audit_session_id ON auth_access_audit(session_id)',
   'CREATE INDEX IF NOT EXISTS idx_auth_access_audit_kid ON auth_access_audit(kid)',
   'CREATE INDEX IF NOT EXISTS idx_auth_access_audit_issued_at ON auth_access_audit(issued_at)',
+  'CREATE INDEX IF NOT EXISTS idx_flow_auth_user_email ON flow_auth_user(email)',
+  'CREATE INDEX IF NOT EXISTS idx_flow_auth_user_legacy_mapping ON flow_auth_user(legacy_source, legacy_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flow_auth_tenant_slug ON flow_auth_tenant(slug)',
+  'CREATE INDEX IF NOT EXISTS idx_flow_auth_tenant_legacy_mapping ON flow_auth_tenant(legacy_source, legacy_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flow_auth_membership_user_id ON flow_auth_membership(user_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flow_auth_membership_tenant_id ON flow_auth_membership(tenant_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flow_auth_membership_user_tenant ON flow_auth_membership(user_id, tenant_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flow_auth_membership_legacy_mapping ON flow_auth_membership(legacy_source, legacy_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flow_auth_password_reset_token_user_id ON flow_auth_password_reset_token(user_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flow_auth_password_reset_token_expires_at ON flow_auth_password_reset_token(expires_at)',
+  'CREATE INDEX IF NOT EXISTS idx_flow_auth_password_reset_token_legacy_mapping ON flow_auth_password_reset_token(legacy_source, legacy_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flow_auth_audit_event_event_type ON flow_auth_audit_event(event_type)',
+  'CREATE INDEX IF NOT EXISTS idx_flow_auth_audit_event_user_id ON flow_auth_audit_event(user_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flow_auth_audit_event_tenant_id ON flow_auth_audit_event(tenant_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flow_auth_audit_event_created_at ON flow_auth_audit_event(created_at)',
 ]
 
 export function getDatabaseConfig(): DatabaseConfig {
@@ -1054,6 +1813,7 @@ async function initializePostgresLegalCaseSchema(db: BackendDatabase) {
 
   await db.exec(`ALTER TABLE case_messages ADD COLUMN IF NOT EXISTS sequence_no INTEGER`)
   await db.exec(`ALTER TABLE case_messages ADD COLUMN IF NOT EXISTS message_status TEXT DEFAULT 'sent'`)
+  await db.exec(`ALTER TABLE flowmind_adaptive_equilibrium_evidence ADD COLUMN IF NOT EXISTS heatmap_snapshot_json TEXT NOT NULL DEFAULT '{}'`)
   await db.exec(`UPDATE case_messages SET message_status = 'sent' WHERE message_status IS NULL`)
   await db.exec(`ALTER TABLE case_messages ALTER COLUMN message_status SET DEFAULT 'sent'`)
   await db.exec(`ALTER TABLE case_messages ALTER COLUMN message_status SET NOT NULL`)
@@ -1712,10 +2472,74 @@ export async function initializeDatabase(db: BackendDatabase) {
   await ensureColumn(db, 'entity_portfolio_lead', 'lost_at', 'TEXT')
   await ensureColumn(db, 'entity_portfolio_lead', 'revenue_amount', 'REAL')
   await ensureColumn(db, 'entity_portfolio_lead', 'lost_reason', 'TEXT')
+  await ensureColumn(db, 'flowmind_economic_memory', 'memory_scope', "TEXT NOT NULL DEFAULT 'signal'")
+  await ensureColumn(db, 'flowmind_economic_memory', 'entity_id', 'TEXT')
+  await ensureColumn(db, 'flowmind_economic_memory', 'sample_count', 'INTEGER NOT NULL DEFAULT 0')
+  await ensureColumn(db, 'flowmind_economic_memory', 'minimum_sample_count', 'INTEGER NOT NULL DEFAULT 3')
+  await ensureColumn(db, 'flowmind_economic_memory', 'time_decay_weight', 'REAL NOT NULL DEFAULT 1')
+  await ensureColumn(db, 'flowmind_economic_memory', 'decay_half_life_days', 'INTEGER NOT NULL DEFAULT 30')
+  await ensureColumn(db, 'flowmind_negative_attribution', 'attributed_at', 'TEXT')
+  await ensureColumn(db, 'flowmind_negative_attribution', 'metadata_json', 'TEXT')
+  await ensureColumn(db, 'flowmind_negative_attribution', 'created_at', 'TEXT')
+  await ensureColumn(db, 'flowmind_learning_checkpoint', 'checkpoint_version', 'INTEGER NOT NULL DEFAULT 1')
+  await ensureColumn(db, 'flowmind_learning_checkpoint', 'lineage_key', 'TEXT')
+  await ensureColumn(db, 'flowmind_learning_checkpoint', 'lineage_metadata_json', 'TEXT')
+  await ensureColumn(db, 'flowmind_learning_checkpoint', 'checkpoint_payload_json', 'TEXT')
+  await ensureColumn(db, 'flowmind_learning_checkpoint', 'continuity_fingerprint', 'TEXT')
+  await ensureColumn(db, 'flowmind_learning_checkpoint', 'checkpoint_attestation_state', 'TEXT')
+  await ensureColumn(db, 'flowmind_learning_checkpoint', 'attestation_lineage_hash', 'TEXT')
+  await ensureColumn(db, 'flowmind_learning_checkpoint', 'replay_verification_metadata_json', 'TEXT')
+  await ensureColumn(db, 'flowmind_runtime_continuity_attestation', 'reconstructed_on_recovery', 'INTEGER NOT NULL DEFAULT 0')
+  await ensureColumn(db, 'flowmind_runtime_continuity_attestation', 'reconstruction_lineage_hash', 'TEXT')
+  await ensureColumn(db, 'flowmind_runtime_continuity_attestation', 'reconstruction_source', 'TEXT')
+  await ensureColumn(db, 'flowmind_sovereign_mutation_registry', 'result_fingerprint', 'TEXT')
+  await ensureColumn(db, 'flowmind_sovereign_mutation_registry', 'replay_result_shape', 'TEXT')
+  await ensureColumn(db, 'flow_auth_user', 'legacy_source', 'TEXT')
+  await ensureColumn(db, 'flow_auth_user', 'legacy_id', 'INTEGER')
+  await ensureColumn(db, 'flow_auth_user', 'name', 'TEXT NOT NULL DEFAULT \'\'')
+  await ensureColumn(db, 'flow_auth_user', 'email', 'TEXT NOT NULL DEFAULT \'\'')
+  await ensureColumn(db, 'flow_auth_user', 'password_hash', 'TEXT NOT NULL DEFAULT \'\'')
+  await ensureColumn(db, 'flow_auth_user', 'is_active', 'INTEGER NOT NULL DEFAULT 1')
+  await ensureColumn(db, 'flow_auth_user', 'created_at', 'TEXT')
+  await ensureColumn(db, 'flow_auth_user', 'updated_at', 'TEXT')
+  await ensureColumn(db, 'flow_auth_tenant', 'legacy_source', 'TEXT')
+  await ensureColumn(db, 'flow_auth_tenant', 'legacy_id', 'INTEGER')
+  await ensureColumn(db, 'flow_auth_tenant', 'name', 'TEXT NOT NULL DEFAULT \'\'')
+  await ensureColumn(db, 'flow_auth_tenant', 'slug', 'TEXT NOT NULL DEFAULT \'\'')
+  await ensureColumn(db, 'flow_auth_tenant', 'business_model', 'TEXT NOT NULL DEFAULT \'hybrid\'')
+  await ensureColumn(db, 'flow_auth_tenant', 'plan', 'TEXT NOT NULL DEFAULT \'starter\'')
+  await ensureColumn(db, 'flow_auth_tenant', 'is_active', 'INTEGER NOT NULL DEFAULT 1')
+  await ensureColumn(db, 'flow_auth_tenant', 'created_at', 'TEXT')
+  await ensureColumn(db, 'flow_auth_tenant', 'updated_at', 'TEXT')
+  await ensureColumn(db, 'flow_auth_membership', 'legacy_source', 'TEXT')
+  await ensureColumn(db, 'flow_auth_membership', 'legacy_id', 'INTEGER')
+  await ensureColumn(db, 'flow_auth_membership', 'user_id', 'INTEGER')
+  await ensureColumn(db, 'flow_auth_membership', 'tenant_id', 'INTEGER')
+  await ensureColumn(db, 'flow_auth_membership', 'role', 'TEXT NOT NULL DEFAULT \'member\'')
+  await ensureColumn(db, 'flow_auth_membership', 'is_active', 'INTEGER NOT NULL DEFAULT 1')
+  await ensureColumn(db, 'flow_auth_membership', 'created_at', 'TEXT')
+  await ensureColumn(db, 'flow_auth_membership', 'updated_at', 'TEXT')
+  await ensureColumn(db, 'flow_auth_password_reset_token', 'legacy_source', 'TEXT')
+  await ensureColumn(db, 'flow_auth_password_reset_token', 'legacy_id', 'INTEGER')
+  await ensureColumn(db, 'flow_auth_password_reset_token', 'user_id', 'INTEGER')
+  await ensureColumn(db, 'flow_auth_password_reset_token', 'token', 'TEXT NOT NULL DEFAULT \'\'')
+  await ensureColumn(db, 'flow_auth_password_reset_token', 'expires_at', 'TEXT')
+  await ensureColumn(db, 'flow_auth_password_reset_token', 'used_at', 'TEXT')
+  await ensureColumn(db, 'flow_auth_password_reset_token', 'created_at', 'TEXT')
+  await ensureColumn(db, 'flow_auth_audit_event', 'event_type', 'TEXT NOT NULL DEFAULT \'unknown\'')
+  await ensureColumn(db, 'flow_auth_audit_event', 'user_id', 'INTEGER')
+  await ensureColumn(db, 'flow_auth_audit_event', 'tenant_id', 'INTEGER')
+  await ensureColumn(db, 'flow_auth_audit_event', 'actor_user_id', 'INTEGER')
+  await ensureColumn(db, 'flow_auth_audit_event', 'actor_tenant_id', 'INTEGER')
+  await ensureColumn(db, 'flow_auth_audit_event', 'outcome', 'TEXT NOT NULL DEFAULT \'unknown\'')
+  await ensureColumn(db, 'flow_auth_audit_event', 'metadata_json', "TEXT NOT NULL DEFAULT '{}'")
+  await ensureColumn(db, 'flow_auth_audit_event', 'created_at', 'TEXT')
+  await migrateAdaptiveEquilibriumEvidenceSchema(db)
   await db.run("UPDATE entity_portfolio_lead SET status = 'routed' WHERE status IS NULL OR TRIM(status) = ''")
   await initializePostgresLegalCaseSchema(db)
   await migratePostgresPortfolioProposalSchema(db)
   await ensureIndexes(db, indexStatements)
+  await validateAdaptiveEquilibriumEvidenceSchema(db)
 }
 
 export type { BackendDatabase, DatabaseConfig } from './dbClient.js'

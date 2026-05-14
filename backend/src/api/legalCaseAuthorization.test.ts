@@ -16,6 +16,7 @@ import { clearLawyerInboxListenersForTesting, getLawyerInboxListenerCountForTest
 import { clearLawyerInboxEventsTokensForTesting } from '../modules/legalCases/lawyerInboxEventTokens.js'
 import type { EntityRepository } from '../repositories/entityRepository.js'
 import { buildServer } from '../server.js'
+import { runSeedMutation } from '../sovereignty/sovereignTestMutationHarness.js'
 
 type AppWithContext = FastifyInstance & {
   backendContext: {
@@ -253,29 +254,31 @@ async function seedLegalActors(harness: Harness) {
   const repository = harness.app.backendContext.entityRepository
   const now = '2026-04-30T10:00:00.000Z'
 
-  await repository.createEntity({
-    id: 'entity-t1-owned',
-    ownerId: 'user:100:tenant:1',
-    ownerUserId: 100,
-    ownerTenantId: 1,
-    entityProfile: createEntityProfileFixture('entity-t1-owned'),
-  })
+  await runSeedMutation(async () => {
+    await repository.createEntity({
+      id: 'entity-t1-owned',
+      ownerId: 'user:100:tenant:1',
+      ownerUserId: 100,
+      ownerTenantId: 1,
+      entityProfile: createEntityProfileFixture('entity-t1-owned'),
+    })
 
-  await repository.createEntity({
-    id: 'entity-t2-owned',
-    ownerId: 'user:300:tenant:2',
-    ownerUserId: 300,
-    ownerTenantId: 2,
-    entityProfile: createEntityProfileFixture('entity-t2-owned'),
-  })
+    await repository.createEntity({
+      id: 'entity-t2-owned',
+      ownerId: 'user:300:tenant:2',
+      ownerUserId: 300,
+      ownerTenantId: 2,
+      entityProfile: createEntityProfileFixture('entity-t2-owned'),
+    })
 
-  await repository.createEntity({
-    id: 'entity-marketplace-legal',
-    ownerId: 'user:100:tenant:1',
-    ownerUserId: 100,
-    ownerTenantId: 1,
-    entityProfile: createEntityProfileFixture('entity-marketplace-legal'),
-  })
+    await repository.createEntity({
+      id: 'entity-marketplace-legal',
+      ownerId: 'user:100:tenant:1',
+      ownerUserId: 100,
+      ownerTenantId: 1,
+      entityProfile: createEntityProfileFixture('entity-marketplace-legal'),
+    })
+  }, 'backend/src/api/legalCaseAuthorization.test.ts#seedLegalActors')
 
   await db.run(
     `

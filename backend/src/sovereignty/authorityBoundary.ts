@@ -11,6 +11,8 @@ export type ProtectedMutationType =
 export type MutationAuthorityContext = {
   source: string
   viaExecutor: boolean
+  issuedBySovereignGate?: boolean
+  mutationId?: string
 }
 
 export type MutationLogRecord = {
@@ -23,6 +25,7 @@ export type MutationLogRecord = {
 }
 
 const authorityContextStore = new AsyncLocalStorage<MutationAuthorityContext>()
+let sovereignMutationBoundaryEnforced = false
 
 function parseCallerChain() {
   const stack = new Error().stack?.split('\n').slice(3) ?? []
@@ -34,6 +37,10 @@ function parseCallerChain() {
 
 export function getMutationAuthorityContext() {
   return authorityContextStore.getStore()
+}
+
+export function setSovereignMutationBoundaryEnforcement(enabled: boolean) {
+  sovereignMutationBoundaryEnforced = enabled
 }
 
 export async function runWithMutationAuthority<T>(
@@ -59,6 +66,7 @@ export function traceMutation(args: {
 }) {
   const context = getMutationAuthorityContext()
   const viaExecutor = context?.viaExecutor === true
+  const issuedBySovereignGate = context?.issuedBySovereignGate === true
   const record: MutationLogRecord = {
     source: args.source,
     type: args.type,
@@ -70,9 +78,9 @@ export function traceMutation(args: {
 
   logMutation(record)
 
-  if (!viaExecutor && isAuthorityBoundaryEnforced()) {
+  if ((!viaExecutor || (sovereignMutationBoundaryEnforced && !issuedBySovereignGate)) && isAuthorityBoundaryEnforced()) {
     const error = new Error(
-      `FLOWMIND_AUTHORITY_BOUNDARY_VIOLATION: ${args.source} attempted ${args.type} mutation outside executor.`,
+      `FLOWMIND_AUTHORITY_BOUNDARY_VIOLATION: ${args.source} attempted ${args.type} mutation outside sovereign gate.`,
     ) as Error & { code?: string }
     error.code = 'FLOWMIND_AUTHORITY_BOUNDARY_VIOLATION'
     throw error

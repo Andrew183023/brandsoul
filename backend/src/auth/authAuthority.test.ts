@@ -18,9 +18,27 @@ import { buildServer } from '../server.js'
 type AppWithContext = FastifyInstance & {
   backendContext: {
     jobWorker: JobWorker
+    runtimeGovernance: {
+      registerStartupFailure(args: {
+        subsystem: string
+        criticality: 'critical' | 'degraded-allowed' | 'optional'
+        message: string
+      }): unknown
+    }
+    runtimeContinuityAttestationService: {
+      getStatus(): {
+        replayVerificationState: string
+        attestationIntegrity: string
+        recoveryRequired: boolean
+      }
+    }
     auth: {
+      authSovereignMutationService: {
+        getStatus(): Promise<unknown>
+      }
       legacyAuthStoreRepository: {
         findUserByEmail(email: string): Promise<{ id: number; passwordHash: string } | null>
+        findUserById(userId: number): Promise<{ id: number } | null>
         findLatestPasswordResetTokenForUser(userId: number): Promise<{ token: string; usedAt?: string; expiresAt: string } | null>
       }
     }
@@ -32,6 +50,8 @@ type AuthHarness = {
   privateKeyPem: string
   configuredKid: string
   jwtSecret: string
+  backendDbFile: string
+  legacyAuthDbFile: string
   asyncClose(): Promise<void>
 }
 
@@ -115,6 +135,72 @@ async function createLegacyAuthStore(filePath: string) {
   )
 
   await db.close()
+}
+
+async function withLegacyAuthDb<T>(filePath: string, callback: (db: Awaited<ReturnType<typeof open>>) => Promise<T>) {
+  const db = await open({
+    filename: filePath,
+    driver: sqlite3.Database,
+  })
+
+  try {
+    return await callback(db)
+  } finally {
+    await db.close()
+  }
+}
+
+async function insertTenant(filePath: string, args: {
+  id: number
+  name: string
+  slug: string
+  businessModel?: 'product' | 'service' | 'hybrid' | 'professional'
+  plan?: string
+  isActive?: number
+}) {
+  const now = new Date().toISOString()
+  await withLegacyAuthDb(filePath, async (db) => {
+    await db.run(
+      `INSERT INTO tenants (id, name, slug, business_model, plan, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      args.id,
+      args.name,
+      args.slug,
+      args.businessModel ?? 'service',
+      args.plan ?? 'pro',
+      args.isActive ?? 1,
+      now,
+      now,
+    )
+  })
+}
+
+async function insertMembership(filePath: string, args: {
+  id: number
+  userId: number
+  tenantId: number
+  role: string
+}) {
+  const now = new Date().toISOString()
+  await withLegacyAuthDb(filePath, async (db) => {
+    await db.run(
+      `INSERT INTO memberships (id, user_id, tenant_id, role, created_at) VALUES (?, ?, ?, ?, ?)`,
+      args.id,
+      args.userId,
+      args.tenantId,
+      args.role,
+      now,
+    )
+  })
+}
+
+async function deleteMembershipForUserAndTenant(filePath: string, userId: number, tenantId: number) {
+  await withLegacyAuthDb(filePath, async (db) => {
+    await db.run(
+      `DELETE FROM memberships WHERE user_id = ? AND tenant_id = ?`,
+      userId,
+      tenantId,
+    )
+  })
 }
 
 function encodeBase64Url(value: string) {
@@ -203,6 +289,8 @@ async function createAuthHarness(): Promise<AuthHarness> {
     privateKeyPem: privateKey,
     configuredKid: TEST_KID,
     jwtSecret: process.env.JWT_SECRET,
+    backendDbFile,
+    legacyAuthDbFile: legacyAuthDbFile,
     async asyncClose() {
       await app.close()
       await rm(workspace, { recursive: true, force: true })
@@ -218,31 +306,72 @@ async function createAuthHarness(): Promise<AuthHarness> {
   }
 }
 
-async function login(app: FastifyInstance) {
+async function withBackendDb<T>(filePath: string, callback: (db: Awaited<ReturnType<typeof open>>) => Promise<T>) {
+  const db = await open({
+    filename: filePath,
+    driver: sqlite3.Database,
+  })
+
+  try {
+    return await callback(db)
+  } finally {
+    await db.close()
+  }
+}
+
+async function login(app: FastifyInstance, overrides?: Record<string, unknown>) {
   const response = await app.inject({
     method: 'POST',
     url: '/auth/login',
     payload: {
       email: TEST_EMAIL,
       password: TEST_PASSWORD,
+      ...(overrides ?? {}),
     },
   })
 
+  return response
+}
+
+function assertSuccessfulLogin(response: Awaited<ReturnType<typeof login>>) {
   assert.equal(response.statusCode, 200)
   return response.json() as {
     accessToken: string
     refreshToken: string
     expiresIn: number
     user: { email: string }
-    tenant: { slug: string }
+    tenant: { slug: string, id: number }
   }
+}
+
+async function createConfiguredAccessToken(args: {
+  userId: number
+  tenantId: number
+  roles: string[]
+  privateKeyPem: string
+  kid: string
+}) {
+  const privateKey = await importPKCS8(args.privateKeyPem, 'RS256')
+  return new SignJWT({
+    sub: String(args.userId),
+    tenant_id: String(args.tenantId),
+    roles: args.roles,
+    ver: 1,
+    jti: `configured-${args.userId}-${args.tenantId}-${args.roles.join('-')}`,
+  })
+    .setProtectedHeader({ alg: 'RS256', typ: 'JWT', kid: args.kid })
+    .setIssuer('brandsoul-auth-test')
+    .setAudience('brandsoul-api-test')
+    .setIssuedAt()
+    .setExpirationTime('10m')
+    .sign(privateKey)
 }
 
 test('auth authority login emits RS256 token, exposes JWKS, and resolves /auth/me', { concurrency: false }, async () => {
   const harness = await createAuthHarness()
 
   try {
-    const loginResponse = await login(harness.app)
+    const loginResponse = assertSuccessfulLogin(await login(harness.app))
     const jwtSegments = loginResponse.accessToken.split('.')
     assert.equal(jwtSegments.length, 3)
 
@@ -280,7 +409,7 @@ test('refresh rotates tokens and detects refresh token reuse', { concurrency: fa
   const harness = await createAuthHarness()
 
   try {
-    const loginResponse = await login(harness.app)
+    const loginResponse = assertSuccessfulLogin(await login(harness.app))
     const refreshResponse = await harness.app.inject({
       method: 'POST',
       url: '/auth/refresh',
@@ -313,7 +442,7 @@ test('logout revokes the refresh token and logout-all revokes sibling sessions',
   const harness = await createAuthHarness()
 
   try {
-    const firstSession = await login(harness.app)
+    const firstSession = assertSuccessfulLogin(await login(harness.app))
 
     const logoutResponse = await harness.app.inject({
       method: 'POST',
@@ -336,8 +465,8 @@ test('logout revokes the refresh token and logout-all revokes sibling sessions',
     assert.equal(revokedRefreshResponse.statusCode, 401)
     assert.equal(revokedRefreshResponse.json().error.code, 'session_revoked')
 
-    const activeSession = await login(harness.app)
-    const siblingSession = await login(harness.app)
+    const activeSession = assertSuccessfulLogin(await login(harness.app))
+    const siblingSession = assertSuccessfulLogin(await login(harness.app))
     const logoutAllResponse = await harness.app.inject({
       method: 'POST',
       url: '/auth/logout-all',
@@ -535,6 +664,212 @@ test('reset-password accepts a valid token and rejects token reuse', { concurren
       },
     })
     assert.equal(loginResponse.statusCode, 200)
+  } finally {
+    await harness.asyncClose()
+  }
+})
+
+test('multi-tenant login requires explicit tenant selection and never falls back to the first membership', { concurrency: false }, async () => {
+  const harness = await createAuthHarness()
+
+  try {
+    await insertTenant(harness.legacyAuthDbFile, {
+      id: 2,
+      name: 'Second Tenant',
+      slug: 'second-tenant',
+    })
+    await insertMembership(harness.legacyAuthDbFile, {
+      id: 2,
+      userId: 1,
+      tenantId: 2,
+      role: 'admin',
+    })
+
+    const missingSelectionResponse = await login(harness.app)
+    assert.equal(missingSelectionResponse.statusCode, 409)
+    assert.equal(missingSelectionResponse.json().error.code, 'tenant_selection_required')
+
+    const selectedBySlug = assertSuccessfulLogin(await login(harness.app, {
+      tenant_slug: 'second-tenant',
+    }))
+    assert.equal(selectedBySlug.tenant.slug, 'second-tenant')
+
+    const selectedById = assertSuccessfulLogin(await login(harness.app, {
+      tenant_id: 1,
+    }))
+    assert.equal(selectedById.tenant.slug, 'brandsoul-test')
+  } finally {
+    await harness.asyncClose()
+  }
+})
+
+test('refresh validates tenant membership before reissuing tokens', { concurrency: false }, async () => {
+  const harness = await createAuthHarness()
+
+  try {
+    const loginResponse = assertSuccessfulLogin(await login(harness.app))
+    await deleteMembershipForUserAndTenant(harness.legacyAuthDbFile, 1, 1)
+
+    const refreshResponse = await harness.app.inject({
+      method: 'POST',
+      url: '/auth/refresh',
+      payload: {
+        refreshToken: loginResponse.refreshToken,
+      },
+    })
+
+    assert.equal(refreshResponse.statusCode, 401)
+    assert.equal(refreshResponse.json().error.code, 'session_revoked')
+  } finally {
+    await harness.asyncClose()
+  }
+})
+
+test('/tenant/me rechecks membership existence against the token tenant', { concurrency: false }, async () => {
+  const harness = await createAuthHarness()
+
+  try {
+    const loginResponse = assertSuccessfulLogin(await login(harness.app))
+    await deleteMembershipForUserAndTenant(harness.legacyAuthDbFile, 1, 1)
+
+    const tenantResponse = await harness.app.inject({
+      method: 'GET',
+      url: '/tenant/me',
+      headers: {
+        authorization: `Bearer ${loginResponse.accessToken}`,
+      },
+    })
+
+    assert.equal(tenantResponse.statusCode, 401)
+    assert.equal(tenantResponse.json().error.code, 'invalid_token')
+  } finally {
+    await harness.asyncClose()
+  }
+})
+
+test('tenant-scoped token validation blocks cross-tenant token spoofing', { concurrency: false }, async () => {
+  const harness = await createAuthHarness()
+
+  try {
+    await insertTenant(harness.legacyAuthDbFile, {
+      id: 2,
+      name: 'Second Tenant',
+      slug: 'second-tenant',
+    })
+
+    const spoofedToken = await createConfiguredAccessToken({
+      userId: 1,
+      tenantId: 2,
+      roles: ['owner'],
+      privateKeyPem: harness.privateKeyPem,
+      kid: harness.configuredKid,
+    })
+
+    const meResponse = await harness.app.inject({
+      method: 'GET',
+      url: '/auth/me',
+      headers: {
+        authorization: `Bearer ${spoofedToken}`,
+      },
+    })
+
+    assert.equal(meResponse.statusCode, 401)
+    assert.equal(meResponse.json().error.code, 'invalid_token')
+  } finally {
+    await harness.asyncClose()
+  }
+})
+
+test('revoked membership invalidates existing access tokens', { concurrency: false }, async () => {
+  const harness = await createAuthHarness()
+
+  try {
+    const loginResponse = assertSuccessfulLogin(await login(harness.app))
+    await deleteMembershipForUserAndTenant(harness.legacyAuthDbFile, 1, 1)
+
+    const meResponse = await harness.app.inject({
+      method: 'GET',
+      url: '/auth/me',
+      headers: {
+        authorization: `Bearer ${loginResponse.accessToken}`,
+      },
+    })
+
+    assert.equal(meResponse.statusCode, 401)
+    assert.equal(meResponse.json().error.code, 'invalid_token')
+  } finally {
+    await harness.asyncClose()
+  }
+})
+
+test('auth session creation requires sovereign gate and is blocked in degraded mode', { concurrency: false }, async () => {
+  const harness = await createAuthHarness()
+
+  try {
+    harness.app.backendContext.runtimeGovernance.registerStartupFailure({
+      subsystem: 'adaptive-influence-gate-runtime',
+      criticality: 'degraded-allowed',
+      message: 'test degraded mode',
+    })
+
+    const response = await login(harness.app)
+
+    assert.equal(response.statusCode, 503)
+    assert.equal(response.json().error.code, 'INSTITUTIONAL_SOVEREIGN_MUTATION_BLOCKED')
+  } finally {
+    await harness.asyncClose()
+  }
+})
+
+test('auth issuance is blocked when replay verification fails', { concurrency: false }, async () => {
+  const harness = await createAuthHarness()
+
+  try {
+    ;(harness.app.backendContext.runtimeContinuityAttestationService as unknown as {
+      getStatus(): Record<string, unknown>
+    }).getStatus = () => ({
+      attestationIntegrity: 'verified',
+      replayVerificationState: 'failed',
+      recoveryRequired: true,
+      brokenAttestationChains: ['test replay failure'],
+    })
+
+    const response = await login(harness.app)
+
+    assert.equal(response.statusCode, 503)
+    assert.equal(response.json().error.code, 'INSTITUTIONAL_SOVEREIGN_MUTATION_BLOCKED')
+    assert.equal(response.json().attestation.replayVerificationState, 'failed')
+  } finally {
+    await harness.asyncClose()
+  }
+})
+
+test('auth mutation attestation persists for session creation and admin status exposes auth graph', { concurrency: false }, async () => {
+  const harness = await createAuthHarness()
+
+  try {
+    const loginResponse = assertSuccessfulLogin(await login(harness.app))
+
+    await withBackendDb(harness.backendDbFile, async (db) => {
+      const attestationRow = await db.get<{ auth_scope: string, executed: number, lineage_hash: string }>(
+        `
+          SELECT auth_scope, executed, lineage_hash
+          FROM flowmind_auth_sovereign_attestation
+          ORDER BY created_at DESC, rowid DESC
+          LIMIT 1
+        `,
+      )
+
+      assert.equal(attestationRow?.auth_scope, 'auth.session.create')
+      assert.equal(attestationRow?.executed, 1)
+      assert.equal(typeof attestationRow?.lineage_hash, 'string')
+      assert.ok((attestationRow?.lineage_hash?.length ?? 0) > 0)
+    })
+
+    const status = await harness.app.backendContext.auth.authSovereignMutationService.getStatus() as {
+      authAuthorityGraph: unknown[]
+    }
+    assert.equal(Array.isArray(status.authAuthorityGraph), true)
   } finally {
     await harness.asyncClose()
   }

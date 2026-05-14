@@ -102,6 +102,8 @@ test('runtime loop emits approval request command instead of mutating when creat
     assert.equal(result.activeGoals[0]?.type, 'create_entities')
     assert.equal(result.triggers.opportunityDetected, true)
     assert.equal(result.continuousLoop.phase, 'execute')
+    assert.equal(result.valueLoop.autonomousExecutionEligible, true)
+    assert.equal(result.valueLoop.selectedAction, 'create_entity')
     assert.equal(await harness.entityRepository.getEntityById('entity-public-proposed'), null)
     assert.equal(await harness.approvalQueue.getByProposal(source.id, 'proposal-public', 'create_entity'), null)
   } finally {
@@ -176,6 +178,7 @@ test('runtime loop emits execute command instead of creating entity directly', a
     assert.ok(result.proposal)
     assert.equal(result.activeGoals[0]?.type, 'create_entities')
     assert.equal(result.continuousLoop.phase, 'execute')
+    assert.equal(result.commandRequest.action, 'create_entity')
     assert.equal(await harness.entityRepository.getEntityById('entity-sandbox-created'), null)
   } finally {
     await harness.connection.close()
@@ -422,6 +425,135 @@ test('continuous runtime loop prioritizes internal goals and shortens interval u
     assert.equal(result.triggers.memoryPatternDetected, true)
     assert.equal(result.continuousLoop.nextIntervalMs <= 60_000, true)
     assert.equal(result.scores.episodicMemoryRelevance >= 0.8, true)
+    assert.equal(result.valueLoop.leadSignalStrength >= 0.45, true)
+    assert.equal(result.lastOutcomes.length >= 1, true)
+  } finally {
+    await harness.connection.close()
+    await rm(harness.workspace, { recursive: true, force: true })
+  }
+})
+
+test('generate_leads goal emits autonomous execute command with outcome-bound value loop', async () => {
+  const harness = await createHarness()
+
+  try {
+    const source = createTestEntity()
+    source.id = 'entity-lead-autonomous'
+    source.metadata.confidence = 0.86
+    await runWithMutationAuthority({
+      source: 'backend/src/orchestrator/entityRuntimeLoop.test.ts#seedLeadAutonomy',
+      viaExecutor: true,
+    }, async () => {
+      await harness.entityRepository.createEntity({ id: source.id, entityProfile: source })
+      await harness.registry.registerEntity({
+        entityId: source.id,
+        entityType: 'source-brand',
+        market: 'legal',
+        lifecycleState: 'sandbox',
+        autonomyLevel: 'autonomous',
+        riskLevel: 'low',
+        memoryStatus: 'stable',
+        activeGoals: [{
+          type: 'generate_leads',
+          priority: 0.94,
+          impact: 0.9,
+          urgency: 0.9,
+          historicalSuccess: 0.84,
+        }],
+        operatingConstraints: {},
+        healthScore: 0.7,
+        leadGenerationScore: 0.74,
+        memoryConfidence: 0.76,
+        autonomyReadiness: 0.88,
+        riskScore: 0.14,
+        actionQueue: [],
+        lastActions: [{
+          actionId: 'action-prev',
+          goalType: 'generate_leads',
+          actionType: 'route_lead',
+          confidence: 0.78,
+          opportunityScore: 0.8,
+          executedAt: '2026-05-03T09:40:00.000Z',
+        }],
+        lastOutcomes: [{
+          outcomeId: 'outcome-prev',
+          actionId: 'action-prev',
+          status: 'success',
+          impactScore: 0.88,
+          conversionEffect: 0.82,
+          observedAt: '2026-05-03T09:45:00.000Z',
+          signalType: 'portfolio.lead.converted',
+        }],
+        lastDecisionSnapshot: {
+          leadGenerationScore: 0.66,
+          healthScore: 0.67,
+        },
+        rollbackState: { active: false },
+      })
+      await harness.memoryStore.set(source.id, {
+        cognitiveState: { stability: 0.66, adaptationMomentum: 0.7, engagement: 0.6 },
+        strategyProfile: {
+          dominantStrategy: 'lead-conversion',
+          adaptationConfidence: 0.68,
+          strategyBias: { supportBias: 0.34, explorationBias: 0.62, conversionBias: 0.8, cautionBias: 0.28 },
+        },
+        policyProfile: {
+          policyMode: 'balanced',
+          policyStability: 0.64,
+          policyDrift: 0.08,
+          confidenceAdjustmentProfile: { evidenceThreshold: 2 },
+        },
+        adaptiveDecisionProfile: {
+          adaptationConfidence: 0.7,
+          decisionDrift: 0.08,
+          safetyProfile: { criticalConfidenceThreshold: 0.84, minimumEvidence: 2, killSwitchEnabled: false },
+          explorationVsExploitationBalance: { explorationBias: 0.54, exploitationBias: 0.46 },
+        },
+        historicalSignals: {
+          totalInteractions: 8,
+          reliableEvidenceCount: 8,
+          rollingSuccessRate: 0.76,
+          rollingContinuationRate: 0.62,
+          rollingEngagementDelta: 0.32,
+        },
+        episodicMemory: {
+          entries: [{
+            id: 'episode-lead-success',
+            summary: 'qualified legal outreach converted into retained lead',
+            tags: ['lead', 'success', 'conversion'],
+            relevanceScore: 0.9,
+            recordedAt: '2026-05-03T09:30:00.000Z',
+            context: {},
+          }],
+        },
+      })
+      await harness.eventLogRepository.logEvent({
+        entityId: source.id,
+        type: 'portfolio.lead.qualified',
+        timestamp: '2026-05-03T09:50:00.000Z',
+      })
+      await harness.eventLogRepository.logEvent({
+        entityId: source.id,
+        type: 'portfolio.lead.converted',
+        timestamp: '2026-05-03T09:55:00.000Z',
+      })
+    })
+
+    const result = await runEntityRuntimeLoop({
+      entityId: source.id,
+      commandId: 'runtime-lead-autonomous',
+      now: '2026-05-03T10:25:00.000Z',
+      dependencies: harness,
+    })
+
+    assert.equal(result.commandRequest.type, 'entity.runtime.execute')
+    assert.equal(result.commandRequest.proposal, undefined)
+    assert.equal(result.commandRequest.action, 'route_lead')
+    assert.equal(result.valueLoop.autonomousExecutionEligible, true)
+    assert.equal(result.valueLoop.opportunityScore >= 0.7, true)
+    assert.equal(result.valueLoop.outcomeSuccessRate >= 0.6, true)
+    assert.equal(result.lastActions.length >= 2, true)
+    assert.equal(result.lastOutcomes[0]?.status, 'success')
   } finally {
     await harness.connection.close()
     await rm(harness.workspace, { recursive: true, force: true })

@@ -2,6 +2,13 @@ import { open, type Database as SQLiteDatabase } from 'sqlite'
 import sqlite3 from 'sqlite3'
 
 import type { AuthMembershipRecord, AuthTenantRecord, AuthUserRecord } from '../authTypes.js'
+import type {
+  AuthIdentityStoreRepository,
+  CreateAuthMembershipInput,
+  CreateAuthPasswordResetTokenInput,
+  CreateAuthTenantInput,
+  CreateAuthUserInput,
+} from './authIdentityStoreRepository.js'
 
 type UserRow = {
   id: number
@@ -40,6 +47,16 @@ type MembershipUserRow = MembershipRow & {
   user_updated_at: string
 }
 
+type MembershipTenantRow = MembershipRow & {
+  tenant_name: string
+  tenant_slug: string
+  tenant_business_model: 'product' | 'service' | 'hybrid' | 'professional'
+  tenant_plan: string
+  tenant_is_active: number
+  tenant_created_at: string
+  tenant_updated_at: string
+}
+
 type PasswordResetTokenRow = {
   id: number
   user_id: number
@@ -61,6 +78,11 @@ export type AuthPasswordResetTokenRecord = {
 export type AuthMembershipUserRecord = {
   membership: AuthMembershipRecord
   user: AuthUserRecord
+}
+
+export type AuthTenantMembershipRecord = {
+  membership: AuthMembershipRecord
+  tenant: AuthTenantRecord
 }
 
 function mapUserRow(row?: UserRow): AuthUserRecord | null {
@@ -125,7 +147,7 @@ function mapPasswordResetTokenRow(row?: PasswordResetTokenRow): AuthPasswordRese
   }
 }
 
-export class LegacyAuthStoreRepository {
+export class LegacyAuthStoreRepository implements AuthIdentityStoreRepository {
   private dbPromise: Promise<SQLiteDatabase> | null = null
 
   constructor(private readonly sqliteFile: string) {}
@@ -172,6 +194,80 @@ export class LegacyAuthStoreRepository {
       userId,
     )
     return mapMembershipRow(row)
+  }
+
+  async findMembershipForUserAndTenant(userId: number, tenantId: number) {
+    const db = await this.getDb()
+    const row = await db.get<MembershipRow>(
+      `
+        SELECT *
+        FROM memberships
+        WHERE user_id = ?
+          AND tenant_id = ?
+        LIMIT 1
+      `,
+      userId,
+      tenantId,
+    )
+    return mapMembershipRow(row)
+  }
+
+  async listMembershipsForUser(userId: number): Promise<AuthTenantMembershipRecord[]> {
+    const db = await this.getDb()
+    const rows = await db.all<MembershipTenantRow[]>(
+      `
+        SELECT
+          memberships.id,
+          memberships.user_id,
+          memberships.tenant_id,
+          memberships.role,
+          memberships.created_at,
+          tenants.name AS tenant_name,
+          tenants.slug AS tenant_slug,
+          tenants.business_model AS tenant_business_model,
+          tenants.plan AS tenant_plan,
+          tenants.is_active AS tenant_is_active,
+          tenants.created_at AS tenant_created_at,
+          tenants.updated_at AS tenant_updated_at
+        FROM memberships
+        INNER JOIN tenants
+          ON tenants.id = memberships.tenant_id
+        WHERE memberships.user_id = ?
+        ORDER BY memberships.created_at ASC, memberships.id ASC
+      `,
+      userId,
+    )
+
+    return rows
+      .map((row) => {
+        const membership = mapMembershipRow({
+          id: row.id,
+          user_id: row.user_id,
+          tenant_id: row.tenant_id,
+          role: row.role,
+          created_at: row.created_at,
+        })
+        const tenant = mapTenantRow({
+          id: row.tenant_id,
+          name: row.tenant_name,
+          slug: row.tenant_slug,
+          business_model: row.tenant_business_model,
+          plan: row.tenant_plan,
+          is_active: row.tenant_is_active,
+          created_at: row.tenant_created_at,
+          updated_at: row.tenant_updated_at,
+        })
+
+        if (!membership || !tenant) {
+          return null
+        }
+
+        return {
+          membership,
+          tenant,
+        }
+      })
+      .filter((record): record is AuthTenantMembershipRecord => Boolean(record))
   }
 
   async listMembershipUsersByTenant(tenantId: number): Promise<AuthMembershipUserRecord[]> {
@@ -223,7 +319,7 @@ export class LegacyAuthStoreRepository {
       .filter((record): record is AuthMembershipUserRecord => Boolean(record))
   }
 
-  async createUser(input: { name: string; email: string; passwordHash: string }) {
+  async createUser(input: CreateAuthUserInput) {
     const db = await this.getDb()
     const now = new Date().toISOString()
     const result = await db.run(
@@ -241,7 +337,7 @@ export class LegacyAuthStoreRepository {
     return this.findUserById(Number(result.lastID))
   }
 
-  async createTenant(input: { name: string; slug: string; businessModel: AuthTenantRecord['businessModel']; plan?: string }) {
+  async createTenant(input: CreateAuthTenantInput) {
     const db = await this.getDb()
     const now = new Date().toISOString()
     const result = await db.run(
@@ -260,7 +356,7 @@ export class LegacyAuthStoreRepository {
     return this.findTenantById(Number(result.lastID))
   }
 
-  async createMembership(input: { userId: number; tenantId: number; role: string }) {
+  async createMembership(input: CreateAuthMembershipInput) {
     const db = await this.getDb()
     const now = new Date().toISOString()
     const result = await db.run(
@@ -295,7 +391,11 @@ export class LegacyAuthStoreRepository {
     return this.findUserById(userId)
   }
 
-  async createPasswordResetToken(input: { userId: number; token: string; expiresAt: string }) {
+  async updateUserPasswordHash(userId: number, passwordHash: string) {
+    return this.updateUserPassword(userId, passwordHash)
+  }
+
+  async createPasswordResetToken(input: CreateAuthPasswordResetTokenInput) {
     const db = await this.getDb()
     const now = new Date().toISOString()
     const result = await db.run(

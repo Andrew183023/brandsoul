@@ -1,7 +1,14 @@
+import { createHash } from 'node:crypto'
+
 type JsonRecord = Record<string, unknown>
 
 type ProcessBrandInput = {
   requestId: string
+  createdAt?: string
+  authoritySeed?: {
+    tenantId?: number
+    userId?: number
+  }
   entityInput?: {
     brand?: JsonRecord
     context?: {
@@ -45,11 +52,12 @@ function slugify(value: string) {
 
 function createEntityId(seed: string) {
   const normalized = slugify(seed)
+  const fingerprint = createHash('sha256').update(seed).digest('hex').slice(0, 10)
   if (normalized) {
-    return `entity-${normalized}-${Math.random().toString(36).slice(2, 8)}`
+    return `entity-${normalized}-${fingerprint}`
   }
 
-  return `entity-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  return `entity-${fingerprint}`
 }
 
 function readString(value: unknown) {
@@ -109,9 +117,14 @@ function resolveLanguageStyle(styleAnswers?: JsonRecord) {
 function buildFallbackEntity(input: ProcessBrandInput): JsonRecord {
   const brand = input.entityInput?.brand ?? {}
   const styleAnswers = input.entityInput?.context?.styleAnswers ?? {}
-  const now = new Date().toISOString()
+  const now = input.createdAt ?? new Date().toISOString()
   const brandName = pickBrandName(brand)
-  const entityId = createEntityId(`${brandName}-${input.requestId}`)
+  const entityId = createEntityId([
+    brandName,
+    input.requestId,
+    String(input.authoritySeed?.tenantId ?? ''),
+    now,
+  ].join('|'))
   const species = resolveSpecies(input)
   const languageStyle = resolveLanguageStyle(styleAnswers)
   const socialLine =
@@ -191,8 +204,8 @@ function buildFallbackEntity(input: ProcessBrandInput): JsonRecord {
 
 export async function processBrandInBackendEngine(input: ProcessBrandInput): Promise<ProcessBrandResult> {
   try {
-    const distModule = await import('../dist/brain/domain/entity/engine/processBrand.js')
-    const processBrand = (distModule as { processBrand?: (entityInput: unknown, options: JsonRecord) => JsonRecord }).processBrand
+    const sourceModule = await import('../brain/domain/entity/engine/processBrand.js')
+    const processBrand = (sourceModule as { processBrand?: (entityInput: unknown, options: JsonRecord) => JsonRecord }).processBrand
 
     if (typeof processBrand === 'function') {
       const entity = processBrand(input.entityInput, {

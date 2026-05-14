@@ -1,0 +1,73 @@
+name: Backend Runtime Hermetic CI
+
+on:
+  push:
+    paths:
+      - backend/**
+      - .github/workflows/backend-runtime.yml
+  pull_request:
+    paths:
+      - backend/**
+      - .github/workflows/backend-runtime.yml
+
+jobs:
+  backend-runtime:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite:
+          - distributedSovereignty
+          - sovereignPersistenceCoordination
+          - semanticReplayHydration
+          - orchestratorAdminRoutes
+          - runtimeGovernance
+          - institutionalSovereignMutationGate
+          - institutionalRecoveryGovernance
+          - replayIntegrity
+          - semanticMutation
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      NODE_ENV: test
+      FLOWMIND_TEST_ENV_ISOLATION: 'true'
+      FLOWMIND_SKIP_DOTENV: 'true'
+      FLOWMIND_DISABLE_EXTERNAL_PROVIDERS: 'true'
+      TEST_RUNTIME_MODE: isolated
+      RENDER_DEPLOY_MODE: ci-test
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build backend
+        run: npm run build
+
+      - name: Run hermetic suite
+        shell: bash
+        run: |
+          set -eo pipefail
+          npm run test -- "${{ matrix.suite }}" 2>&1 | tee "tap-output-${{ matrix.suite }}.txt"
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-runtime-${{ matrix.suite }}-artifacts
+          path: |
+            backend/tap-output-${{ matrix.suite }}.txt
+            backend/tap-output*.txt
+            backend/tmp/**
+            backend/.tmp/**
+          if-no-files-found: ignore

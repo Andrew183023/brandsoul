@@ -148,6 +148,14 @@ export class ObservabilityService {
         .sort((left, right) => right.count - left.count),
       jobs: Array.from(this.jobMetrics.values())
         .sort((left, right) => right.processed - left.processed),
+      customCounters: Object.fromEntries(
+        Array.from(this.customCounters.entries())
+          .sort(([left], [right]) => left.localeCompare(right)),
+      ),
+      customTimings: Object.fromEntries(
+        Array.from(this.customTimings.entries())
+          .sort(([left], [right]) => left.localeCompare(right)),
+      ),
       collectedAt: new Date().toISOString(),
     }
   }

@@ -1,345 +1,216 @@
 # BrandSoul
 
-## 1. Project Overview
+## Sovereign Institutional Cognitive Runtime
 
-BrandSoul today is a multi-surface software system for running brand-facing entities with controlled decision logic, persisted state, and an economic funnel. The current repository contains three relevant application surfaces:
+BrandSoul is a sovereign institutional cognitive runtime architecture.
 
-- `backend/`: the current TypeScript backend where FlowMind orchestration, sovereign mutation control, the multi-entity runtime, and the portfolio/economic loop are implemented.
-- `brandsoul-frontend/`: the React frontend that consumes backend projections and admin/public routes.
-- `brandsoul/`: a legacy FastAPI application that still exists in the repository for older product flows and supporting services.
+It is not an AI wrapper, not a generic chatbot platform, not a simple orchestration layer, and not an autonomous AGI system.
 
-The operational core described in this document lives in `backend/`.
+The active operational core is in `backend/` and is focused on:
 
-### System relationship
+- replay-safe governance
+- institutional continuity
+- mutation sovereignty
+- semantic replay integrity
+- deterministic operational lineage
+- distributed sovereignty foundations
 
-- **BrandSoul** is the product and repository boundary.
-- **FlowMind** is the decision and cognitive layer used by the TypeScript backend.
-- The **multi-entity system** manages isolated runtime state, goals, risk, autonomy level, approval state, and recent decision snapshots per entity.
-- The **portfolio system** derives signals, routes leads, tracks funnel progression, reconciles converted revenue, and feeds outcome learning back into entity memory and portfolio metrics.
+Repository surfaces:
 
-In practical terms, BrandSoul currently operates as a command-driven entity system where FlowMind proposes or informs actions, the sovereign backend controls mutation, and the portfolio layer measures commercial outcomes.
+- `backend/`: current TypeScript runtime and governance system
+- `brandsoul-frontend/`: React client for admin/public runtime projections
+- `brandsoul/`: legacy FastAPI surface retained for compatibility and migration boundaries
 
-## 2. Core Architecture
+## Current Runtime Capabilities
 
-### 2.1 FlowMind
+Status legend:
 
-FlowMind is the cognitive engine implemented in `backend/src/flowmind` and exposed to the orchestrator through `backend/src/services/flowMindService.ts`.
+- `REAL`: implemented and actively used by runtime paths and tests
+- `PARTIAL`: implemented in meaningful scope but with known operational gaps
+- `FOUNDATION ONLY`: structural primitives exist, but production-grade distributed behavior is not complete
 
-#### Decision model
+| Capability | Status | Reality Statement |
+| --- | --- | --- |
+| Runtime Governance | REAL | Runtime subsystem startup health is tracked and capability gating is enforced by mode. |
+| Replay Governance | REAL | Replay verification and freeze policies exist and are enforced in governance paths. |
+| Recovery Sovereignty | PARTIAL | Governed recovery, attestation, and unlock logic exist, but distributed recovery orchestration is incomplete. |
+| Institutional Continuity Governance | REAL | Continuity mode, unsafe shutdown tracking, and governed startup/shutdown checks are implemented. |
+| Mutation Idempotency | REAL | Command execution ledger and idempotent mutation behavior are implemented for sovereign mutation flows. |
+| Sovereign Mutation Gate | REAL | Mutation authority is fail-closed and institutional gate checks are enforced before protected writes. |
+| Semantic Replay Hydration | REAL | Replay shape integrity and semantic replay hydration guards are implemented and tested. |
+| Persistence Coordination | PARTIAL | Persistence arbitration services exist with coordination semantics, but distributed arbitration is not complete. |
+| Distributed Sovereignty Foundation | FOUNDATION ONLY | Node identity, lineage, attestation, and split-brain primitives exist without consensus or quorum write control. |
+| Hermetic CI/Test Isolation | PARTIAL | Hermetic bootstrap, network guard, isolated runtime mode, and test DB isolation exist; full suite convergence is still in progress. |
 
-The current decision contract is `FlowMindDecisionV2` in `backend/src/flowmind/types/flowMindDecision.ts`.
+## Architecture Overview
 
-It includes:
+### FlowMind
 
-- `intent`, `action`, and `confidence`
-- a deterministic `decisionHash`
-- a structured `responsePlan`
-- explicit `memoryReadSet`
-- explicit `memoryWritePlan`
-- explicit `expectedStateChanges`
-- optional metadata for memory influence and behavioral influence
+FlowMind is the cognitive runtime layer that produces decision envelopes and memory-aware action intent. It does not directly mutate sovereign state. Decisions are passed into governed execution paths where policy, authority, and idempotency are applied.
 
-The backend normalizes and hashes decision input so repeated evaluation of the same semantic input produces the same decision envelope unless the memory state changes.
+### Runtime Governance Layer
 
-#### Memory system
+Runtime governance tracks subsystem readiness and failure states, then maps those states to capability decisions. It supports mode transitions and blocks high-risk operations when runtime safety conditions degrade.
 
-Entity cognitive memory is persisted per entity and includes:
+### Institutional Recovery Layer
 
-- cognitive state
-- strategy profile
-- policy profile
-- adaptive decision profile
-- historical signals
-- episodic memory
+Institutional recovery governs restart safety, continuity attestation, replay verification dependencies, and unlock conditions. Runtime startup is not treated as unconditional; startup is evaluated against continuity and recovery criteria.
 
-The current implementation reads and writes this state through `backend/src/flowmind/memory` and persists it through `backend/src/repositories/entityCognitiveMemoryRepository.ts`.
+### Sovereign Mutation Layer
 
-#### Autonomy policy
+Sovereign mutation enforces authority boundaries and mutation gate controls, then executes protected writes through command-driven paths with execution ledger checks and idempotency guarantees.
 
-FlowMind does not receive unrestricted execution authority.
+### Semantic Replay Layer
 
-The backend evaluates:
+Semantic replay hydration reconstructs replay outputs under contract checks for shape and replay integrity. It is designed to preserve semantic continuity while blocking invalid replay payload conditions.
 
-- comparison against the legacy/orchestrator decision path
-- divergence and stability metrics
-- fallback rate and adaptive success rate
-- recent error rate and decision stability
-- safe, prohibited, and future command zones
+### Persistence Coordination Layer
 
-This policy lives in `backend/src/orchestrator/flowMindAuthorityPolicy.ts`. The current contract supports `manual`, `supervised`, `partial`, and `autonomous` levels, but only specific action types and command zones are eligible for higher authority.
+Persistence coordination manages mutation/persistence ordering and arbitration semantics to reduce unsafe state divergence across runtime and governance concerns.
 
-### 2.2 Sovereign Command System
+### Distributed Sovereignty Layer
 
-The sovereign mutation layer is implemented primarily in `backend/src/orchestrator/sovereignMutationCommandService.ts`.
+Distributed sovereignty is currently a single-node sovereignty system with distributed foundation primitives. It is not a complete distributed consensus runtime.
 
-Its role is to ensure that state mutation happens through explicit commands instead of ad hoc repository writes.
+Current truth:
 
-Current responsibilities include:
+- single-node sovereignty is real
+- distributed sovereignty is foundation-stage only
 
-- lead routing and lifecycle transitions
-- approval handling
-- entity persistence
-- event append flows
-- legal-case related mutations
-- revenue event persistence
-- outcome learning updates
+## Governance Principles
 
-#### Executor
+- fail-closed governance: if governance confidence or authority conditions fail, mutation is blocked
+- append-only lineage: operational evidence and attestation flows favor append behavior over mutable history
+- replay-safe execution: replay paths are governed, verified, and isolated from uncontrolled side effects
+- deterministic mutation lineage: command IDs and ledger-backed replay protection enforce idempotent mutation history
+- continuity attestation: startup/shutdown and runtime continuity signals are persisted for institutional traceability
+- semantic replay integrity: replay payload and shape constraints are validated to prevent semantic corruption
+- capability governance: runtime capabilities are enabled/disabled according to governance mode and risk
+- persistence arbitration: persistence coordination services arbitrate write safety semantics
 
-FlowMind action execution is handled through `backend/src/brain/flowmind/flowMindActionExecutor.ts` and the operational orchestration path in `backend/src/orchestrator/flowMindOperationalService.ts`.
+## Current Runtime Modes
 
-The executor validates actions, applies policy, emits follow-up commands, generates UI effects and scheduled tasks, and runs protected mutations inside an authority context.
+- `normal`: all governed capabilities available under policy and authority constraints
+- `degraded`: runtime remains available with high-risk capability blocking and degraded-readiness metadata
+- `recovery_required`: institutional continuity/recovery requires remediation before full capability unlock
+- `institutional_safe`: continuity state indicates guarded-safe operation with governance and attestation alignment
+- `isolated_test`: hermetic test mode with runtime side effects and external providers disabled unless explicitly enabled
 
-#### Idempotency
+## Recovery Model
 
-Idempotency is implemented with command IDs plus execution ledger checks. Replayed commands are detected and returned as unchanged when the ledger already contains a committed record for the same command.
+Recovery behavior is governed, not ad hoc.
 
-#### Ledger
+Implemented recovery model characteristics:
 
-The execution ledger is persisted through `backend/src/repositories/flowMindExecutionLedgerRepository.ts`.
+- governed recovery: recovery flows pass through institutional governance checks
+- continuity attestation: runtime continuity evidence is persisted and evaluated
+- unsafe shutdown detection: shutdown integrity state is tracked and affects restart policy
+- replay-safe restart: startup validation includes replay safety and continuity dependencies
+- institutional unlock process: runtime unlock is conditional, not automatic
+- recovery lineage: recovery events and continuity state produce auditable lineage records
 
-Current ledger states are:
+## Hermetic CI
 
-- `pending`
-- `committed`
-- `rolled_back`
-- `failed`
+Hermetic CI/test isolation foundations are implemented for backend testing:
 
-This ledger is used to make command replay safe and to prevent duplicate event append or duplicate state transitions.
+- hermetic test bootstrap: test-only environment bootstrap is loaded before suites
+- isolated runtime mode: autonomous loops and side-effect-heavy startup behavior are disabled by default in tests
+- external provider disabling: external market/provider integrations are disabled under hermetic flags
+- no outbound network policy: test network guard blocks outbound HTTP unless allowlisted
+- temporary SQLite strategy: tests use isolated temporary sqlite paths rather than repository-local databases
+- deterministic test isolation: test env defaults and runtime mode are explicitly set by bootstrap
 
-### 2.3 Entity Runtime
+Current status note:
 
-The entity runtime loop is implemented in `backend/src/orchestrator/entityRuntimeLoop.ts`.
+- this is an active foundation and substantial behavior is live
+- full matrix pass convergence is still being hardened
 
-It runs a controlled loop with the following phases:
+## Distributed Foundation (Foundation Only)
 
-- observe
-- evaluate
-- execute
-- cooldown
+Implemented foundation primitives:
 
-The runtime derives scores such as:
+- node identity
+- distributed lineage records
+- distributed attestation records
+- split-brain detection primitives
+- replay federation metadata
+- quorum modeling constructs
 
-- health score
-- lead generation score
-- memory confidence
-- autonomy readiness
-- risk score
-- goal priority score
-- episodic memory relevance
+Not implemented (explicitly absent today):
 
-It also prioritizes active goals and evaluates triggers such as:
+- distributed consensus
+- quorum writes
+- distributed failover orchestration
+- split-brain resolution protocol
+- multi-writer arbitration
+- Raft/Paxos-style coordination
 
-- lead score drop
-- growth stagnation
-- opportunity detected
-- memory pattern detected
-- portfolio gap detected
+This is foundation only, not full distributed sovereignty.
 
-Autonomy level affects the loop interval and whether certain actions can proceed directly, require approval, or are blocked.
+## Current Limitations
 
-## 3. Economic Loop (Real State)
+- single-writer topology remains the operational reality
+- distributed consensus is absent
+- auth sovereignty is still partial
+- distributed recovery orchestration is incomplete
+- quorum authority is modeled but not fully enforced for distributed writes
+- distributed persistence arbitration is incomplete
+- hermetic CI is implemented but not yet fully converged across every targeted suite
 
-The implemented economic loop in the TypeScript backend is:
+## Development And Testing
 
-`signal -> lead -> funnel -> outcome -> revenue -> learning`
-
-### What is implemented and persisted
-
-#### Routed leads
-
-Portfolio signals are derived and persisted, then routed into leads per entity. The portfolio layer currently works with explicit persisted records for signals, leads, proposals, revenue events, and entity metrics.
-
-#### Lead lifecycle
-
-The current lead lifecycle is persisted with these practical states:
-
-- routed
-- qualified
-- contacted
-- converted
-- lost
-
-Lifecycle timestamps and transition events are stored. Current tests validate:
-
-- manual lifecycle progression
-- autonomous progression from routed to converted when thresholds are met
-- autonomous loss marking when timeout or failure signals are present
-- replay safety for converted and lost leads
-
-#### Reconciled revenue model
-
-Converted revenue is not read only from the lead row. It is reconciled through a dedicated revenue event model persisted in `entity_portfolio_lead_revenue_event` and surfaced back into:
-
-- lead payload metadata
-- funnel metrics
-- per-entity portfolio metrics
-
-The current reconciled model stores values such as:
-
-- amount
-- invoice ID
-- payment ID
-- contract ID
-- validation method
-
-#### Outcome-based learning
-
-Lead outcomes are fed back into entity cognitive memory and registry state. Converted and lost outcomes create learning signals that affect later opportunity scoring and preserve lifecycle path history in episodic memory.
-
-### What is real today
-
-- signals are persisted
-- routed leads are persisted
-- lifecycle transitions are persisted
-- converted revenue events are persisted
-- funnel and portfolio metrics are computed from persisted records
-- outcome learning writes back into memory and runtime state
-- replay protection is validated in tests
-
-### What is not yet fully real
-
-- there is no general-purpose autonomous external fulfillment layer that independently closes the loop with third-party systems end to end
-- reconciled revenue accepts externally validated identifiers and methods, but the repository does not yet implement a broad connector framework for invoice, payment, or CRM systems
-- execution remains controlled by internal commands, workers, and approval boundaries rather than unconstrained external automation
-
-## 4. Market Intelligence
-
-Market intelligence is partially implemented inside the portfolio layer.
-
-### Implemented direction
-
-The current system derives opportunity and commercial pressure from:
-
-- recent social and public interaction signals
-- marketplace demand signals for legal entities
-- performance gaps
-- content opportunity gaps
-- persisted lead conversion outcomes
-- reconciled revenue contribution
-- per-entity risk and autonomy readiness
-
-Current read models compute:
-
-- `opportunityScore`
-- `conversionScore`
-- `revenuePotential`
-- `cacEstimate`
-- `ltvEstimate`
-- `roiEstimate`
-
-### Limitations
-
-- the system is currently driven mainly by internal and first-party signals, not by live external market feeds
-- scoring is deterministic and heuristic-based, not a statistical model trained on external datasets
-- the implementation is useful for prioritization and routing, but it is not a standalone market intelligence platform
-
-## 5. Safety And Guarantees
-
-### No mutation outside the sovereign command system
-
-The repository enforces a mutation authority boundary in `backend/src/sovereignty/authorityBoundary.ts`. Protected mutation paths log their caller chain and throw if they are executed outside the executor authority context.
-
-### Idempotency guarantees
-
-Command handlers consult the execution ledger before mutating state. If a committed command is replayed, the handler returns the current persisted result without duplicating effects.
-
-### Replay safety
-
-Replay safety is currently validated for lead conversion, lost-lead handling, and other sovereign command paths that depend on the execution ledger.
-
-### Authority boundary enforcement
-
-FlowMind decisions do not directly mutate state. They pass through:
-
-- policy checks
-- safe action mapping
-- executor validation
-- sovereign command handling
-- transaction boundaries
-
-This keeps side effects auditable and bounded.
-
-## 6. Current Capabilities
-
-Only the following capabilities are documented here because they are implemented and validated in the current backend:
-
-- autonomous lead funnel progression under controlled conditions
-- revenue reconciliation for converted leads
-- outcome-based learning written into entity cognitive memory
-- multi-entity isolation for memory, events, and runtime state
-- decision scoring for divergence, stability, fallback, risk, conversion, and opportunity
-
-## 7. Limitations
-
-- there is no full autonomous external execution layer for arbitrary third-party systems
-- the system depends on controlled loops, background workers, and explicit sovereign command handlers
-- market intelligence is partial and largely first-party; there is no live general external ingestion mesh
-- the FlowMind service still supports degraded and fallback modes when the cognitive adapter is unavailable
-- parts of the repository still include legacy application surfaces, including the FastAPI app in `brandsoul/`
-- some backend routes still contain legacy fallback paths in adjacent domains such as case access and migration boundaries
-
-## 8. Development
-
-### Run the current backend
+Backend baseline commands:
 
 ```bash
 cd backend
-npm install
-Copy-Item .env.example .env
-npm run dev
-```
-
-The current TypeScript backend entrypoint is `src/server.ts`.
-
-### Run backend tests
-
-```bash
-cd backend
-npm test
-```
-
-The backend test runner resolves all `*.test.ts` files under `backend/src` through `backend/scripts/run-tests.mjs`.
-
-### Minimum checks before commit
-
-At minimum, these commands should pass before committing backend work:
-
-```bash
-cd backend
+npm ci
 npm run build
 npm test
 ```
 
-If a change touches the React application, `brandsoul-frontend` should also build successfully before commit.
+Hermetic strategy:
 
-### Git warning
+- tests run through bootstrap-backed isolation
+- isolated test runtime mode is default for CI-safe behavior
+- hermetic suite execution is available through `npm run test:hermetic`
+- CI readiness audit is available through `npm run ci:readiness`
 
-Do not use `git add .` in this repository.
+## Repository Safety
 
-The repository frequently contains local databases, temporary assets, frontend work in progress, and other unrelated changes. Stage explicit paths only.
+- local DB files are ignored and should not be relied on for test truth
+- `.env` and `.env.local` files are not committed and are not required by hermetic tests
+- CI is designed to run isolated from local machine state
+- `RENDER_DEPLOY_MODE` safety must be explicit; test/CI contexts must not behave as production deploy mode
 
-## 9. Architecture Principles
+## Scope Honesty
 
-- **FlowMind is the decision source of truth inside the TypeScript backend.** The orchestrator still compares and governs it, but behavior should not be reimplemented in the frontend.
-- **The system is command-driven.** Mutations are represented as commands and logged effects instead of direct repository edits.
-- **No side effects outside the executor boundary.** Protected mutations require an authority context.
-- **Determinism is preferred.** Decision normalization, hashing, replay checks, and ledger-backed execution are used to keep behavior auditable.
+BrandSoul currently provides a serious governance-oriented runtime core with replay, continuity, mutation, and lineage controls.
 
-## 10. Roadmap
+It does not currently provide a complete distributed consensus runtime, multi-writer distributed arbitration, or unconstrained autonomous execution.
 
-Near-term work that follows directly from the current implementation:
+Client/UI
+   ↓
+Runtime Governance
+   ↓
+FlowMind
+   ↓
+Sovereign Mutation Gate
+   ↓
+Semantic Replay Layer
+   ↓
+Persistence Coordination
+   ↓
+Distributed Sovereignty Foundation
 
-- harden the external execution bridge around controlled third-party confirmation paths
-- expand market signal ingestion beyond current first-party and derived signals
-- connect more real-world feedback into the learning loop with less manual bridging
+## Current Operational Truth
 
-## Repository Structure
+Current production/runtime reality:
 
-```text
-flow_core_group/
-├── backend/              # Current TypeScript backend and FlowMind orchestration layer
-├── brandsoul-frontend/   # React frontend
-├── brandsoul/            # Legacy FastAPI application still present in the repo
-└── README.md
-```
+- single-node institutional sovereignty is operational
+- replay governance is active
+- mutation idempotency is active
+- semantic replay hydration is active
+- distributed sovereignty is foundation-stage only
+- distributed consensus is not implemented
+
+BrandSoul exists to explore governed cognitive runtime architectures where operational continuity, replay safety, mutation authority, and institutional traceability matter more than unconstrained autonomy.

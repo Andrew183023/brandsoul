@@ -273,3 +273,68 @@ test('resolveFlowMindDecision retrieves decay-weighted episodic memory and injec
   assert.equal(result.updatedMemory.episodicMemory.entries[0]?.recordedAt, '2026-04-20T10:00:00.000Z')
   assert.equal((await memoryStore.get('entity-memory'))?.episodicMemory.entries.length, 2)
 })
+
+test('resolveFlowMindDecision converts value-loop success patterns into a lead action', async () => {
+  const result = await resolveFlowMindDecision({
+    entityId: 'entity-value-loop',
+    requestedAt: '2026-05-03T10:25:00.000Z',
+    input: 'continuous legal opportunity detected',
+    context: {
+      autonomyLevel: 'autonomous',
+      activeGoals: [{
+        type: 'generate_leads',
+        priority: 0.94,
+        impact: 0.9,
+        urgency: 0.9,
+        historicalSuccess: 0.82,
+      }],
+      runtimeScores: {
+        healthScore: 0.74,
+        leadGenerationScore: 0.78,
+        memoryRelevance: 0.84,
+        opportunityScore: 0.81,
+        leadSignalStrength: 0.86,
+      },
+      outcomeSummary: {
+        successRate: 0.78,
+        failureRate: 0.12,
+        averageImpact: 0.8,
+        conversionMomentum: 0.76,
+      },
+      lastActions: [{
+        actionId: 'action-1',
+        goalType: 'generate_leads',
+        actionType: 'route_lead',
+        confidence: 0.8,
+        opportunityScore: 0.82,
+        executedAt: '2026-05-03T10:00:00.000Z',
+      }],
+      lastOutcomes: [{
+        outcomeId: 'outcome-1',
+        actionId: 'action-1',
+        status: 'success',
+        impactScore: 0.9,
+        conversionEffect: 0.88,
+        observedAt: '2026-05-03T10:05:00.000Z',
+        signalType: 'portfolio.lead.converted',
+      }],
+      loopSignals: {
+        leadScoreDrop: false,
+        growthStagnation: false,
+        opportunityDetected: true,
+        memoryPatternDetected: true,
+        portfolioGapDetected: false,
+      },
+    },
+    objective: {
+      type: 'sell',
+      priority: 0.94,
+    },
+    memory: createDefaultEntityCognitiveMemory(),
+  })
+
+  assert.equal(result.decision.action, 'route_lead')
+  assert.equal(result.decision.intent, 'growth')
+  assert.equal(result.decision.actionPayload.measurementPlan, 'track-qualified-contact-conversion')
+  assert.equal(((result.updatedMemory.episodicMemory.entries[0]?.context as { actionPayload?: { goalType?: string } } | undefined)?.actionPayload?.goalType), 'generate_leads')
+})

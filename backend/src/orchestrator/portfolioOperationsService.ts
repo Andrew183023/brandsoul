@@ -245,25 +245,41 @@ export class PortfolioOperationsService {
     const revenueEvents = await this.dependencies.revenueEventRepository.list(500)
     const persistedSignals = await this.dependencies.leadSignalRepository.list(500)
     const persistedProposals = await this.dependencies.proposalRepository.list(500)
-    const metrics: PortfolioEntityMetrics[] = []
+    const entitySignalsByEntityId = persistedSignals.reduce<Record<string, PortfolioLeadSignalRecord[]>>((accumulator, signal) => {
+      if (!accumulator[signal.entityId]) {
+        accumulator[signal.entityId] = []
+      }
+      accumulator[signal.entityId].push(signal)
+      return accumulator
+    }, {})
+    const entityLeadsByEntityId = persistedLeads.reduce<Record<string, PortfolioLeadRecord[]>>((accumulator, lead) => {
+      if (!accumulator[lead.entityId]) {
+        accumulator[lead.entityId] = []
+      }
+      accumulator[lead.entityId].push(lead)
+      return accumulator
+    }, {})
+    const entityRevenueEventsByEntityId = revenueEvents.reduce<Record<string, PortfolioLeadRevenueEventRecord[]>>((accumulator, event) => {
+      if (!accumulator[event.entityId]) {
+        accumulator[event.entityId] = []
+      }
+      accumulator[event.entityId].push(event)
+      return accumulator
+    }, {})
 
-    for (const registryEntry of registryEntries) {
+    const metrics = (await Promise.all(registryEntries.map(async (registryEntry) => {
       const entityRecord = await this.dependencies.entityRepository.getEntityById<EntityProfile>(registryEntry.entityId)
       if (!entityRecord) {
-        continue
+        return null
       }
 
-      const entitySignals = persistedSignals.filter((signal) => signal.entityId === registryEntry.entityId)
-      const entityLeads = persistedLeads.filter((lead) => lead.entityId === registryEntry.entityId)
-      const entityRevenueEvents = revenueEvents.filter((event) => event.entityId === registryEntry.entityId)
-      const entityMetrics = this.deriveEntityMetrics({
+      return this.deriveEntityMetrics({
         registryEntry,
-        leadSignals: entitySignals,
-        entityLeads,
-        revenueEvents: entityRevenueEvents,
+        leadSignals: entitySignalsByEntityId[registryEntry.entityId] ?? [],
+        entityLeads: entityLeadsByEntityId[registryEntry.entityId] ?? [],
+        revenueEvents: entityRevenueEventsByEntityId[registryEntry.entityId] ?? [],
       })
-      metrics.push(entityMetrics)
-    }
+    }))).filter((entityMetrics): entityMetrics is PortfolioEntityMetrics => entityMetrics !== null)
 
     const entityCount = metrics.length
     const aggregate = entityCount === 0

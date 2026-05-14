@@ -21,8 +21,9 @@ import {
   type PortfolioProposalRecord,
   type PortfolioProposalStatus,
 } from '../repositories/portfolioProposalRepository.js'
-import { runWithMutationAuthority } from '../sovereignty/authorityBoundary.js'
+import { getInstitutionalSovereignMutationGate } from '../sovereignty/institutionalSovereignMutationGate.js'
 import { FlowMindApprovalQueue, type FlowMindApprovalRecord } from './approvalQueue.js'
+import type { EconomicSnapshotStore } from './economicSnapshotStore.js'
 import { executeFlowMindCommandTransaction, type ExecuteFlowMindCommandResult } from './flowMindCommandTransactionService.js'
 import { hashFlowMindValue } from './flowMindHashing.js'
 import { MultiEntityRegistry, type MultiEntityRegistryRecord, type MultiEntityRiskLevel } from './multiEntityRegistry.js'
@@ -33,6 +34,41 @@ import type { GlobalFeedEngine, GlobalFeedItem } from '../services/globalFeedEng
 import type { MonetizationService } from '../services/monetizationService.js'
 import type { GrowthEngine } from '../domain/growth/GrowthEngine.js'
 import type { JobProducer } from '../jobs/index.js'
+import type {
+  RuntimeGovernanceCapability,
+  RuntimeGovernanceResponseMetadata,
+  RuntimeRiskLevel,
+} from '../services/runtimeGovernanceService.js'
+import type {
+  InstitutionalContinuityCapability,
+  InstitutionalContinuityResponseMetadata,
+  InstitutionalContinuityRiskLevel,
+} from '../services/institutionalContinuityGovernanceService.js'
+import {
+  InstitutionalContinuityBlockedError,
+} from '../services/institutionalContinuityGovernanceService.js'
+
+export class RuntimeGovernanceBlockedError extends Error {
+  readonly code = 'RUNTIME_GOVERNANCE_BLOCKED'
+  readonly statusCode = 503
+  readonly runtimeMode: RuntimeGovernanceResponseMetadata['runtimeMode']
+  readonly degradedReason?: string
+  readonly blockedCapabilities: RuntimeGovernanceResponseMetadata['blockedCapabilities']
+  readonly governanceDecision: RuntimeGovernanceResponseMetadata['governanceDecision']
+
+  constructor(metadata: RuntimeGovernanceResponseMetadata) {
+    super('Command execution is blocked while runtime is in degraded mode.')
+    this.name = 'RuntimeGovernanceBlockedError'
+    this.runtimeMode = metadata.runtimeMode
+    this.degradedReason = metadata.degradedReason
+    this.blockedCapabilities = metadata.blockedCapabilities
+    this.governanceDecision = metadata.governanceDecision
+  }
+}
+
+export function isRuntimeGovernanceBlockedError(error: unknown): error is RuntimeGovernanceBlockedError {
+  return error instanceof RuntimeGovernanceBlockedError
+}
 
 type SovereignCommandAction =
   | 'entity.event.append'
@@ -430,9 +466,29 @@ export type SovereignMutationCommandResult =
   | PortfolioScanResult
   | PublicExportViewRecordResult
 
+export type SovereignMutationCommandGovernedResult =
+  SovereignMutationCommandResult
+  & RuntimeGovernanceResponseMetadata
+  & InstitutionalContinuityResponseMetadata
+
 export type SovereignMutationCommandServiceDependencies = {
   connection: BackendDatabase
+  runtimeGovernance: {
+    evaluateCapability(args: {
+      capability: RuntimeGovernanceCapability
+      riskLevel: RuntimeRiskLevel
+      now?: string
+    }): RuntimeGovernanceResponseMetadata
+  }
+  continuityGovernance: {
+    evaluateCapability(args: {
+      capability: InstitutionalContinuityCapability
+      riskLevel: InstitutionalContinuityRiskLevel
+      now?: string
+    }): InstitutionalContinuityResponseMetadata
+  }
   flowMindService?: FlowMindPort
+  economicSnapshotStore?: EconomicSnapshotStore
   relationshipEngine?: RelationshipEngine
   socialSignalEngine?: SocialSignalEngine
   globalFeedEngine?: GlobalFeedEngine
@@ -1126,6 +1182,55 @@ function deriveEntityMetrics(args: {
 export class SovereignMutationCommandService {
   constructor(private readonly dependencies: SovereignMutationCommandServiceDependencies) {}
 
+  private resolveGovernanceForCommand(command: SovereignMutationCommand): {
+    capability: RuntimeGovernanceCapability
+    riskLevel: RuntimeRiskLevel
+  } {
+    if (
+      command.type === 'public.interaction.resolve'
+      || command.type === 'public.export.view.record'
+      || command.type === 'flowmind.partial.telemetry.record'
+    ) {
+      return {
+        capability: 'public.interaction.respond',
+        riskLevel: 'low',
+      }
+    }
+
+    if (command.type === 'orchestrator.command.execute') {
+      return {
+        capability: 'orchestrator.command.execute',
+        riskLevel: 'high',
+      }
+    }
+
+    return {
+      capability: 'orchestrator.command.execute',
+      riskLevel: 'high',
+    }
+  }
+
+  private commandAffectsEconomicSnapshot(type: SovereignCommandAction | SovereignMutationCommand['type']) {
+    return type === 'entity.create'
+      || type === 'lead.qualify'
+      || type === 'lead.contact'
+      || type === 'lead.convert'
+      || type === 'lead.mark_lost'
+      || type === 'portfolio.lead.route'
+      || type === 'portfolio.scan'
+      || type === 'portfolio.proposal.transition'
+      || type === 'portfolio.proposal.evaluate'
+      || type === 'approval.resolve'
+  }
+
+  private async refreshEconomicSnapshotIfNeeded(type: SovereignMutationCommand['type']) {
+    if (!this.commandAffectsEconomicSnapshot(type) || !this.dependencies.economicSnapshotStore) {
+      return
+    }
+
+    await this.dependencies.economicSnapshotStore.refresh()
+  }
+
   private async evaluateAutonomousLeadProgression(args: {
     lead: PortfolioLeadRecord
     now: string
@@ -1307,53 +1412,116 @@ export class SovereignMutationCommandService {
     return null
   }
 
-  async submitCommand(command: SovereignMutationCommand): Promise<SovereignMutationCommandResult> {
-    return runWithMutationAuthority({
-      source: 'backend/src/orchestrator/sovereignMutationCommandService.ts#submitCommand',
-      viaExecutor: true,
-    }, async () => {
+  async submitCommand(command: SovereignMutationCommand): Promise<SovereignMutationCommandGovernedResult> {
+    const continuityMetadata = this.dependencies.continuityGovernance.evaluateCapability({
+      capability: 'sovereign.mutation',
+      riskLevel: 'high',
+    })
+    if (!continuityMetadata.continuityDecision.allowed) {
+      throw new InstitutionalContinuityBlockedError(continuityMetadata)
+    }
+
+    const governanceInput = this.resolveGovernanceForCommand(command)
+    const governanceMetadata = this.dependencies.runtimeGovernance.evaluateCapability(governanceInput)
+    if (!governanceMetadata.governanceDecision.allowed) {
+      throw new RuntimeGovernanceBlockedError(governanceMetadata)
+    }
+
+    return getInstitutionalSovereignMutationGate().evaluateAndExecute({
+      authoritySource: 'backend/src/orchestrator/sovereignMutationCommandService.ts#submitCommand',
+      context: {
+        mutationType: command.type,
+        mutationScope: command.type.startsWith('approval.')
+          ? 'queue'
+          : command.type.startsWith('portfolio.')
+            ? 'runtime'
+            : command.type.startsWith('lead.')
+              ? 'entity'
+              : command.type.startsWith('public.')
+                ? 'entity'
+                : 'entity',
+        requestedCapability: governanceInput.capability,
+        runtimeMode: governanceMetadata.runtimeMode,
+        continuityMode: continuityMetadata.continuityMode,
+        replayVerificationState: 'verified',
+        attestationIntegrity: 'verified',
+        recoveryRequired: continuityMetadata.recoveryRequired,
+        actor: command.type.startsWith('public.') ? 'public' : 'governance',
+        traceId: command.commandId,
+      },
+      work: async () => {
+      let result: SovereignMutationCommandResult
+
       switch (command.type) {
         case 'entity.event.append':
-          return this.executeEntityEventAppend(command)
+          result = await this.executeEntityEventAppend(command)
+          break
         case 'entity.create':
-          return this.executeEntityCreate(command)
+          result = await this.executeEntityCreate(command)
+          break
         case 'entity.profile.persist':
-          return this.executeEntityProfilePersist(command)
+          result = await this.executeEntityProfilePersist(command)
+          break
         case 'entity.relationship.interaction.record':
-          return this.executeEntityRelationshipInteractionRecord(command)
+          result = await this.executeEntityRelationshipInteractionRecord(command)
+          break
         case 'flowmind.partial.telemetry.record':
-          return this.executeFlowMindPartialTelemetryRecord(command)
+          result = await this.executeFlowMindPartialTelemetryRecord(command)
+          break
         case 'approval.resolve':
-          return this.executeApprovalResolve(command)
+          result = await this.executeApprovalResolve(command)
+          break
         case 'legal.case.assign':
-          return this.executeLoggedEntityEvent(command, 'legal.case.assigned', command.entityId, command.occurredAt, command.payload)
+          result = await this.executeLoggedEntityEvent(command, 'legal.case.assigned', command.entityId, command.occurredAt, command.payload)
+          break
         case 'legal.case.close':
-          return this.executeLoggedEntityEvent(command, 'legal.case.closed', command.entityId, command.occurredAt, command.payload)
+          result = await this.executeLoggedEntityEvent(command, 'legal.case.closed', command.entityId, command.occurredAt, command.payload)
+          break
         case 'legal.case.message.append':
-          return this.executeLoggedEntityEvent(command, 'legal.case.message.appended', command.entityId, command.occurredAt, command.payload)
+          result = await this.executeLoggedEntityEvent(command, 'legal.case.message.appended', command.entityId, command.occurredAt, command.payload)
+          break
         case 'lead.qualify':
-          return this.executePortfolioLeadTransition(command, 'qualified', 'portfolio.lead.qualified')
+          result = await this.executePortfolioLeadTransition(command, 'qualified', 'portfolio.lead.qualified')
+          break
         case 'lead.contact':
-          return this.executePortfolioLeadTransition(command, 'contacted', 'portfolio.lead.contacted')
+          result = await this.executePortfolioLeadTransition(command, 'contacted', 'portfolio.lead.contacted')
+          break
         case 'lead.convert':
-          return this.executePortfolioLeadTransition(command, 'converted', 'portfolio.lead.converted')
+          result = await this.executePortfolioLeadTransition(command, 'converted', 'portfolio.lead.converted')
+          break
         case 'lead.mark_lost':
-          return this.executePortfolioLeadTransition(command, 'lost', 'portfolio.lead.lost')
+          result = await this.executePortfolioLeadTransition(command, 'lost', 'portfolio.lead.lost')
+          break
         case 'orchestrator.command.execute':
-          return this.executeOrchestratorCommand(command)
+          result = await this.executeOrchestratorCommand(command)
+          break
         case 'portfolio.lead.route':
-          return this.executePortfolioLeadRoute(command)
+          result = await this.executePortfolioLeadRoute(command)
+          break
         case 'portfolio.scan':
-          return this.executePortfolioScan(command)
+          result = await this.executePortfolioScan(command)
+          break
         case 'portfolio.proposal.transition':
-          return this.executePortfolioProposalTransition(command)
+          result = await this.executePortfolioProposalTransition(command)
+          break
         case 'portfolio.proposal.evaluate':
-          return this.executePortfolioProposalEvaluate(command)
+          result = await this.executePortfolioProposalEvaluate(command)
+          break
         case 'public.export.view.record':
-          return this.executePublicExportViewRecord(command)
+          result = await this.executePublicExportViewRecord(command)
+          break
         case 'public.interaction.resolve':
-          return this.executeLoggedEntityEvent(command, 'public.interaction.resolved', command.entityId, command.occurredAt, command.payload)
+          result = await this.executeLoggedEntityEvent(command, 'public.interaction.resolved', command.entityId, command.occurredAt, command.payload)
+          break
       }
+
+      await this.refreshEconomicSnapshotIfNeeded(command.type)
+      return {
+        ...result,
+        ...governanceMetadata,
+        ...continuityMetadata,
+      } as SovereignMutationCommandGovernedResult
+      },
     })
   }
 

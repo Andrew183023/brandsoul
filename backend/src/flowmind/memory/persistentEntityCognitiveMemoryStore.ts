@@ -1,5 +1,6 @@
 import type { EntityCognitiveMemoryRepository } from '../../repositories/entityCognitiveMemoryRepository.js'
 import { traceMutation } from '../../sovereignty/authorityBoundary.js'
+import type { InstitutionalContinuityGovernanceService } from '../../services/institutionalContinuityGovernanceService.js'
 import { hydrateEntityCognitiveMemory, type EntityCognitiveMemory } from './entityCognitiveMemory.js'
 import type { EntityCognitiveMemoryStore } from './entityCognitiveMemoryStore.js'
 import { InMemoryEntityCognitiveMemoryStore } from './inMemoryEntityCognitiveMemoryStore.js'
@@ -7,6 +8,7 @@ import { InMemoryEntityCognitiveMemoryStore } from './inMemoryEntityCognitiveMem
 export type CreatePersistentEntityCognitiveMemoryStoreOptions = {
   repository: EntityCognitiveMemoryRepository
   fallbackStore?: EntityCognitiveMemoryStore
+  continuityGovernance?: InstitutionalContinuityGovernanceService
 }
 
 export class PersistentEntityCognitiveMemoryStore implements EntityCognitiveMemoryStore {
@@ -23,6 +25,10 @@ export class PersistentEntityCognitiveMemoryStore implements EntityCognitiveMemo
         return hydrateEntityCognitiveMemory(record.memory)
       }
     } catch {
+      await this.options.continuityGovernance?.registerDegradedMemoryFallback({
+        entityId,
+        reason: 'entity cognitive memory repository read failed',
+      })
       return this.fallbackStore.get(entityId)
     }
 
@@ -38,10 +44,18 @@ export class PersistentEntityCognitiveMemoryStore implements EntityCognitiveMemo
     })
     const hydratedMemory = hydrateEntityCognitiveMemory(memory)
     await this.fallbackStore.set(entityId, hydratedMemory)
-    await this.options.repository.save({
-      entityId,
-      memory: hydratedMemory,
-    })
+    try {
+      await this.options.repository.save({
+        entityId,
+        memory: hydratedMemory,
+      })
+    } catch (error) {
+      await this.options.continuityGovernance?.registerPersistenceTruthfulnessFailure({
+        entityId,
+        reason: 'entity cognitive memory repository write failed',
+      })
+      throw error
+    }
   }
 }
 

@@ -10,6 +10,7 @@ import { SignJWT, importPKCS8 } from 'jose'
 
 import { createTestEntity } from '../brain/flowmind/testUtils.js'
 import type { BackendDatabase } from '../db/index.js'
+import type { RevenueAttributionRecord } from '../execution/revenue/revenueAttributionEngine.js'
 import type { JobWorker } from '../jobs/index.js'
 import type { FlowMindApprovalQueue } from '../orchestrator/approvalQueue.js'
 import type { MultiEntityRegistry } from '../orchestrator/multiEntityRegistry.js'
@@ -52,6 +53,31 @@ type AppWithContext = FastifyInstance & {
     }
     entityCognitiveMemoryStore: {
       get(entityId: string): Promise<{ episodicMemory: { entries: Array<{ id: string; context?: Record<string, unknown> }> } } | null>
+    }
+    sovereignExecutionSnapshotStore: {
+      setSnapshot(snapshot: {
+        status: 'warming' | 'ready'
+        generatedAt: string
+        executions: Array<Record<string, unknown>>
+        metrics: {
+          executionCount: number
+          successCount: number
+          failedCount: number
+          revenueAttributed: number
+        }
+      }): void
+    }
+    revenueAttributionSnapshotStore: {
+      setSnapshot(snapshot: {
+        status: 'warming' | 'ready'
+        generatedAt: string
+        attributions: RevenueAttributionRecord[]
+        metrics: {
+          attributionCount: number
+          attributedRevenue: number
+          unresolvedRevenueEventCount: number
+        }
+      }): void
     }
     socialSignalRepositoryFull?: {
       registerSignal(input: {
@@ -293,6 +319,110 @@ test('portfolio admin reads are pure and proposals come from portfolio scan comm
 
     const approvals = await harness.app.backendContext.flowMindApprovalQueue.list()
     assert.equal(approvals.length >= 1, true)
+  } finally {
+    await harness.close()
+  }
+})
+
+test('execution admin endpoints return read-only snapshot state with freshness metadata', { concurrency: false }, async () => {
+  const harness = await createTestApp()
+
+  try {
+    const token = await createAccessToken({
+      userId: 1,
+      tenantId: 1,
+      roles: ['admin'],
+      privateKeyPem: harness.privateKeyPem,
+      kid: harness.configuredKid,
+    })
+    const executionGeneratedAt = '2026-05-06T10:00:00.000Z'
+    const revenueGeneratedAt = '2026-05-06T10:01:00.000Z'
+    const attributionRecord: RevenueAttributionRecord = {
+      attributionId: 'revenue-attribution:test-lead:abc123',
+      marketSignalId: 'market-signal-1',
+      opportunityId: 'opportunity-1',
+      proposalId: 'proposal-1',
+      executionId: 'execution-1',
+      generatedLeadId: 'lead-1',
+      revenue: 2400,
+      currency: 'USD',
+      recognizedAt: '2026-05-06T09:59:00.000Z',
+      revenueEventId: 'revenue-1',
+      invoiceId: 'inv-1',
+      paymentId: 'pay-1',
+      contractId: 'contract-1',
+      sourceSystem: 'billing-core',
+      lineageKey: 'market-signal-1>opportunity-1>proposal-1>execution-1>lead-1',
+      revenueFingerprint: 'revenue-1|inv-1|pay-1|contract-1',
+      attributedAt: revenueGeneratedAt,
+      lineage: [
+        { stage: 'market-signal', id: 'market-signal-1' },
+        { stage: 'opportunity', id: 'opportunity-1' },
+        { stage: 'proposal', id: 'proposal-1' },
+        { stage: 'execution', id: 'execution-1' },
+        { stage: 'generated-lead', id: 'lead-1' },
+        { stage: 'revenue', id: 'revenue:node-1' },
+      ],
+      resultSummary: 'Attributed USD 2400 to generated lead lead-1.',
+    }
+
+    harness.app.backendContext.sovereignExecutionSnapshotStore.setSnapshot({
+      status: 'ready',
+      generatedAt: executionGeneratedAt,
+      executions: [{
+        executionId: 'execution-1',
+        proposalId: 'proposal-1',
+        entityId: 'entity-1',
+        actionType: 'portfolio.lead.route',
+        executionStatus: 'completed',
+        startedAt: executionGeneratedAt,
+        completedAt: executionGeneratedAt,
+        resultSummary: 'Created internal lead workflow for Entity 1.',
+        generatedLeadId: 'lead-1',
+        revenueAttributed: 2400,
+      }],
+      metrics: {
+        executionCount: 1,
+        successCount: 1,
+        failedCount: 0,
+        revenueAttributed: 2400,
+      },
+    })
+    harness.app.backendContext.revenueAttributionSnapshotStore.setSnapshot({
+      status: 'ready',
+      generatedAt: revenueGeneratedAt,
+      attributions: [attributionRecord],
+      metrics: {
+        attributionCount: 1,
+        attributedRevenue: 2400,
+        unresolvedRevenueEventCount: 0,
+      },
+    })
+
+    const [executions, revenueAttribution] = await Promise.all([
+      harness.app.inject({ method: 'GET', url: '/admin/executions', headers: { authorization: `Bearer ${token}` } }),
+      harness.app.inject({ method: 'GET', url: '/admin/revenue-attribution', headers: { authorization: `Bearer ${token}` } }),
+    ])
+
+    assert.equal(executions.statusCode, 200)
+    assert.equal(revenueAttribution.statusCode, 200)
+
+    const executionsBody = executions.json()
+    const revenueAttributionBody = revenueAttribution.json()
+
+    assert.equal(executionsBody.generatedAt, executionGeneratedAt)
+    assert.equal(executionsBody.executions.length, 1)
+    assert.equal(executionsBody.executions[0].executionId, 'execution-1')
+    assert.equal(executionsBody.freshness.ready, true)
+    assert.equal(typeof executionsBody.freshness.updatedAt, 'string')
+    assert.equal(typeof executionsBody.sources.governanceFreshness.refreshIntervalMs, 'number')
+
+    assert.equal(revenueAttributionBody.generatedAt, revenueGeneratedAt)
+    assert.equal(revenueAttributionBody.attributions.length, 1)
+    assert.equal(revenueAttributionBody.attributions[0].attributionId, attributionRecord.attributionId)
+    assert.equal(revenueAttributionBody.metrics.attributedRevenue, 2400)
+    assert.equal(revenueAttributionBody.freshness.ready, true)
+    assert.equal(typeof revenueAttributionBody.freshness.updatedAt, 'string')
   } finally {
     await harness.close()
   }

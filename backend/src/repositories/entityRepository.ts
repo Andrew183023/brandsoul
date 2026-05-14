@@ -89,6 +89,17 @@ function mapRowToStoredEntityProfile<T extends EntityProfileDocument>(row?: {
 export class EntityRepository {
   constructor(private readonly db: BackendDatabase) {}
 
+  async countEntities(): Promise<number> {
+    const row = await this.db.get<{ total: number }>(
+      `
+        SELECT COUNT(*) AS total
+        FROM entity_profile
+      `,
+    )
+
+    return Number(row?.total ?? 0)
+  }
+
   async createEntity<T extends EntityProfileDocument>(input: CreateEntityInput<T>): Promise<StoredEntityProfile<T>> {
     traceMutation({
       source: 'backend/src/repositories/entityRepository.ts#createEntity',
@@ -170,6 +181,12 @@ export class EntityRepository {
   }
 
   async listEntities<T extends EntityProfileDocument>(limit = 200): Promise<Array<StoredEntityProfile<T>>> {
+    return this.listEntitiesPage<T>({ limit, offset: 0 })
+  }
+
+  async listEntitiesPage<T extends EntityProfileDocument>(args: { limit?: number; offset?: number } = {}): Promise<Array<StoredEntityProfile<T>>> {
+    const limit = Math.max(1, Math.trunc(args.limit ?? 200))
+    const offset = Math.max(0, Math.trunc(args.offset ?? 0))
     const rows = await this.db.all<Array<{
       id: string
       owner_id: string | null
@@ -184,8 +201,10 @@ export class EntityRepository {
         FROM entity_profile
         ORDER BY updated_at DESC
         LIMIT ?
+        OFFSET ?
       `,
       limit,
+      offset,
     )
 
     return rows

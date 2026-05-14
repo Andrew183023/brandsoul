@@ -1,5 +1,6 @@
 export type AuthErrorCode =
   | 'invalid_credentials'
+  | 'tenant_selection_required'
   | 'invalid_registration'
   | 'email_already_registered'
   | 'invalid_token'
@@ -25,6 +26,10 @@ export class AuthError extends Error {
 
   static invalidCredentials() {
     return new AuthError('invalid_credentials', 401, 'Invalid credentials.')
+  }
+
+  static tenantSelectionRequired(details?: Record<string, unknown>) {
+    return new AuthError('tenant_selection_required', 409, 'Tenant selection is required for multi-tenant accounts.', details)
   }
 
   static invalidRegistration(message = 'Invalid registration payload.') {
@@ -82,6 +87,7 @@ export function toAuthErrorResponse(error: AuthError) {
     error: {
       code: error.code,
       message: error.message,
+      ...(error.details ? { details: error.details } : {}),
     },
   }
 }

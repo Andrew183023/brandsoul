@@ -11,6 +11,7 @@ type ExportRecord = {
 type PublicProfile = {
   schemaVersion: 1
   entityId: string
+  canonicalSlug: string
   name: string
   species: string
   avatarExportRef?: string
@@ -52,6 +53,9 @@ export function mapEntityProfileToPublicProfile(args: {
   const social = asRecord(entity.social)
   const finalForm = asRecord(entity.finalForm)
   const identity = asRecord(finalForm.identity)
+  const canonicalIdentity = asRecord(entity.canonicalIdentity)
+  const canonicalIdentityRecord = asRecord(canonicalIdentity.identity)
+  const canonicalSparkRecord = asRecord(canonicalIdentity.spark)
   const relational = asRecord(entity.relational)
   const behaviorState = asRecord(relational.behaviorState)
   const progression = asRecord(relational.progression)
@@ -62,6 +66,7 @@ export function mapEntityProfileToPublicProfile(args: {
   const events = args.events ?? []
 
   const name =
+    readString(canonicalIdentityRecord.canonicalName) ??
     readString(identity.name) ??
     readString(social.publicName) ??
     readString(entity.id) ??
@@ -86,14 +91,16 @@ export function mapEntityProfileToPublicProfile(args: {
   return {
     schemaVersion: 1,
     entityId: String(entity.id),
+    canonicalSlug: readString(canonicalIdentityRecord.canonicalSlug) ?? '',
     name,
-    species: readString(asRecord(entity.manifestation).mode) ?? 'unknown',
+    species: readString(canonicalSparkRecord.sparkArchetype) ?? readString(asRecord(entity.manifestation).mode) ?? 'unknown',
     avatarExportRef,
     tagline:
       readString(identity.socialLine) ??
       readString(identity.openingLine) ??
       readString(identity.manifesto),
     behaviorTone:
+      readString(canonicalSparkRecord.sparkTone) ??
       readString(behaviorState.behavioralTemperature) ??
       readString(asRecord(entity.context).languageStyle),
     evolutionLevel: readNumber(progression.level),

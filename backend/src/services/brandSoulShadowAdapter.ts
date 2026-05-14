@@ -4,6 +4,7 @@ import type { EntityCognitiveMemory } from '../flowmind/memory/entityCognitiveMe
 import { createBrandSoulToFlowMindAdapter, type BrandSoulAdapterDependencies } from '../flowmind/decision/brandSoulToFlowMindAdapter.js'
 import type { FlowMindDecisionAdapter } from '../flowmind/index.js'
 import type { FlowMindAdapterLoadStatus } from './flowMindPort.js'
+import { requireCanonicalEntityIdentity } from '../entities/identity/entityIdentityBuilder.js'
 
 type BrandSoulRuntimeModule = {
   resolveBrandSoulDecision: BrandSoulAdapterDependencies['resolveBrandSoulDecision']
@@ -71,56 +72,42 @@ function readExportFormats(entityProfile: EntityProfile) {
 }
 
 function resolveTone(entityProfile: EntityProfile) {
-  const languageStyle = readStyleAnswers(entityProfile).languageStyle
-  if (languageStyle === 'technical') {
-    return {
-      primary: 'consultative',
-      modifiers: ['direct'],
-    }
-  }
-
+  const canonical = requireCanonicalEntityIdentity(entityProfile, 'brandSoulShadowAdapter.resolveTone')
   return {
-    primary: 'welcoming',
-    modifiers: ['warm'],
+    primary: canonical.persona.communicationStyle,
+    modifiers: canonical.persona.personalityTraits.slice(0, 2),
   }
 }
 
 function resolveRelationalStyle(entityProfile: EntityProfile) {
-  const actionStyle = readStyleAnswers(entityProfile).actionStyle
-  if (actionStyle === 'consultive') {
-    return {
-      primaryMode: 'advisor',
-      connectionIntent: 'clarify-and-guide',
-      trustSignals: ['technical-clarity', 'measured-guidance'],
-    }
-  }
-
+  const canonical = requireCanonicalEntityIdentity(entityProfile, 'brandSoulShadowAdapter.resolveRelationalStyle')
   return {
-    primaryMode: 'guide',
-    connectionIntent: 'orient-and-support',
-    trustSignals: ['consistent-presence'],
+    primaryMode: canonical.persona.responseBehaviorProfile.primaryObjective,
+    connectionIntent: canonical.persona.escalationStyle,
+    trustSignals: canonical.persona.personalityTraits.slice(0, 2),
   }
 }
 
 function resolveCommercialRole(entityProfile: EntityProfile) {
-  return readExportFormats(entityProfile).length > 0 ? 'guide' : 'educator'
+  return requireCanonicalEntityIdentity(entityProfile, 'brandSoulShadowAdapter.resolveCommercialRole')
+    .persona.responseBehaviorProfile.primaryObjective
 }
 
 function buildBrandSoulIdentityProfile(entityProfile: EntityProfile) {
   const styleAnswers = readStyleAnswers(entityProfile)
-  const identity = entityProfile.finalForm.identity ?? {}
-  const publicName = entityProfile.social?.publicName ?? entityProfile.id
+  const canonicalIdentity = requireCanonicalEntityIdentity(entityProfile, 'brandSoulShadowAdapter.buildBrandSoulIdentityProfile')
+  const publicName = canonicalIdentity.identity.canonicalName
 
   return {
-    id: entityProfile.id,
+    id: canonicalIdentity.identity.entityId,
     brandName: publicName,
-    essence: identity.manifesto ?? identity.socialLine ?? 'adaptive brand presence',
+    essence: canonicalIdentity.persona.businessDescription,
     tone: resolveTone(entityProfile),
     relationalStyle: resolveRelationalStyle(entityProfile),
     commercialRole: resolveCommercialRole(entityProfile),
     immutableTraits: [
       entityProfile.context?.brandCategory,
-      ...(identity.toneKeywords ?? []),
+      ...canonicalIdentity.persona.personalityTraits,
     ].filter((value, index, array) => typeof value === 'string' && value.length > 0 && array.indexOf(value) === index),
     adaptableTraits: [
       {
@@ -146,10 +133,10 @@ function buildBrandSoulIdentityProfile(entityProfile: EntityProfile) {
       },
     ],
     visualSignature: {
-      archetypeHint: identity.archetype,
+      archetypeHint: canonicalIdentity.spark.sparkArchetype,
       bodyMotif: entityProfile.context?.brandCategory,
-      coreMotif: identity.name ?? publicName,
-      fieldMotif: identity.socialLine ?? 'presence-field',
+      coreMotif: publicName,
+      fieldMotif: canonicalIdentity.transformation.auraProfile,
       motionPrinciples: [entityProfile.behavior?.rhythm?.base ?? 'steady'],
       colorIntent: entityProfile.palette?.primary,
     },
@@ -157,14 +144,14 @@ function buildBrandSoulIdentityProfile(entityProfile: EntityProfile) {
 }
 
 function buildBrandSoulState(entityProfile: EntityProfile, now: string) {
+  const canonical = requireCanonicalEntityIdentity(entityProfile, 'brandSoulShadowAdapter.buildBrandSoulState')
   const actionStyle = readStyleAnswers(entityProfile).actionStyle
-  const hasExports = readExportFormats(entityProfile).length > 0
 
   return {
-    currentMood: hasExports ? 'focused' : 'curious',
-    currentIntent: hasExports ? 'recommend' : 'assist',
-    currentFocus: entityProfile.finalForm.identity?.openingLine ?? 'orchestrator-command',
-    energyLevel: clamp(entityProfile.behavior?.rhythm?.pulse ?? 0.42),
+    currentMood: canonical.spark.sparkState,
+    currentIntent: canonical.persona.responseBehaviorProfile.primaryObjective,
+    currentFocus: canonical.persona.businessDescription,
+    energyLevel: clamp(canonical.transformation.interactionEnergyProfile.baseline ?? entityProfile.behavior?.rhythm?.pulse ?? 0.42),
     interactionMode: actionStyle === 'consultive' ? 'guidance' : 'presentation',
     lastUpdatedAt: now,
   }
@@ -225,6 +212,8 @@ function buildBrandSoulContextFromFlowMind(args: {
   if (!entityProfile) {
     return args.input.context
   }
+
+  requireCanonicalEntityIdentity(entityProfile, 'brandSoulShadowAdapter.buildBrandSoulContextFromFlowMind')
 
   return {
     identity: buildBrandSoulIdentityProfile(entityProfile),
