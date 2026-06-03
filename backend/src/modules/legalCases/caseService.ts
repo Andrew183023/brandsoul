@@ -30,6 +30,32 @@ type CaseMetadataWithAutoDispatch = Record<string, unknown> & {
   autoDispatch?: AutoDispatchState
 }
 
+function readCreateCaseReplayKey(input: CreateCaseInput): string | null {
+  const directRequestId = typeof input.requestId === 'string' && input.requestId.trim().length > 0
+    ? input.requestId.trim()
+    : null
+  if (directRequestId) {
+    return directRequestId
+  }
+
+  const publicTriageRequestId = typeof input.metadata?.publicTriage === 'object'
+    && input.metadata?.publicTriage
+    && typeof (input.metadata.publicTriage as Record<string, unknown>).requestId === 'string'
+    ? ((input.metadata.publicTriage as Record<string, unknown>).requestId as string).trim()
+    : ''
+
+  return publicTriageRequestId.length > 0 ? publicTriageRequestId : null
+}
+
+function buildCreateCaseSemanticIntentId(input: CreateCaseInput): string {
+  const replayKey = readCreateCaseReplayKey(input)
+  if (replayKey) {
+    return `legal-case-create:${input.tenantId}:${input.entityId ?? 'entityless'}:${replayKey}`
+  }
+
+  return `legal-case-create:${input.tenantId}:${input.caseNumber ?? 'none'}:${input.title}:${input.entityId ?? 'entityless'}`
+}
+
 function buildRouteError(code: string, message: string): JsonObject {
   return {
     status: 'failed',
@@ -200,6 +226,34 @@ export class CaseService {
       caseId: details.caseId,
       assignmentId: details.assignmentId,
       occurredAt: new Date().toISOString(),
+    })
+  }
+
+  private async appendCaseStatusChangedEvent(
+    repository: CaseRepository,
+    input: {
+      tenantId: number
+      caseId: string
+      actorProfessionalId?: string
+      fromStatus: string
+      toStatus: string
+      reason?: string
+    },
+  ) {
+    if (input.fromStatus === input.toStatus) {
+      return
+    }
+
+    await repository.addTimelineEvent({
+      tenantId: input.tenantId,
+      caseId: input.caseId,
+      eventType: 'status_changed',
+      actorProfessionalId: input.actorProfessionalId,
+      payload: {
+        fromStatus: input.fromStatus,
+        toStatus: input.toStatus,
+        reason: input.reason ?? null,
+      },
     })
   }
 
@@ -473,7 +527,7 @@ export class CaseService {
     const { result: createdCase } = await getSemanticMutationExecutor().executeSemanticMutation({
       authoritySource: 'backend/src/modules/legalCases/caseService.ts#createCase',
       intent: {
-        intentId: `legal-case-create:${input.tenantId}:${input.caseNumber ?? 'none'}:${input.title}:${input.entityId ?? 'entityless'}`,
+        intentId: buildCreateCaseSemanticIntentId(input),
         intentType: 'legal.case.create',
         domain: 'legal_case',
         actor: 'public',
@@ -496,9 +550,10 @@ export class CaseService {
       executePersistence: () => this.db.transaction(async (tx) => {
         const repository = this.repositoryFactory(tx)
         const legalCase = await repository.createCase(input)
+        let initialMessage: CaseMessageRecord | null = null
 
         if (input.initialMessage?.body) {
-          await repository.addMessage({
+          initialMessage = await repository.addMessage({
             tenantId: input.tenantId,
             caseId: legalCase.id,
             authorProfessionalId: input.initialMessage.authorProfessionalId,
@@ -525,6 +580,21 @@ export class CaseService {
             priority: legalCase.priority,
           },
         })
+
+        if (initialMessage) {
+          await repository.addTimelineEvent({
+            tenantId: input.tenantId,
+            caseId: legalCase.id,
+            eventType: 'message_added',
+            actorProfessionalId: input.initialMessage?.authorProfessionalId,
+            payload: {
+              messageId: initialMessage.id,
+              sequenceNo: initialMessage.sequenceNo,
+              messageType: initialMessage.messageType,
+              direction: initialMessage.direction,
+            },
+          })
+        }
 
         return legalCase
       }),
@@ -562,18 +632,20 @@ export class CaseService {
       professionalIds: [],
     })
 
-    await this.triggerAutomaticDispatchForCase(input.tenantId, createdCase.id).catch((error) => {
-      const normalizedError = error instanceof Error ? error : new Error(String(error))
-      console.error('case.auto_dispatch_failed', {
-        tenantId: input.tenantId,
-        caseId: createdCase.id,
-        entityId: createdCase.entityId,
-        candidateCount: null,
-        professionalIds: [],
-        error: normalizedError.message,
-        stack: normalizedError.stack,
+    if (input.autoDispatch === true) {
+      await this.triggerAutomaticDispatchForCase(input.tenantId, createdCase.id).catch((error) => {
+        const normalizedError = error instanceof Error ? error : new Error(String(error))
+        console.error('case.auto_dispatch_failed', {
+          tenantId: input.tenantId,
+          caseId: createdCase.id,
+          entityId: createdCase.entityId,
+          candidateCount: null,
+          professionalIds: [],
+          error: normalizedError.message,
+          stack: normalizedError.stack,
+        })
       })
-    })
+    }
 
     return (await this.repositoryFactory(this.db).getCaseById(input.tenantId, createdCase.id)) ?? createdCase
   }
@@ -589,7 +661,15 @@ export class CaseService {
       const message = await repository.addMessage(input)
 
       if (legalCase.status === 'accepted') {
-        await repository.updateCaseStatus(input.tenantId, input.caseId, 'in_progress')
+        const updatedCase = await repository.updateCaseStatus(input.tenantId, input.caseId, 'in_progress')
+        await this.appendCaseStatusChangedEvent(repository, {
+          tenantId: input.tenantId,
+          caseId: input.caseId,
+          actorProfessionalId: input.authorProfessionalId,
+          fromStatus: legalCase.status,
+          toStatus: updatedCase?.status ?? 'in_progress',
+          reason: 'message_progression',
+        })
       }
 
       await repository.addTimelineEvent({
@@ -625,27 +705,138 @@ export class CaseService {
     })
   }
 
-  async closeCase(tenantId: number, caseId: string, resolutionReason?: string, actorProfessionalId?: string): Promise<CaseRecord | null> {
+  async transitionCaseStatus(input: {
+    tenantId: number
+    caseId: string
+    status: 'in_progress' | 'pending' | 'on_hold'
+    reason?: string
+    actorProfessionalId?: string
+  }): Promise<
+    | { status: 'not_found' }
+    | { status: 'invalid_target'; message: string }
+    | { status: 'invalid_state'; message: string; caseRecord: CaseRecord }
+    | { status: 'updated'; caseRecord: CaseRecord }
+  > {
+    const allowedTargetStatuses = new Set<string>(['in_progress', 'pending', 'on_hold'])
+    if (!allowedTargetStatuses.has(input.status)) {
+      return {
+        status: 'invalid_target',
+        message: 'This endpoint only supports transitions to in_progress, pending, or on_hold.',
+      }
+    }
+
     return this.db.transaction(async (tx) => {
       const repository = this.repositoryFactory(tx)
-      const legalCase = await repository.closeCase(tenantId, caseId, resolutionReason)
-
-      if (!legalCase) {
-        return null
+      const currentCase = await repository.getCaseById(input.tenantId, input.caseId)
+      if (!currentCase) {
+        return { status: 'not_found' as const }
       }
 
+      if (currentCase.status === 'closed' || currentCase.status === 'archived') {
+        return {
+          status: 'invalid_state' as const,
+          message: 'Closed or archived cases cannot be transitioned through this endpoint.',
+          caseRecord: currentCase,
+        }
+      }
+
+      if (currentCase.status === input.status) {
+        return {
+          status: 'updated' as const,
+          caseRecord: currentCase,
+        }
+      }
+
+      const updatedCase = await repository.updateCaseStatus(input.tenantId, input.caseId, input.status)
+      if (!updatedCase) {
+        return { status: 'not_found' as const }
+      }
+
+      await this.appendCaseStatusChangedEvent(repository, {
+        tenantId: input.tenantId,
+        caseId: input.caseId,
+        actorProfessionalId: input.actorProfessionalId,
+        fromStatus: currentCase.status,
+        toStatus: updatedCase.status,
+        reason: input.reason,
+      })
+
+      return {
+        status: 'updated' as const,
+        caseRecord: updatedCase,
+      }
+    })
+  }
+
+  async closeCase(input: {
+    tenantId: number
+    caseId: string
+    resolutionReason?: string
+    actorProfessionalId?: string
+    outcomeMetadata?: JsonObject
+  }): Promise<
+    | { status: 'not_found' }
+    | { status: 'already_closed'; caseRecord: CaseRecord }
+    | { status: 'closed'; caseRecord: CaseRecord }
+  > {
+    return this.db.transaction(async (tx) => {
+      const repository = this.repositoryFactory(tx)
+      const currentCase = await repository.getCaseById(input.tenantId, input.caseId)
+      if (!currentCase) {
+        return { status: 'not_found' as const }
+      }
+
+      if (currentCase.status === 'closed' || currentCase.status === 'archived') {
+        return {
+          status: 'already_closed' as const,
+          caseRecord: currentCase,
+        }
+      }
+
+      const closedCase = await repository.closeCase(
+        input.tenantId,
+        input.caseId,
+        input.resolutionReason,
+      )
+      if (!closedCase) {
+        return { status: 'not_found' as const }
+      }
+
+      const effectiveCase = input.outcomeMetadata
+        ? await repository.updateCaseMetadata(
+          input.tenantId,
+          input.caseId,
+          {
+            ...closedCase.metadata,
+            outcome: input.outcomeMetadata,
+          },
+        ) ?? closedCase
+        : closedCase
+
+      await this.appendCaseStatusChangedEvent(repository, {
+        tenantId: input.tenantId,
+        caseId: input.caseId,
+        actorProfessionalId: input.actorProfessionalId,
+        fromStatus: currentCase.status,
+        toStatus: effectiveCase.status,
+        reason: 'case_closed',
+      })
+
       await repository.addTimelineEvent({
-        tenantId,
-        caseId,
+        tenantId: input.tenantId,
+        caseId: input.caseId,
         eventType: 'closed',
-        actorProfessionalId,
+        actorProfessionalId: input.actorProfessionalId,
         payload: {
-          resolutionReason: resolutionReason ?? null,
-          status: legalCase.status,
+          resolutionReason: input.resolutionReason ?? null,
+          status: effectiveCase.status,
         },
       })
 
-      return legalCase
+      return {
+        status: 'closed' as const,
+        caseRecord: effectiveCase,
+      }
     })
   }
 
@@ -754,6 +945,72 @@ export class CaseService {
         assignmentId: result.assignment.id,
       })
     }
+
+    return result
+  }
+
+  async assignCase(
+    tenantId: number,
+    caseId: string,
+    professionalId: string,
+    assignedByProfessionalId?: string,
+  ): Promise<
+    | { status: 'not_found' }
+    | { status: 'invalid_state'; caseRecord: CaseRecord }
+    | { status: 'assigned'; caseRecord: CaseRecord; assignment: CaseAssignmentRecord }
+  > {
+    const result = await this.db.transaction(async (tx) => {
+      const repository = this.repositoryFactory(tx)
+      const legalCase = await repository.getCaseById(tenantId, caseId)
+      if (!legalCase) {
+        return { status: 'not_found' as const }
+      }
+
+      if (!['open', 'pending', 'dispatched'].includes(legalCase.status) || legalCase.leadProfessionalId) {
+        return {
+          status: 'invalid_state' as const,
+          caseRecord: legalCase,
+        }
+      }
+
+      const existingAssignments = await repository.listAssignmentsByCase(tenantId, caseId)
+      if (existingAssignments.some((assignment) => assignment.professionalId === professionalId && assignment.status === 'active')) {
+        return {
+          status: 'invalid_state' as const,
+          caseRecord: legalCase,
+        }
+      }
+
+      const dispatchResult = await this.dispatchCase(
+        tenantId,
+        caseId,
+        professionalId,
+        assignedByProfessionalId,
+        repository,
+        {
+          source: 'owner_dispatch',
+        },
+      )
+      if (!dispatchResult) {
+        return { status: 'not_found' as const }
+      }
+
+      const updatedCase = await repository.updateCaseStatus(tenantId, caseId, 'dispatched')
+      await this.appendCaseStatusChangedEvent(repository, {
+        tenantId,
+        caseId,
+        actorProfessionalId: assignedByProfessionalId,
+        fromStatus: legalCase.status,
+        toStatus: updatedCase?.status ?? 'dispatched',
+        reason: 'owner_assignment',
+      })
+
+      return {
+        status: 'assigned' as const,
+        caseRecord: updatedCase ?? dispatchResult.caseRecord,
+        assignment: dispatchResult.assignment,
+      }
+    })
 
     return result
   }
@@ -894,6 +1151,14 @@ export class CaseService {
         const startedAt = metadataState?.firstDispatchAt
         const dispatchTimeMs = startedAt ? Math.max(0, Date.now() - Date.parse(startedAt)) : null
         const acceptedCase = await repository.updateCaseStatus(tenantId, assignment.caseId, 'accepted')
+        await this.appendCaseStatusChangedEvent(repository, {
+          tenantId,
+          caseId: assignment.caseId,
+          actorProfessionalId: assignment.professionalId,
+          fromStatus: caseRecord.status,
+          toStatus: acceptedCase?.status ?? 'accepted',
+          reason: 'assignment_accepted',
+        })
         await repository.addLearningEvent({
           tenantId,
           professionalId: assignment.professionalId,
@@ -943,11 +1208,20 @@ export class CaseService {
         assignmentId: updatedAssignment.id,
       })
 
-      await repository.updateCaseStatus(tenantId, assignment.caseId, 'pending')
+      const currentCase = await repository.getCaseById(tenantId, assignment.caseId)
+      const rejectedCase = await repository.updateCaseStatus(tenantId, assignment.caseId, 'pending')
+      await this.appendCaseStatusChangedEvent(repository, {
+        tenantId,
+        caseId: assignment.caseId,
+        actorProfessionalId: assignment.professionalId,
+        fromStatus: currentCase?.status ?? 'dispatched',
+        toStatus: rejectedCase?.status ?? 'pending',
+        reason: 'assignment_rejected',
+      })
       return {
         status,
         assignment: updatedAssignment,
-        caseRecord,
+        caseRecord: rejectedCase ?? caseRecord,
       }
     })
 

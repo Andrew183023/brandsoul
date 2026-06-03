@@ -7,6 +7,7 @@ import { hasEntityBirthContinuationPending } from './lib/entityBirth.ts'
 import { loadBrandPersona } from './lib/persona'
 import { useAuthSession } from './lib/session'
 import BrandInteractionPage from './pages/BrandInteractionPage.tsx'
+import ClientPortalPage from './pages/ClientPortalPage.tsx'
 import CreatePersonaPage from './pages/CreatePersonaPage.tsx'
 import CustomerChatPage from './pages/CustomerChatPage.tsx'
 import DiscoveryPage from './pages/DiscoveryPage.tsx'
@@ -19,6 +20,7 @@ import LoginPage from './pages/LoginPage.tsx'
 import PersonaLabPage from './pages/PersonaLabPage.tsx'
 import RegisterPage from './pages/RegisterPage.tsx'
 import ResetPasswordPage from './pages/ResetPasswordPage.tsx'
+import { parseClientPortalFromPublicPath } from './app/routes/legalRoutes'
 
 function decodeRouteSegment(value?: string | null) {
   return value ? decodeURIComponent(value) : null
@@ -86,6 +88,7 @@ function Root() {
   const publicExportId = decodeRouteSegment(publicEntityExportMatch?.[2])
   const publicEntityMatch = pathname.match(/^\/entity\/([^/]+)\/?$/)
   const publicEntityId = decodeRouteSegment(publicEntityMatch?.[1])
+  const clientPortalRoute = parseClientPortalFromPublicPath(pathname)
 
   useEffect(() => {
     if (showAdminPage && !hasSession) {
@@ -144,6 +147,16 @@ function Root() {
 
   if (showAdminPage) {
     return <App />
+  }
+
+  if (clientPortalRoute) {
+    const portalCaseId = clientPortalRoute.caseId
+    const portalToken = clientPortalRoute.token
+    if (!portalCaseId || !portalToken || !isValidPublicRouteSegment(portalCaseId) || !isValidPublicRouteSegment(portalToken)) {
+      return <RouteNotFoundPage />
+    }
+
+    return <ClientPortalPage caseId={portalCaseId} token={portalToken} />
   }
 
   if (publicBrandSlug) {

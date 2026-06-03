@@ -1660,6 +1660,26 @@ async function initializePostgresLegalCaseSchema(db: BackendDatabase) {
   `)
 
   await db.exec(`
+    CREATE TABLE IF NOT EXISTS case_portal_access_tokens (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id INTEGER NOT NULL,
+      case_id UUID NOT NULL,
+      token_hash TEXT NOT NULL,
+      status TEXT NOT NULL,
+      issued_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL,
+      revoked_at TIMESTAMPTZ,
+      last_used_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      FOREIGN KEY (case_id, tenant_id)
+        REFERENCES cases(id, tenant_id)
+        ON DELETE CASCADE,
+      CHECK (status IN ('active', 'revoked', 'expired'))
+    )
+  `)
+
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS case_accept_idempotency (
       tenant_id INTEGER NOT NULL,
       case_id UUID NOT NULL,
@@ -1963,6 +1983,14 @@ async function initializePostgresLegalCaseSchema(db: BackendDatabase) {
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_case_dispatches_professional_status_created
     ON case_dispatches (tenant_id, professional_id, status, created_at DESC)
+  `)
+  await db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_case_portal_access_tokens_hash
+    ON case_portal_access_tokens (token_hash)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_case_portal_access_tokens_case_status
+    ON case_portal_access_tokens (tenant_id, case_id, status, expires_at)
   `)
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_case_accept_idempotency_created
@@ -2341,6 +2369,23 @@ async function initializeSqliteLegalCaseSchema(db: BackendDatabase) {
   `)
 
   await db.exec(`
+    CREATE TABLE IF NOT EXISTS case_portal_access_tokens (
+      id TEXT PRIMARY KEY,
+      tenant_id INTEGER NOT NULL,
+      case_id TEXT NOT NULL,
+      token_hash TEXT NOT NULL,
+      status TEXT NOT NULL,
+      issued_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      last_used_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE CASCADE
+    )
+  `)
+
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS case_accept_idempotency (
       tenant_id INTEGER NOT NULL,
       case_id TEXT NOT NULL,
@@ -2434,6 +2479,14 @@ async function initializeSqliteLegalCaseSchema(db: BackendDatabase) {
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_case_dispatches_case_status_created
     ON case_dispatches (tenant_id, case_id, status, created_at)
+  `)
+  await db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_case_portal_access_tokens_hash
+    ON case_portal_access_tokens (token_hash)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_case_portal_access_tokens_case_status
+    ON case_portal_access_tokens (tenant_id, case_id, status, expires_at)
   `)
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_case_accept_idempotency_created

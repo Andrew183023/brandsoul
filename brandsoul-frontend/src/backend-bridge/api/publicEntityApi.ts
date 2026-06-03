@@ -97,6 +97,29 @@ export async function getEntityPublicProfile(entityId: string, baseUrl = getBack
   }
 }
 
+export type ClientPortalTimelineEvent = {
+  type: string
+  label: string
+  occurredAt: string
+}
+
+export type ClientPortalCaseSummary = {
+  caseId: string
+  status: 'open' | 'pending' | 'dispatched' | 'accepted' | 'in_progress' | 'on_hold' | 'closed'
+  practiceArea?: string
+  officeName: string
+  createdAt: string
+  updatedAt: string
+  responsibleProfessional?: {
+    id: string
+    displayName: string
+    photoUrl?: string
+    oabCredential?: string
+    specialty?: string
+  } | null
+  timeline: ClientPortalTimelineEvent[]
+}
+
 export async function getEntityPublicPresence(entityId: string, baseUrl = getBackendBaseUrl()): Promise<PublicPresenceResponse | undefined> {
   try {
     const response = await fetch(`${baseUrl}/public/entity/${entityId}/presence`)
@@ -125,6 +148,21 @@ export async function getEntityBusinessConfig(entityId: string, baseUrl = getBac
   } catch {
     return undefined
   }
+}
+
+export async function getClientPortalCase(
+  caseId: string,
+  token: string,
+  baseUrl = getBackendBaseUrl(),
+): Promise<ClientPortalCaseSummary> {
+  const response = await fetch(`${baseUrl}/client/portal/${encodeURIComponent(caseId)}/${encodeURIComponent(token)}`)
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, `Failed to load portal case (${response.status}).`))
+  }
+
+  const payload = await response.json() as { status: 'ready'; case: ClientPortalCaseSummary }
+  return payload.case
 }
 
 export async function getPublicCase(

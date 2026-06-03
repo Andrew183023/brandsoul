@@ -1,4 +1,4 @@
-import { createHmac } from 'node:crypto'
+import { createHmac, randomBytes } from 'node:crypto'
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 
@@ -160,6 +160,20 @@ type BusinessConfigBody = {
   businessConfig?: Partial<EntityBusinessConfig>
 }
 
+type CasePortalAccessTokenRow = {
+  id: string
+  tenant_id: number
+  case_id: string
+  token_hash: string
+  status: 'active' | 'revoked' | 'expired'
+  issued_at: string | Date
+  expires_at: string | Date
+  revoked_at: string | Date | null
+  last_used_at: string | Date | null
+  created_at: string | Date
+  updated_at: string | Date
+}
+
 type AuthenticatedOwnerContext = {
   ownerId: string
   ownerUserId: number
@@ -192,7 +206,10 @@ type DiagnosisActionBody = {
 
 type CaseMessageBody = {
   role?: LegalCaseMessageRole
+  body?: string
+  message?: string
   text?: string
+  responseText?: string
 }
 
 type CaseAssignBody = {
@@ -203,6 +220,27 @@ type CaseCloseBody = {
   rating?: number
   feedback?: string
   closedBy?: string
+}
+
+type CaseStatusUpdateBody = {
+  status?: 'in_progress' | 'pending' | 'on_hold'
+  reason?: string
+}
+
+type PublicTriagePayload = PublicEntityInteractionRequest & {
+  requestId?: string
+  triage?: {
+    context: string
+    urgency: 'critical' | 'priority' | 'planned'
+    objective: string
+    contactPreference: string
+    contactValue: string
+    city?: string
+    practiceArea?: string
+  }
+  businessContext?: PublicEntityInteractionRequest['businessContext'] & {
+    officeName?: string
+  }
 }
 
 type CasesQuerystring = {
@@ -301,6 +339,185 @@ function createOwnerId() {
 
 function createExportRecordId() {
   return `exp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function normalizePortalTimestamp(value: string | Date | null | undefined) {
+  if (!value) {
+    return undefined
+  }
+
+  if (typeof value === 'string') {
+    return value
+  }
+
+  return value.toISOString()
+}
+
+function hashCasePortalAccessToken(token: string) {
+  return createHmac('sha256', getJwtSecret())
+    .update(token, 'utf-8')
+    .digest('hex')
+}
+
+async function getCasePortalAccessTokenRecord(app: FastifyInstance, caseId: string, token: string) {
+  const row = await getConnection(app).get<CasePortalAccessTokenRow>(
+    `
+      SELECT
+        id,
+        tenant_id,
+        case_id,
+        token_hash,
+        status,
+        issued_at,
+        expires_at,
+        revoked_at,
+        last_used_at,
+        created_at,
+        updated_at
+      FROM case_portal_access_tokens
+      WHERE case_id = ? AND token_hash = ?
+      LIMIT 1
+    `,
+    caseId,
+    hashCasePortalAccessToken(token),
+  )
+
+  return row ?? null
+}
+
+async function markCasePortalAccessTokenUsed(app: FastifyInstance, tokenId: string) {
+  const now = new Date().toISOString()
+  await getConnection(app).run(
+    `
+      UPDATE case_portal_access_tokens
+      SET last_used_at = ?, updated_at = ?
+      WHERE id = ?
+    `,
+    now,
+    now,
+    tokenId,
+  )
+}
+
+async function issueCasePortalAccessToken(args: {
+  app: FastifyInstance
+  tenantId: number
+  caseId: string
+}) {
+  const now = new Date().toISOString()
+  const expiresAt = new Date(Date.now() + (1000 * 60 * 60 * 24 * 30)).toISOString()
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const tokenId = randomBytes(12).toString('hex')
+    const rawToken = randomBytes(24).toString('base64url')
+    const tokenHash = hashCasePortalAccessToken(rawToken)
+
+    try {
+      await getConnection(args.app).run(
+        `
+          INSERT INTO case_portal_access_tokens (
+            id,
+            tenant_id,
+            case_id,
+            token_hash,
+            status,
+            issued_at,
+            expires_at,
+            revoked_at,
+            last_used_at,
+            created_at,
+            updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        tokenId,
+        args.tenantId,
+        args.caseId,
+        tokenHash,
+        'active',
+        now,
+        expiresAt,
+        null,
+        null,
+        now,
+        now,
+      )
+
+      return {
+        tokenId,
+        rawToken,
+        issuedAt: now,
+        expiresAt,
+        portalUrl: `/portal/${args.caseId}/${rawToken}`,
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message.toLowerCase() : ''
+      if (attempt < 2 && (message.includes('unique') || message.includes('constraint'))) {
+        continue
+      }
+      throw error
+    }
+  }
+
+  throw new Error('Failed to issue case portal access token.')
+}
+
+function resolvePublicTriagePriority(urgency: 'critical' | 'priority' | 'planned') {
+  if (urgency === 'critical') {
+    return 'urgent' as const
+  }
+
+  if (urgency === 'priority') {
+    return 'high' as const
+  }
+
+  return 'normal' as const
+}
+
+function resolvePublicTriageUrgencyLabel(urgency: 'critical' | 'priority' | 'planned') {
+  if (urgency === 'critical') {
+    return 'Alta'
+  }
+
+  if (urgency === 'priority') {
+    return 'Media'
+  }
+
+  return 'Sem urgencia imediata'
+}
+
+function buildStructuredPublicTriageMessage(request: PublicEntityInteractionRequest) {
+  const triageRequest = request as PublicTriagePayload
+  if (!triageRequest.triage) {
+    return request.userMessage.trim()
+  }
+
+  return [
+    'Triagem publica:',
+    `- Contexto: ${triageRequest.triage.context.trim()}`,
+    `- Urgencia: ${resolvePublicTriageUrgencyLabel(triageRequest.triage.urgency)}`,
+    `- Objetivo: ${triageRequest.triage.objective.trim()}`,
+    `- Contato preferencial: ${triageRequest.triage.contactPreference.trim()} - ${triageRequest.triage.contactValue.trim()}`,
+  ].join('\n')
+}
+
+function buildStructuredPublicTriageTitle(request: PublicEntityInteractionRequest) {
+  const triageRequest = request as PublicTriagePayload
+  const officeName = triageRequest.businessContext?.officeName?.trim()
+  const practiceArea = triageRequest.triage?.practiceArea?.trim()
+
+  if (practiceArea && officeName) {
+    return `Triagem publica - ${practiceArea} - ${officeName}`
+  }
+
+  if (practiceArea) {
+    return `Triagem publica - ${practiceArea}`
+  }
+
+  if (officeName) {
+    return `Triagem publica - ${officeName}`
+  }
+
+  return 'Triagem publica inicial'
 }
 
 function createDiagnosisArtifactId() {
@@ -1020,7 +1237,12 @@ function isLegalCaseMessageRole(value: unknown): value is LegalCaseMessageRole {
 function isCaseMessageBodyCandidate(value: unknown): value is CaseMessageBody {
   return isPlainObject(value)
     && (value.role === undefined || isLegalCaseMessageRole(value.role))
-    && isSafeString(value.text, 4_000)
+    && (
+      isSafeString(value.body, 4_000)
+      || isSafeString(value.message, 4_000)
+      || isSafeString(value.text, 4_000)
+      || isSafeString(value.responseText, 4_000)
+    )
 }
 
 function isCaseAssignBodyCandidate(value: unknown): value is CaseAssignBody {
@@ -1035,6 +1257,20 @@ function isCaseCloseBodyCandidate(value: unknown): value is CaseCloseBody {
     && value.rating <= 5
     && isSafeString(value.closedBy, 120)
     && (value.feedback === undefined || isSafeString(value.feedback, 1_500))
+}
+
+function isCaseStatusUpdateBodyCandidate(value: unknown): value is CaseStatusUpdateBody {
+  return isPlainObject(value)
+    && (value.status === 'in_progress' || value.status === 'pending' || value.status === 'on_hold')
+    && (value.reason === undefined || isSafeString(value.reason, 1_500))
+}
+
+function readCaseMessageBody(body: CaseMessageBody) {
+  return body.body?.trim()
+    || body.message?.trim()
+    || body.text?.trim()
+    || body.responseText?.trim()
+    || ''
 }
 
 function isAssignedLawyer(auth: AuthContext | undefined, assignedLawyerId: string | undefined) {
@@ -1193,21 +1429,46 @@ type LegacyCompatibleCaseRecord = {
   id: string
   tenantId: number
   entityId: string
-  status: 'open' | 'assigned' | 'pending' | 'closed'
+  status: 'open' | 'pending' | 'dispatched' | 'accepted' | 'in_progress' | 'on_hold' | 'closed'
   createdAt: string
   updatedAt: string
   creatorUserId?: number
   creatorTenantId?: number
+  assignedProfessionalId?: string
   assignedLawyerId?: string
+  leadProfessionalId?: string
+  assignmentState: 'unassigned' | 'dispatched' | 'accepted' | 'active' | 'none'
+  responseState: 'waiting_office' | 'waiting_client' | 'active' | 'closed'
+  isAssigned: boolean
   description: string
+  practiceArea?: string
   city?: string
   contact?: string
   source: 'public-interaction'
   messages: LegacyCompatibleCaseMessage[]
   timeline: LegacyCompatibleCaseTimelineEntry[]
+  outcome?: {
+    rating: number
+    feedback?: string
+    closedBy: string
+    closedAt: string
+    verifiedClientFeedback?: boolean
+    firstName?: string
+  }
 }
 
 function safeJsonObject(value: unknown) {
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value) as unknown
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>
+      }
+    } catch {
+      return {} as Record<string, unknown>
+    }
+  }
+
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return {} as Record<string, unknown>
   }
@@ -1220,17 +1481,138 @@ function readRecordString(input: Record<string, unknown>, key: string) {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
 }
 
+function readTimelineStatusPayloadValue(payload: Record<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    const value = readRecordString(payload, key)
+    if (value) {
+      return value
+    }
+  }
+
+  return undefined
+}
+
+function resolveTimelineStatusSnapshot(payload: Record<string, unknown>, fieldName: 'before' | 'after' | 'to' | 'from') {
+  const nested = safeJsonObject(payload[fieldName])
+  return readRecordString(nested, 'status')
+}
+
+function resolveTimelineTargetStatus(payload: Record<string, unknown>) {
+  return readTimelineStatusPayloadValue(
+    payload,
+    'toStatus',
+    'to_status',
+    'targetStatus',
+    'target_status',
+    'afterStatus',
+    'after_status',
+    'status',
+    'to',
+  )
+    ?? resolveTimelineStatusSnapshot(payload, 'after')
+    ?? resolveTimelineStatusSnapshot(payload, 'to')
+}
+
+function resolveTimelineSourceStatus(payload: Record<string, unknown>) {
+  return readTimelineStatusPayloadValue(
+    payload,
+    'fromStatus',
+    'from_status',
+    'previousStatus',
+    'previous_status',
+    'beforeStatus',
+    'before_status',
+    'from',
+  )
+    ?? resolveTimelineStatusSnapshot(payload, 'before')
+    ?? resolveTimelineStatusSnapshot(payload, 'from')
+}
+
+function readCaseOutcomeMetadata(metadata: Record<string, unknown>) {
+  const outcome = safeJsonObject(metadata.outcome)
+  const rating = outcome.rating
+  const closedBy = readRecordString(outcome, 'closedBy')
+  const closedAt = readRecordString(outcome, 'closedAt')
+  const feedback = readRecordString(outcome, 'feedback')
+  const firstName = readRecordString(outcome, 'firstName')
+  const verifiedClientFeedback = outcome.verifiedClientFeedback === true
+
+  if (typeof rating !== 'number' || !Number.isInteger(rating) || rating < 1 || rating > 5 || !closedBy || !closedAt) {
+    return undefined
+  }
+
+  return {
+    rating,
+    feedback,
+    closedBy,
+    closedAt,
+    verifiedClientFeedback,
+    firstName,
+  }
+}
+
+function normalizeVerifiedFirstName(value: string | undefined) {
+  if (!value) {
+    return undefined
+  }
+
+  const trimmed = value.trim()
+  if (!trimmed || trimmed.includes('@')) {
+    return undefined
+  }
+
+  const firstToken = trimmed.split(/\s+/)[0]?.trim()
+  if (!firstToken || ['cliente', 'client', 'participante', 'operador'].includes(firstToken.toLowerCase())) {
+    return undefined
+  }
+
+  return firstToken
+}
+
+function buildVerifiedCaseOutcome(args: {
+  auth: AuthContext
+  caseRecord: CaseRecord
+  rating: number
+  feedback?: string
+  closedBy: string
+  closedAt: string
+}) {
+  const verifiedClientFeedback = typeof args.caseRecord.createdByUserId === 'number'
+    && args.caseRecord.createdByUserId === args.auth.userId
+
+  return {
+    rating: args.rating,
+    feedback: args.feedback,
+    closedBy: args.closedBy,
+    closedAt: args.closedAt,
+    verifiedClientFeedback,
+    firstName: verifiedClientFeedback ? normalizeVerifiedFirstName(args.closedBy) : undefined,
+  }
+}
+
 function mapPostgresCaseStatus(record: CaseRecord): LegacyCompatibleCaseRecord['status'] {
   if (record.status === 'closed' || record.status === 'archived') {
     return 'closed'
   }
 
-  if (record.status === 'pending' || record.status === 'on_hold') {
+  if (record.status === 'pending') {
     return 'pending'
   }
 
-  if (record.leadProfessionalId) {
-    return 'assigned'
+  if (record.status === 'on_hold') {
+    return 'on_hold'
+  }
+
+  if (record.status === 'dispatched') {
+    return 'dispatched'
+  }
+
+  if (record.status === 'accepted') {
+    return 'accepted'
+  }
+
+  if (record.status === 'in_progress' || record.status === 'resolved') {
+    return 'in_progress'
   }
 
   return 'open'
@@ -1300,7 +1682,123 @@ function buildTimelineSummary(event: CaseTimelineEventRecord) {
     return 'Caso aberto.'
   }
 
+  if (event.eventType === 'status_changed') {
+    const fromStatus = resolveTimelineSourceStatus(payload)
+    const toStatus = resolveTimelineTargetStatus(payload)
+    if (fromStatus && toStatus) {
+      return `Status alterado de ${fromStatus} para ${toStatus}.`
+    }
+
+    return 'Status do caso atualizado.'
+  }
+
   return `Evento ${event.eventType} registrado.`
+}
+
+function mapTimelineEventToClientLabel(event: CaseTimelineEventRecord) {
+  if (event.eventType === 'created') {
+    return 'Triagem recebida'
+  }
+
+  if (event.eventType === 'assigned') {
+    return 'Responsavel definido'
+  }
+
+  if (event.eventType === 'closed') {
+    return 'Caso encerrado'
+  }
+
+  if (event.eventType === 'status_changed') {
+    const payload = safeJsonObject(event.payload)
+    const toStatus = resolveTimelineTargetStatus(payload)
+
+    if (toStatus === 'in_progress' || toStatus === 'accepted' || toStatus === 'resolved') {
+      return 'Caso em atendimento'
+    }
+
+    if (toStatus === 'pending') {
+      return 'Aguardando informacoes'
+    }
+
+    if (toStatus === 'on_hold') {
+      return 'Atendimento pausado'
+    }
+
+    if (toStatus === 'closed' || toStatus === 'archived') {
+      return 'Caso encerrado'
+    }
+  }
+
+  return undefined
+}
+
+function buildClientPortalTimelineProjection(timeline: CaseTimelineEventRecord[]) {
+  return timeline
+    .map((event) => {
+      const label = mapTimelineEventToClientLabel(event)
+      if (!label) {
+        return null
+      }
+
+      return {
+        type: event.eventType,
+        label,
+        occurredAt: event.occurredAt,
+      }
+    })
+    .filter((event): event is { type: CaseTimelineEventRecord['eventType']; label: string; occurredAt: string } => Boolean(event))
+    .slice(-5)
+}
+
+function resolveCaseAssignmentState(record: CaseRecord): LegacyCompatibleCaseRecord['assignmentState'] {
+  if (record.status === 'closed' || record.status === 'archived') {
+    return 'none'
+  }
+
+  if (!record.leadProfessionalId && record.status === 'dispatched') {
+    return 'dispatched'
+  }
+
+  if (!record.leadProfessionalId) {
+    return 'unassigned'
+  }
+
+  if (record.status === 'accepted') {
+    return 'accepted'
+  }
+
+  if (record.status === 'in_progress' || record.status === 'resolved') {
+    return 'active'
+  }
+
+  if (record.status === 'dispatched') {
+    return 'dispatched'
+  }
+
+  return 'active'
+}
+
+function resolveCaseResponseState(
+  record: CaseRecord,
+  messages: CaseMessageRecord[],
+): LegacyCompatibleCaseRecord['responseState'] {
+  if (record.status === 'closed' || record.status === 'archived') {
+    return 'closed'
+  }
+
+  if (record.status === 'open' || record.status === 'pending' || record.status === 'dispatched') {
+    return 'waiting_office'
+  }
+
+  const latestMessage = messages
+    .slice()
+    .sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt))[0]
+
+  if (latestMessage?.direction === 'outbound' || latestMessage?.authorProfessionalId) {
+    return 'waiting_client'
+  }
+
+  return 'active'
 }
 
 async function listPostgresCaseTimeline(db: BackendDatabase, tenantId: number, caseId: string) {
@@ -1346,7 +1844,9 @@ function toLegacyCompatibleCase(args: {
   caseRecord: CaseRecord
   messages: CaseMessageRecord[]
   timeline: CaseTimelineEventRecord[]
+  projectionAssignedProfessionalId?: string
 }): LegacyCompatibleCaseRecord {
+  const projectionAssignedProfessionalId = args.projectionAssignedProfessionalId ?? args.caseRecord.leadProfessionalId
   const metadata = safeJsonObject(args.caseRecord.metadata)
   const metadataLocation = safeJsonObject(metadata.location)
   const contact = readRecordString(metadata, 'contact')
@@ -1356,6 +1856,7 @@ function toLegacyCompatibleCase(args: {
     ?? readRecordString(safeJsonObject(metadata.contact), 'email')
   const city = readRecordString(metadata, 'city')
     ?? readRecordString(metadataLocation, 'city')
+  const outcome = readCaseOutcomeMetadata(metadata)
 
   return {
     id: args.caseRecord.id,
@@ -1366,8 +1867,14 @@ function toLegacyCompatibleCase(args: {
     updatedAt: args.caseRecord.updatedAt,
     creatorUserId: args.caseRecord.createdByUserId,
     creatorTenantId: args.caseRecord.createdByUserId ? args.tenantId : undefined,
-    assignedLawyerId: args.caseRecord.leadProfessionalId,
+    assignedProfessionalId: projectionAssignedProfessionalId,
+    assignedLawyerId: projectionAssignedProfessionalId,
+    leadProfessionalId: projectionAssignedProfessionalId,
+    assignmentState: resolveCaseAssignmentState(args.caseRecord),
+    responseState: resolveCaseResponseState(args.caseRecord, args.messages),
+    isAssigned: Boolean(projectionAssignedProfessionalId),
     description: args.caseRecord.description?.trim() || args.caseRecord.title,
+    practiceArea: args.caseRecord.practiceArea,
     city,
     contact,
     source: 'public-interaction',
@@ -1384,7 +1891,25 @@ function toLegacyCompatibleCase(args: {
       createdAt: event.occurredAt,
       summary: buildTimelineSummary(event),
     })),
+    outcome,
   }
+}
+
+async function resolveProjectionAssignedProfessionalId(args: {
+  app: FastifyInstance
+  tenantId: number
+  caseRecord: CaseRecord
+}) {
+  if (args.caseRecord.leadProfessionalId) {
+    return args.caseRecord.leadProfessionalId
+  }
+
+  const assignments = await getLegalCaseRepository(args.app).listAssignmentsByCase(args.tenantId, args.caseRecord.id)
+  const activeAssignments = assignments
+    .filter((assignment) => assignment.status === 'active')
+    .sort((left, right) => Date.parse(right.assignedAt) - Date.parse(left.assignedAt))
+
+  return activeAssignments[0]?.professionalId
 }
 
 function isPostgresCaseParticipant(args: {
@@ -1487,11 +2012,16 @@ async function resolvePostgresCaseForRead(args: {
   }
 
   const caseTenantId = caseRecord.tenantId
-  const [messages, timeline, professional, entity] = await Promise.all([
+  const [messages, timeline, professional, entity, projectionAssignedProfessionalId] = await Promise.all([
     repository.listMessages(caseTenantId, args.caseId),
     listPostgresCaseTimeline(getConnection(args.app), caseTenantId, args.caseId),
     repository.getProfessionalByUserId(caseTenantId, args.auth.userId),
     caseRecord.entityId ? getRepository(args.app).getEntityById(caseRecord.entityId) : Promise.resolve(null),
+    resolveProjectionAssignedProfessionalId({
+      app: args.app,
+      tenantId: caseTenantId,
+      caseRecord,
+    }),
   ])
 
   const legalCase = toLegacyCompatibleCase({
@@ -1499,6 +2029,7 @@ async function resolvePostgresCaseForRead(args: {
     caseRecord,
     messages,
     timeline,
+    projectionAssignedProfessionalId,
   })
 
   const marketplaceAccess = legalCase.entityId
@@ -2200,6 +2731,350 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       status: 'ready',
       entityId: request.params.id,
       connections,
+    }
+  })
+
+  app.get<{ Params: { caseId: string; token: string } }>('/client/portal/:caseId/:token', { preHandler: [publicReadRateLimit] }, async (request, reply) => {
+    if (!isSafeIdentifier(request.params.caseId) || !isSafeString(request.params.token, 512)) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_CLIENT_PORTAL_ACCESS',
+          message: 'Link de acesso invalido.',
+        },
+      })
+    }
+
+    const portalAccess = await getCasePortalAccessTokenRecord(app, request.params.caseId, request.params.token)
+    if (!portalAccess) {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'CLIENT_PORTAL_NOT_FOUND',
+          message: 'Nao foi possivel localizar este acesso ao portal.',
+        },
+      })
+    }
+
+    const expiresAt = Date.parse(normalizePortalTimestamp(portalAccess.expires_at) ?? '')
+    const revokedAt = portalAccess.revoked_at ? Date.parse(normalizePortalTimestamp(portalAccess.revoked_at) ?? '') : Number.NaN
+    const isExpired = Number.isFinite(expiresAt) && expiresAt <= Date.now()
+    const isRevoked = portalAccess.status === 'revoked' || Number.isFinite(revokedAt)
+    const isActive = portalAccess.status === 'active'
+
+    if (!isActive || isExpired || isRevoked) {
+      return reply.status(403).send({
+        status: 'failed',
+        error: {
+          code: 'CLIENT_PORTAL_ACCESS_INVALID',
+          message: 'Este acesso ao portal nao esta mais disponivel.',
+        },
+      })
+    }
+
+    const repository = getLegalCaseRepository(app)
+    const caseRecord = await repository.getCaseById(portalAccess.tenant_id, request.params.caseId)
+    if (!caseRecord) {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'CASE_NOT_FOUND',
+          message: 'Caso nao encontrado.',
+        },
+      })
+    }
+
+    const [timeline, assignedProfessionalId, detailedProfessionals, entity] = await Promise.all([
+      listPostgresCaseTimeline(getConnection(app), portalAccess.tenant_id, request.params.caseId),
+      resolveProjectionAssignedProfessionalId({
+        app,
+        tenantId: portalAccess.tenant_id,
+        caseRecord,
+      }),
+      repository.listDetailedProfessionalsForTenant(portalAccess.tenant_id),
+      caseRecord.entityId ? getRepository(app).getEntityById(caseRecord.entityId) : Promise.resolve(null),
+    ])
+
+    await markCasePortalAccessTokenUsed(app, portalAccess.id)
+
+    const assignedProfessional = assignedProfessionalId
+      ? detailedProfessionals.find((professional) => professional.id === assignedProfessionalId)
+      : undefined
+    const entityProfile = entity?.entityProfile as EntityProfile | undefined
+    const businessConfig = entityProfile ? readEntityBusinessConfig(entityProfile) : undefined
+    const socialProfile = entityProfile?.social as Record<string, unknown> | undefined
+    const officeNameValue = (businessConfig as Record<string, unknown> | undefined)?.officeName
+    const officeName = typeof officeNameValue === 'string' && officeNameValue.trim().length > 0
+      ? officeNameValue.trim()
+      : (typeof socialProfile?.publicName === 'string' ? socialProfile.publicName.trim() : '')
+      || caseRecord.entityId
+      || 'Escritorio'
+
+    return reply.status(200).send({
+      status: 'ready',
+      caseId: caseRecord.id,
+      case: {
+        caseId: caseRecord.id,
+        status: mapPostgresCaseStatus(caseRecord),
+        practiceArea: caseRecord.practiceArea,
+        officeName,
+        createdAt: caseRecord.createdAt,
+        updatedAt: caseRecord.updatedAt,
+        responsibleProfessional: assignedProfessional
+          ? {
+              displayName: assignedProfessional.displayName,
+              photoUrl: assignedProfessional.photoUrl,
+              oabCredential: assignedProfessional.oabCredential,
+              specialty: assignedProfessional.specialties[0],
+            }
+          : undefined,
+        timeline: buildClientPortalTimelineProjection(timeline),
+      },
+    })
+  })
+
+  app.post<{ Params: { id: string }; Body: CaseStatusUpdateBody }>('/cases/:id/status', { preHandler: [requireAuth, publicActionRateLimit] }, async (request, reply) => {
+    if (!isCaseStatusUpdateBodyCandidate(request.body)) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_CASE_STATUS_UPDATE',
+          message: 'A valid case status update payload is required.',
+        },
+      })
+    }
+
+    const auth = getRequestAuth(request)
+    if (!auth) {
+      return reply.status(401).send({
+        status: 'failed',
+        error: {
+          code: 'AUTH_REQUIRED',
+          message: 'Authentication required.',
+        },
+      })
+    }
+
+    const postgresCase = await resolvePostgresCaseForRead({
+      app,
+      request,
+      auth,
+      caseId: request.params.id,
+    })
+
+    if (!postgresCase) {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'CASE_NOT_FOUND',
+          message: `Case "${request.params.id}" was not found.`,
+        },
+      })
+    }
+
+    if (!postgresCase.hasAccess) {
+      return reply.status(403).send({
+        status: 'failed',
+        error: {
+          code: 'CASE_ACCESS_FORBIDDEN',
+          message: 'You do not have access to this case.',
+        },
+      })
+    }
+
+    const professional = await resolvePostgresAssignedProfessionalForAuth(app, auth)
+    const transitionResult = await getLegalCaseService(app).transitionCaseStatus({
+      tenantId: auth.tenantId,
+      caseId: request.params.id,
+      status: request.body.status as 'in_progress' | 'pending' | 'on_hold',
+      reason: request.body.reason,
+      actorProfessionalId: professional?.id,
+    })
+
+    if (transitionResult.status === 'not_found') {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'CASE_NOT_FOUND',
+          message: `Case "${request.params.id}" was not found.`,
+        },
+      })
+    }
+
+    if (transitionResult.status === 'invalid_target') {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_CASE_STATUS_UPDATE',
+          message: transitionResult.message,
+        },
+      })
+    }
+
+    if (transitionResult.status === 'invalid_state') {
+      const [messages, timeline] = await Promise.all([
+        getLegalCaseRepository(app).listMessages(auth.tenantId, request.params.id),
+        listPostgresCaseTimeline(getConnection(app), auth.tenantId, request.params.id),
+      ])
+      const normalizedInvalid = toLegacyCompatibleCase({
+        tenantId: auth.tenantId,
+        caseRecord: transitionResult.caseRecord,
+        messages,
+        timeline,
+        projectionAssignedProfessionalId: await resolveProjectionAssignedProfessionalId({
+          app,
+          tenantId: auth.tenantId,
+          caseRecord: transitionResult.caseRecord,
+        }),
+      })
+      return reply.status(409).send({
+        status: 'failed',
+        error: {
+          code: 'CASE_STATUS_TRANSITION_INVALID',
+          message: transitionResult.message,
+        },
+        case: normalizedInvalid,
+      })
+    }
+
+    const [messages, timeline] = await Promise.all([
+      getLegalCaseRepository(app).listMessages(auth.tenantId, request.params.id),
+      listPostgresCaseTimeline(getConnection(app), auth.tenantId, request.params.id),
+    ])
+    const normalized = toLegacyCompatibleCase({
+      tenantId: auth.tenantId,
+      caseRecord: transitionResult.caseRecord,
+      messages,
+      timeline,
+      projectionAssignedProfessionalId: await resolveProjectionAssignedProfessionalId({
+        app,
+        tenantId: auth.tenantId,
+        caseRecord: transitionResult.caseRecord,
+      }),
+    })
+
+    return reply.status(200).send({
+      status: 'ready',
+      case: normalized,
+    })
+  })
+
+  app.post<{
+      Params: { id: string }
+      Body: PublicEntityInteractionRequest
+    }>('/public/escritorios/:id/triagem', { preHandler: [optionalAuth, publicActionRateLimit] }, async (request, reply) => {
+    const triageRequest = request.body as PublicTriagePayload
+    if (!triageRequest.triage) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_PUBLIC_TRIAGE',
+          message: 'triage is required.',
+        },
+      })
+    }
+
+    const office = await getRepository(app).getEntityById<EntityProfile>(request.params.id)
+    if (!office) {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'OFFICE_NOT_FOUND',
+          message: 'Este escritorio nao esta disponivel para triagem no momento.',
+        },
+      })
+    }
+
+    const ownerTenantId = office.ownerTenantId
+    if (typeof ownerTenantId !== 'number' || !Number.isInteger(ownerTenantId) || ownerTenantId <= 0) {
+      return reply.status(422).send({
+        status: 'failed',
+        error: {
+          code: 'OFFICE_TENANT_UNAVAILABLE',
+          message: 'Nao foi possivel enviar sua triagem para este escritorio agora.',
+        },
+      })
+    }
+
+    const createdByUserId = getRequestAuth(request)?.userId
+    const requestId = triageRequest.requestId ?? createRequestId()
+    const triageMessage = buildStructuredPublicTriageMessage(request.body)
+
+    try {
+      const legalCase = await getLegalCaseService(app).createCase({
+        tenantId: ownerTenantId,
+        entityId: request.params.id,
+        requestId,
+        createdByUserId: Number.isInteger(createdByUserId) ? Number(createdByUserId) : undefined,
+        title: buildStructuredPublicTriageTitle(request.body),
+        description: triageRequest.triage.context.trim(),
+        priority: resolvePublicTriagePriority(triageRequest.triage.urgency),
+        practiceArea: triageRequest.triage.practiceArea?.trim() || undefined,
+        source: 'public-interaction',
+        autoDispatch: false,
+        metadata: {
+          source: 'public-interaction',
+          publicTriage: {
+            requestId,
+            urgency: triageRequest.triage.urgency,
+            objective: triageRequest.triage.objective.trim(),
+            contactPreference: triageRequest.triage.contactPreference.trim(),
+            contactValue: triageRequest.triage.contactValue.trim(),
+            city: triageRequest.triage.city?.trim() || undefined,
+            practiceArea: triageRequest.triage.practiceArea?.trim() || undefined,
+          },
+        },
+        initialMessage: {
+          body: triageMessage,
+          direction: 'inbound',
+          messageType: 'chat',
+          messageStatus: 'sent',
+          channel: 'public-triage',
+          sentAt: new Date().toISOString(),
+        },
+      })
+
+      const portalAccess = await issueCasePortalAccessToken({
+        app,
+        tenantId: ownerTenantId,
+        caseId: legalCase.id,
+      })
+
+      return reply.status(201).send({
+        status: 'ready',
+        entityId: request.params.id,
+        requestId,
+        actionResult: {
+          actionType: 'create_legal_case',
+          status: 'created',
+          caseId: legalCase.id,
+          case: {
+            id: legalCase.id,
+            status: legalCase.status,
+          },
+          portalUrl: portalAccess.portalUrl,
+          portalAccess: {
+            issuedAt: portalAccess.issuedAt,
+            expiresAt: portalAccess.expiresAt,
+          },
+        },
+      })
+    } catch (error) {
+      request.log.error({
+        event: 'public_triage_submission_failed',
+        officeId: request.params.id,
+        ownerTenantId,
+        message: error instanceof Error ? error.message : 'Unknown public triage creation failure.',
+        stack: error instanceof Error ? error.stack : undefined,
+      }, 'Public triage submission failed')
+
+      return reply.status(503).send({
+        status: 'failed',
+        error: {
+          code: 'PUBLIC_TRIAGE_UNAVAILABLE',
+          message: 'Nao foi possivel concluir sua triagem agora.',
+        },
+      })
     }
   })
 
@@ -3028,6 +3903,11 @@ export async function registerEntityRoutes(app: FastifyInstance) {
               caseRecord,
               messages,
               timeline,
+              projectionAssignedProfessionalId: await resolveProjectionAssignedProfessionalId({
+                app,
+                tenantId: auth.tenantId,
+                caseRecord,
+              }),
             })
           } catch (error) {
             request.log.error({
@@ -3179,6 +4059,11 @@ export async function registerEntityRoutes(app: FastifyInstance) {
               caseRecord,
               messages,
               timeline,
+              projectionAssignedProfessionalId: await resolveProjectionAssignedProfessionalId({
+                app,
+                tenantId: marketplaceTenantId,
+                caseRecord,
+              }),
             })
           } catch (error) {
             request.log.error({
@@ -3389,6 +4274,112 @@ export async function registerEntityRoutes(app: FastifyInstance) {
   })
 
   app.post<{ Params: { id: string }; Body: CaseAssignBody }>('/cases/:id/assign', { preHandler: [requireAuth, publicActionRateLimit] }, async (request, reply) => {
+    const auth = getRequestAuth(request)
+    if (!auth) {
+      return reply.status(401).send({
+        status: 'failed',
+        error: {
+          code: 'AUTH_REQUIRED',
+          message: 'Authentication required.',
+        },
+      })
+    }
+
+    const postgresCase = await resolvePostgresCaseForRead({
+      app,
+      request,
+      auth,
+      caseId: request.params.id,
+    })
+
+    if (postgresCase) {
+      trackCaseRouteMetric(app, 'postgres_case_hit', 'POST /cases/:id/assign')
+      const ownerEntity = await getRepository(app).getEntityById(postgresCase.legalCase.entityId)
+      if (!ownerEntity || !validateEntityOwnership(ownerEntity, auth.userId, auth.tenantId)) {
+        return reply.status(403).send({
+          status: 'failed',
+          error: {
+            code: 'CASE_ASSIGNMENT_FORBIDDEN',
+            message: 'Only the entity owner can assign this case.',
+          },
+        })
+      }
+
+      const professional = await resolvePostgresAssignedProfessionalForAuth(app, auth)
+      const targetProfessionalId = request.body.lawyerId?.trim() || professional?.id
+      if (!targetProfessionalId) {
+        return reply.status(422).send({
+          status: 'failed',
+          error: {
+            code: 'CASE_ASSIGNMENT_PROFESSIONAL_REQUIRED',
+            message: 'Cadastre ou vincule um profissional antes de assumir este caso.',
+          },
+        })
+      }
+
+      const assigned = await getLegalCaseService(app).assignCase(
+        auth.tenantId,
+        request.params.id,
+        targetProfessionalId,
+        professional?.id,
+      )
+
+      if (assigned.status === 'not_found') {
+        return reply.status(404).send({
+          status: 'failed',
+          error: {
+            code: 'CASE_NOT_FOUND',
+            message: `Case "${request.params.id}" was not found.`,
+          },
+        })
+      }
+
+      if (assigned.status === 'invalid_state') {
+        return reply.status(409).send({
+          status: 'failed',
+          error: {
+            code: 'CASE_ASSIGNMENT_INVALID_STATE',
+            message: 'Only open cases can be assigned.',
+          },
+          case: assigned.caseRecord,
+        })
+      }
+
+      const [messages, timeline] = await Promise.all([
+        getLegalCaseRepository(app).listMessages(auth.tenantId, request.params.id),
+        listPostgresCaseTimeline(getConnection(app), auth.tenantId, request.params.id),
+      ])
+      const normalized = toLegacyCompatibleCase({
+        tenantId: auth.tenantId,
+        caseRecord: assigned.caseRecord,
+        messages,
+        timeline,
+        projectionAssignedProfessionalId: await resolveProjectionAssignedProfessionalId({
+          app,
+          tenantId: auth.tenantId,
+          caseRecord: assigned.caseRecord,
+        }),
+      })
+
+      await getSovereignMutationCommandService(app).submitCommand({
+        type: 'legal.case.assign',
+        commandId: `legal-case-assigned:${normalized.entityId}:${normalized.id}:${normalized.updatedAt}`,
+        entityId: normalized.entityId,
+        occurredAt: normalized.updatedAt,
+        payload: {
+          caseId: normalized.id,
+          lawyerId: targetProfessionalId,
+          status: normalized.status,
+          assignmentId: assigned.assignment.id,
+        },
+      })
+
+      return reply.status(200).send({
+        status: 'ready',
+        case: normalized,
+      })
+    }
+
     if (!isCaseAssignBodyCandidate(request.body)) {
       return reply.status(400).send({
         status: 'failed',
@@ -3414,8 +4405,7 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
     }
 
-    const auth = getRequestAuth(request)
-    if (!auth || !validateEntityOwnership(found.entity, auth.userId, auth.tenantId)) {
+    if (!validateEntityOwnership(found.entity, auth.userId, auth.tenantId)) {
       return reply.status(403).send({
         status: 'failed',
         error: {
@@ -3493,7 +4483,7 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
     }
 
-    const caseMessageText = request.body.text?.trim() ?? ''
+    const caseMessageText = readCaseMessageBody(request.body)
     const role = request.body.role ?? 'user'
 
     const postgresCase = await resolvePostgresCaseForRead({
@@ -3562,6 +4552,11 @@ export async function registerEntityRoutes(app: FastifyInstance) {
         caseRecord,
         messages,
         timeline,
+        projectionAssignedProfessionalId: await resolveProjectionAssignedProfessionalId({
+          app,
+          tenantId: auth.tenantId,
+          caseRecord,
+        }),
       })
       const latestMessage = normalized.messages.at(-1)
 
@@ -3583,6 +4578,7 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       return reply.status(200).send({
         status: 'ready',
         caseId: normalized.id,
+        case: normalized,
         message: latestMessage,
         messages: normalized.messages,
       })
@@ -3648,7 +4644,7 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       sovereignCommandService: getSovereignMutationCommandService(app),
       caseId: request.params.id,
       role,
-      text: request.body.text!.trim(),
+      text: caseMessageText,
       actorId: `${actor.actorId}:${role}`,
     })
 
@@ -3683,8 +4679,8 @@ export async function registerEntityRoutes(app: FastifyInstance) {
     })
   })
 
-  app.post<{ Params: { id: string }; Body: Pick<CaseMessageBody, 'text'> }>('/cases/:id/respond', { preHandler: [requireAuth, publicActionRateLimit] }, async (request, reply) => {
-    if (!isPlainObject(request.body) || !isSafeString(request.body.text, 4_000)) {
+  app.post<{ Params: { id: string }; Body: CaseMessageBody }>('/cases/:id/respond', { preHandler: [requireAuth, publicActionRateLimit] }, async (request, reply) => {
+    if (!isCaseMessageBodyCandidate(request.body)) {
       return reply.status(400).send({
         status: 'failed',
         error: {
@@ -3693,6 +4689,9 @@ export async function registerEntityRoutes(app: FastifyInstance) {
         },
       })
     }
+    reply.header('x-brandsoul-deprecated-route', 'true')
+    reply.header('x-brandsoul-route-replacement', '/cases/:id/messages')
+    reply.header('sunset', 'beta')
 
     const auth = getRequestAuth(request)
     if (!auth) {
@@ -3705,7 +4704,7 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
     }
 
-    const caseMessageText = request.body.text?.trim() ?? ''
+    const caseMessageText = readCaseMessageBody(request.body)
     const postgresCase = await resolvePostgresCaseForRead({
       app,
       request,
@@ -3770,6 +4769,11 @@ export async function registerEntityRoutes(app: FastifyInstance) {
         caseRecord,
         messages,
         timeline,
+        projectionAssignedProfessionalId: await resolveProjectionAssignedProfessionalId({
+          app,
+          tenantId: auth.tenantId,
+          caseRecord,
+        }),
       })
       const latestMessage = normalized.messages.at(-1)
 
@@ -3791,6 +4795,7 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       return reply.status(200).send({
         status: 'ready',
         caseId: normalized.id,
+        case: normalized,
         message: latestMessage,
         messages: normalized.messages,
       })
@@ -3906,14 +4911,32 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       }
 
       const professional = await resolvePostgresAssignedProfessionalForAuth(app, auth)
-      const closedCaseRecord = await getLegalCaseService(app).closeCase(
-        auth.tenantId,
-        request.params.id,
-        request.body.feedback,
-        professional?.id,
-      )
+      const currentCaseRecord = await getLegalCaseRepository(app).getCaseById(auth.tenantId, request.params.id)
+      if (!currentCaseRecord) {
+        return reply.status(404).send({
+          status: 'failed',
+          error: {
+            code: 'CASE_NOT_FOUND',
+            message: `Case "${request.params.id}" was not found.`,
+          },
+        })
+      }
+      const closeResult = await getLegalCaseService(app).closeCase({
+        tenantId: auth.tenantId,
+        caseId: request.params.id,
+        resolutionReason: request.body.feedback,
+        actorProfessionalId: professional?.id,
+        outcomeMetadata: buildVerifiedCaseOutcome({
+          auth,
+          caseRecord: currentCaseRecord,
+          rating: request.body.rating!,
+          feedback: request.body.feedback,
+          closedBy: request.body.closedBy!,
+          closedAt: new Date().toISOString(),
+        }),
+      })
 
-      if (!closedCaseRecord) {
+      if (closeResult.status === 'not_found') {
         return reply.status(404).send({
           status: 'failed',
           error: {
@@ -3923,25 +4946,47 @@ export async function registerEntityRoutes(app: FastifyInstance) {
         })
       }
 
+      if (closeResult.status === 'already_closed') {
+        const [messages, timeline] = await Promise.all([
+          getLegalCaseRepository(app).listMessages(auth.tenantId, request.params.id),
+          listPostgresCaseTimeline(getConnection(app), auth.tenantId, request.params.id),
+        ])
+        const normalizedAlreadyClosed = toLegacyCompatibleCase({
+          tenantId: auth.tenantId,
+          caseRecord: closeResult.caseRecord,
+          messages,
+          timeline,
+          projectionAssignedProfessionalId: await resolveProjectionAssignedProfessionalId({
+            app,
+            tenantId: auth.tenantId,
+            caseRecord: closeResult.caseRecord,
+          }),
+        })
+        return reply.status(409).send({
+          status: 'failed',
+          error: {
+            code: 'CASE_ALREADY_CLOSED',
+            message: 'Este caso ja foi encerrado.',
+          },
+          case: normalizedAlreadyClosed,
+        })
+      }
+
       const [messages, timeline] = await Promise.all([
         getLegalCaseRepository(app).listMessages(auth.tenantId, request.params.id),
         listPostgresCaseTimeline(getConnection(app), auth.tenantId, request.params.id),
       ])
       const normalized = toLegacyCompatibleCase({
         tenantId: auth.tenantId,
-        caseRecord: closedCaseRecord,
+        caseRecord: closeResult.caseRecord,
         messages,
         timeline,
+        projectionAssignedProfessionalId: await resolveProjectionAssignedProfessionalId({
+          app,
+          tenantId: auth.tenantId,
+          caseRecord: closeResult.caseRecord,
+        }),
       })
-      const responseCase = {
-        ...normalized,
-        outcome: {
-          rating: request.body.rating!,
-          feedback: request.body.feedback,
-          closedBy: request.body.closedBy!,
-          closedAt: normalized.updatedAt,
-        },
-      }
 
       if (normalized.entityId) {
         await getSovereignMutationCommandService(app).submitCommand({
@@ -3961,7 +5006,7 @@ export async function registerEntityRoutes(app: FastifyInstance) {
 
       return reply.status(200).send({
         status: 'ready',
-        case: responseCase,
+        case: normalized,
       })
     }
 

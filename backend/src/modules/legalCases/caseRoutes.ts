@@ -292,6 +292,7 @@ export async function registerCaseRoutes(app: FastifyInstance) {
             : {}),
           ...(claimToken ? { caseClaimToken: claimToken } : {}),
         },
+        autoDispatch: true,
         initialMessage: isNonEmptyString(request.body.initialMessage?.body)
           ? {
               body: request.body.initialMessage.body.trim(),
@@ -814,18 +815,22 @@ export async function registerCaseRoutes(app: FastifyInstance) {
         return reply.status(400).send(buildRouteError('INVALID_RESOLUTION_REASON', 'resolutionReason must be a string.'))
       }
 
-      const legalCase = await getCaseService(app).closeCase(
+      const result = await getCaseService(app).closeCase({
         tenantId,
-        request.params.id,
-        isNonEmptyString(request.body?.resolutionReason) ? request.body.resolutionReason.trim() : undefined,
-      )
+        caseId: request.params.id,
+        resolutionReason: isNonEmptyString(request.body?.resolutionReason) ? request.body.resolutionReason.trim() : undefined,
+      })
 
-      if (!legalCase) {
+      if (result.status === 'not_found') {
         return reply.status(404).send(buildRouteError('CASE_NOT_FOUND', 'Case not found.'))
       }
 
+      if (result.status === 'already_closed') {
+        return reply.status(409).send(buildRouteError('CASE_ALREADY_CLOSED', 'Case already closed.'))
+      }
+
       return reply.send({
-        case: legalCase,
+        case: result.caseRecord,
       })
     })
   }

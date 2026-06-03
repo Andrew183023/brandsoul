@@ -58,6 +58,8 @@ export type EntityBusinessConfig = {
     bookingEnabled?: boolean
     catalogEnabled?: boolean
   }
+  maxCapacity?: number
+  avgResponseMinutes?: number
 }
 
 export type DiagnosisArtifact = {
@@ -85,7 +87,12 @@ export type EntityBusinessConfigResponse = {
   updatedAt?: string
 }
 
-export type AdminLegalCaseStatus = 'open' | 'assigned' | 'pending' | 'closed'
+export type OfficeBusinessConfig = EntityBusinessConfig
+
+export type AdminLegalCaseStatus = 'open' | 'pending' | 'dispatched' | 'accepted' | 'in_progress' | 'closed'
+export type AdminLegalCaseTransitionTargetStatus = 'in_progress' | 'pending' | 'on_hold'
+export type AdminLegalCaseAssignmentState = 'unassigned' | 'dispatched' | 'accepted' | 'active' | 'none'
+export type AdminLegalCaseResponseState = 'waiting_office' | 'waiting_client' | 'active' | 'closed'
 
 export type AdminLegalCaseMessageRole = 'user' | 'lawyer' | 'system'
 
@@ -126,8 +133,14 @@ export type AdminLegalCase = {
   status: AdminLegalCaseStatus
   createdAt: string
   updatedAt: string
+  assignedProfessionalId?: string
   assignedLawyerId?: string
+  leadProfessionalId?: string
+  assignmentState: AdminLegalCaseAssignmentState
+  responseState: AdminLegalCaseResponseState
+  isAssigned: boolean
   description: string
+  practiceArea?: string
   city?: string
   contact?: string
   source: 'public-interaction'
@@ -151,6 +164,8 @@ export type AdminLegalCaseResponse = {
 export type AdminLegalCaseMessagesResponse = {
   status: 'ready'
   caseId: string
+  case?: AdminLegalCase
+  message?: AdminLegalCaseMessage
   messages: AdminLegalCaseMessage[]
 }
 
@@ -343,6 +358,19 @@ export async function getEntityBusinessConfig(
   return response.json() as Promise<EntityBusinessConfigResponse>
 }
 
+export async function getOfficeBusinessConfig(
+  officeId: string,
+  baseUrl = getBackendBaseUrl(),
+): Promise<{ status: 'ready'; officeId: string; businessConfig: OfficeBusinessConfig | null; updatedAt?: string }> {
+  const payload = await getEntityBusinessConfig(officeId, baseUrl)
+  return {
+    status: payload.status,
+    officeId: payload.entityId,
+    businessConfig: payload.businessConfig,
+    updatedAt: payload.updatedAt,
+  }
+}
+
 export async function saveEntityBusinessConfig(
   entityId: string,
   businessConfig: EntityBusinessConfig,
@@ -391,6 +419,13 @@ export async function listEntityCases(
   return response.json() as Promise<AdminLegalCaseListResponse>
 }
 
+export async function listOfficeCases(
+  officeId: string,
+  baseUrl = getBackendBaseUrl(),
+): Promise<AdminLegalCaseListResponse> {
+  return listEntityCases(officeId, baseUrl)
+}
+
 export async function getCase(
   caseId: string,
   baseUrl = getBackendBaseUrl(),
@@ -423,7 +458,7 @@ export async function getCaseMessages(
 
 export async function assignCase(
   caseId: string,
-  lawyerId: string,
+  lawyerId = 'self',
   baseUrl = getBackendBaseUrl(),
 ): Promise<AdminLegalCaseResponse> {
   const response = await fetch(`${baseUrl}/cases/${encodeURIComponent(caseId)}/assign`, {
@@ -448,13 +483,14 @@ export async function respondToCase(
   text: string,
   baseUrl = getBackendBaseUrl(),
 ): Promise<AdminLegalCaseMessagesResponse> {
-  const response = await fetch(`${baseUrl}/cases/${encodeURIComponent(caseId)}/respond`, {
+  const response = await fetch(`${baseUrl}/cases/${encodeURIComponent(caseId)}/messages`, {
     method: 'POST',
     headers: await buildRequiredBackendAuthHeaders({
       'Content-Type': 'application/json',
     }),
     body: JSON.stringify({
-      text,
+      role: 'lawyer',
+      body: text,
     }),
   })
 
@@ -484,6 +520,29 @@ export async function closeCase(
 
   if (!response.ok) {
     throw new Error(await readApiErrorMessage(response, `Failed to close case (${response.status}).`))
+  }
+
+  return response.json() as Promise<AdminLegalCaseResponse>
+}
+
+export async function updateCaseStatus(
+  caseId: string,
+  input: {
+    status: AdminLegalCaseTransitionTargetStatus
+    reason?: string
+  },
+  baseUrl = getBackendBaseUrl(),
+): Promise<AdminLegalCaseResponse> {
+  const response = await fetch(`${baseUrl}/cases/${encodeURIComponent(caseId)}/status`, {
+    method: 'POST',
+    headers: await buildRequiredBackendAuthHeaders({
+      'Content-Type': 'application/json',
+    }),
+    body: JSON.stringify(input),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, `Failed to update case status (${response.status}).`))
   }
 
   return response.json() as Promise<AdminLegalCaseResponse>

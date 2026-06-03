@@ -272,7 +272,7 @@ export default function EntityCasePage({ entityId, caseId }: EntityCasePageProps
           <p className="entity-public-copy">
             {legalCase.status === 'open'
               ? 'Seu caso foi aberto e esta aguardando um advogado. Voce pode complementar informacoes aqui.'
-              : legalCase.status === 'assigned'
+              : legalCase.status === 'dispatched' || legalCase.status === 'accepted' || legalCase.status === 'in_progress'
                 ? 'O caso esta em atendimento. Responda por aqui para manter toda a conversa dentro da plataforma.'
                 : 'Esse caso foi finalizado. Se precisar complementar algo, abra um novo atendimento.'}
           </p>

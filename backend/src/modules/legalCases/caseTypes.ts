@@ -3,6 +3,7 @@ export const casePriorities = ['low', 'normal', 'high', 'urgent'] as const
 export const caseTimelineEventTypes = [
   'created',
   'message_added',
+  'status_changed',
   'matched',
   'assigned',
   'accepted',
@@ -29,6 +30,7 @@ export type CaseAssignmentStatus = 'active' | 'accepted' | 'rejected' | 'complet
 export type CreateCaseInput = {
   tenantId: number
   entityId: string
+  requestId?: string
   createdByUserId?: number
   caseNumber?: string
   title: string
@@ -40,6 +42,7 @@ export type CreateCaseInput = {
   leadProfessionalId?: string
   centelhaContext?: JsonObject
   metadata?: JsonObject
+  autoDispatch?: boolean
   openedAt?: string
   initialMessage?: {
     authorProfessionalId?: string

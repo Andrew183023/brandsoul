@@ -610,6 +610,56 @@ export class CaseRepository {
     return row ?? null
   }
 
+  async listDetailedProfessionalsForTenant(tenantId: number): Promise<Array<{
+    id: string
+    displayName: string
+    photoUrl?: string
+    oabCredential?: string
+    specialties: string[]
+  }>> {
+    const rows = await this.db.all<Array<{
+      id: string
+      display_name: string
+      specialties: unknown
+      profile_metadata: unknown
+    }>>(
+      `
+        SELECT
+          professionals.id,
+          professionals.display_name,
+          professional_profiles.specialties,
+          professional_profiles.metadata AS profile_metadata
+        FROM professionals
+        LEFT JOIN professional_profiles
+          ON professional_profiles.tenant_id = professionals.tenant_id
+         AND professional_profiles.professional_id = professionals.id
+        WHERE professionals.tenant_id = ?
+        ORDER BY professionals.created_at ASC, professionals.id ASC
+      `,
+      tenantId,
+    )
+
+    return rows.map((row) => {
+      const profileMetadata = parseJsonObject(row.profile_metadata)
+      const specialties = parseJsonArray(row.specialties)
+        .filter((value): value is string => typeof value === 'string')
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0)
+
+      return {
+        id: row.id,
+        displayName: row.display_name,
+        photoUrl: typeof profileMetadata.photoUrl === 'string' && profileMetadata.photoUrl.trim().length > 0
+          ? profileMetadata.photoUrl.trim()
+          : undefined,
+        oabCredential: typeof profileMetadata.oabCredential === 'string' && profileMetadata.oabCredential.trim().length > 0
+          ? profileMetadata.oabCredential.trim()
+          : undefined,
+        specialties,
+      }
+    })
+  }
+
   async addMessage(input: AddCaseMessageInput): Promise<CaseMessageRecord> {
     const id = randomUUID()
     const createdAt = input.sentAt ?? new Date().toISOString()
