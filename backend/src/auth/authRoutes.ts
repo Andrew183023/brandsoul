@@ -87,15 +87,21 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       email?: string
       password?: string
       tenant_name?: string
+      tenantName?: string
+      companyName?: string
       business_model?: 'product' | 'service' | 'hybrid' | 'professional'
+      businessModel?: 'product' | 'service' | 'hybrid' | 'professional'
       intent?: 'client-case'
     }
   }>('/auth/register', async (request, reply) => {
     const name = request.body?.name?.trim() ?? ''
     const email = request.body?.email?.trim().toLowerCase() ?? ''
     const password = request.body?.password ?? ''
-    const tenantName = request.body?.tenant_name?.trim() ?? ''
-    const businessModel = request.body?.business_model ?? 'hybrid'
+    const tenantName = request.body?.tenant_name?.trim()
+      ?? request.body?.tenantName?.trim()
+      ?? request.body?.companyName?.trim()
+      ?? ''
+    const businessModel = request.body?.business_model ?? request.body?.businessModel ?? 'hybrid'
     const accountMode = request.body?.intent === 'client-case' ? 'client' : 'owner'
 
     if (!name || !email || !password || (accountMode !== 'client' && !tenantName)) {

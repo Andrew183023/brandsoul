@@ -262,6 +262,10 @@ async function createAuthHarness(): Promise<AuthHarness> {
     PASSWORD_RESET_EXPIRE_MINUTES: process.env.PASSWORD_RESET_EXPIRE_MINUTES,
     RESEND_API_KEY: process.env.RESEND_API_KEY,
     EMAIL_FROM: process.env.EMAIL_FROM,
+    CORS_ORIGINS: process.env.CORS_ORIGINS,
+    CORS_ORIGIN: process.env.CORS_ORIGIN,
+    ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
+    FRONTEND_ORIGINS: process.env.FRONTEND_ORIGINS,
   }
 
   process.env.JWT_SECRET = 'legacy-auth-test-secret'
@@ -578,6 +582,91 @@ test('register creates the shared account records and returns an official TypeSc
     const storedUser = await harness.app.backendContext.auth.legacyAuthStoreRepository.findUserByEmail('new-owner@example.com')
     assert.ok(storedUser)
     assert.equal(Boolean(storedUser?.passwordHash.startsWith('$2')), true)
+  } finally {
+    await harness.asyncClose()
+  }
+})
+
+test('register accepts companyName compatibility payload and OPTIONS preflight exposes beta origin', { concurrency: false }, async () => {
+  const previousCorsEnv = {
+    CORS_ORIGINS: process.env.CORS_ORIGINS,
+    CORS_ORIGIN: process.env.CORS_ORIGIN,
+    ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
+    FRONTEND_ORIGINS: process.env.FRONTEND_ORIGINS,
+  }
+
+  process.env.CORS_ORIGIN = 'https://brandsoul-legal-beta.onrender.com'
+  delete process.env.CORS_ORIGINS
+  delete process.env.ALLOWED_ORIGINS
+  delete process.env.FRONTEND_ORIGINS
+
+  const harness = await createAuthHarness()
+
+  try {
+    const preflight = await harness.app.inject({
+      method: 'OPTIONS',
+      url: '/auth/register',
+      headers: {
+        origin: 'https://brandsoul-legal-beta.onrender.com',
+      },
+    })
+
+    assert.equal(preflight.statusCode, 204)
+    assert.equal(preflight.headers['access-control-allow-origin'], 'https://brandsoul-legal-beta.onrender.com')
+    assert.equal(preflight.headers['access-control-allow-credentials'], 'true')
+
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/auth/register',
+      payload: {
+        name: 'Beta Owner',
+        email: 'beta-owner@example.com',
+        password: 'beta-owner-secret',
+        companyName: 'BrandSoul Legal Beta',
+        businessModel: 'professional',
+      },
+    })
+
+    assert.equal(response.statusCode, 200)
+    const body = response.json() as {
+      accessToken: string
+      refreshToken: string
+      user: { email: string }
+      tenant: { slug: string; business_model: string }
+    }
+    assert.equal(body.user.email, 'beta-owner@example.com')
+    assert.equal(body.tenant.business_model, 'professional')
+    assert.match(body.tenant.slug, /^brandsoul-legal-beta(?:-\d+)?$/)
+    assert.ok(body.accessToken)
+    assert.ok(body.refreshToken)
+  } finally {
+    await harness.asyncClose()
+    for (const [key, value] of Object.entries(previousCorsEnv)) {
+      if (typeof value === 'undefined') {
+        delete process.env[key]
+      } else {
+        process.env[key] = value
+      }
+    }
+  }
+})
+
+test('register still rejects owner payload without tenant compatibility fields', { concurrency: false }, async () => {
+  const harness = await createAuthHarness()
+
+  try {
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/auth/register',
+      payload: {
+        name: 'Incomplete Owner',
+        email: 'incomplete-owner@example.com',
+        password: 'missing-tenant-secret',
+      },
+    })
+
+    assert.equal(response.statusCode, 400)
+    assert.equal(response.json().error.code, 'invalid_registration')
   } finally {
     await harness.asyncClose()
   }

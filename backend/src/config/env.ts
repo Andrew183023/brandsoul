@@ -342,7 +342,10 @@ export function getLegalCaseDispatchTimeoutSeconds() {
 }
 
 export function getCorsOrigins() {
-  const rawValue = readTrimmedEnv('CORS_ORIGINS') || readTrimmedEnv('FRONTEND_ORIGINS')
+  const rawValue = readTrimmedEnv('CORS_ORIGINS')
+    || readTrimmedEnv('CORS_ORIGIN')
+    || readTrimmedEnv('ALLOWED_ORIGINS')
+    || readTrimmedEnv('FRONTEND_ORIGINS')
 
   if (!rawValue) {
     return DEFAULT_CORS_ORIGINS
