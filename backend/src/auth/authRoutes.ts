@@ -101,7 +101,9 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       ?? request.body?.tenantName?.trim()
       ?? request.body?.companyName?.trim()
       ?? ''
-    const businessModel = request.body?.business_model ?? request.body?.businessModel ?? 'hybrid'
+    const businessModel = request.body?.business_model
+      ?? request.body?.businessModel
+      ?? 'hybrid'
     const accountMode = request.body?.intent === 'client-case' ? 'client' : 'owner'
 
     if (!name || !email || !password || (accountMode !== 'client' && !tenantName)) {

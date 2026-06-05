@@ -1,0 +1,220 @@
+/* Motion system: trust-first, low-amplitude transitions for continuity and context preservation. */
+
+:root {
+  --motion-stagger-step: 24ms;
+  --motion-settle-distance: 5px;
+  --motion-focus-ring-spread: 12px;
+}
+
+#root {
+  view-transition-name: brandsoul-root;
+}
+
+.motion-page {
+  animation: motion-page-enter var(--ds-motion-duration-emphasis) var(--ds-motion-ease-enter) both;
+}
+
+.motion-reveal > * {
+  opacity: 0;
+  transform: translateY(var(--motion-settle-distance));
+  animation: motion-reveal-item var(--ds-motion-duration-slow) var(--ds-motion-ease-enter) both;
+}
+
+.motion-reveal > :nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.motion-reveal > :nth-child(2) {
+  animation-delay: var(--motion-stagger-step);
+}
+
+.motion-reveal > :nth-child(3) {
+  animation-delay: calc(var(--motion-stagger-step) * 2);
+}
+
+.motion-reveal > :nth-child(4) {
+  animation-delay: calc(var(--motion-stagger-step) * 3);
+}
+
+.motion-reveal > :nth-child(5) {
+  animation-delay: calc(var(--motion-stagger-step) * 4);
+}
+
+.motion-reveal > :nth-child(6) {
+  animation-delay: calc(var(--motion-stagger-step) * 5);
+}
+
+.motion-surface {
+  transition: border-color var(--ds-motion-duration-base) var(--ds-motion-ease-standard),
+    background-color var(--ds-motion-duration-base) var(--ds-motion-ease-standard),
+    box-shadow var(--ds-motion-duration-base) var(--ds-motion-ease-standard),
+    opacity var(--ds-motion-duration-fast) var(--ds-motion-ease-standard),
+    transform var(--ds-motion-duration-base) var(--ds-motion-ease-standard),
+    filter var(--ds-motion-duration-base) var(--ds-motion-ease-standard);
+}
+
+.motion-tactile {
+  transition: transform var(--ds-motion-duration-fast) var(--ds-motion-ease-emphasis),
+    opacity var(--ds-motion-duration-fast) var(--ds-motion-ease-standard),
+    background-color var(--ds-motion-duration-base) var(--ds-motion-ease-standard),
+    border-color var(--ds-motion-duration-base) var(--ds-motion-ease-standard),
+    box-shadow var(--ds-motion-duration-fast) var(--ds-motion-ease-standard);
+}
+
+.motion-tactile:hover:not(:disabled),
+.motion-tactile:active:not(:disabled) {
+  transform: translateY(calc(var(--ds-motion-distance-sm) * -1));
+}
+
+.motion-context-busy {
+  transition: opacity var(--ds-motion-duration-base) var(--ds-motion-ease-standard),
+    filter var(--ds-motion-duration-base) var(--ds-motion-ease-standard);
+}
+
+.motion-context-busy[aria-busy='true'] > *:not(.ds-skeleton):not(.ds-state-contract__skeletons) {
+  opacity: var(--ds-motion-alpha-base);
+  filter: saturate(0.96);
+}
+
+.motion-loading-shell {
+  transition: opacity var(--ds-motion-duration-base) var(--ds-motion-ease-standard),
+    transform var(--ds-motion-duration-base) var(--ds-motion-ease-standard),
+    filter var(--ds-motion-duration-base) var(--ds-motion-ease-standard);
+}
+
+.motion-loading-shell[aria-busy='true'] {
+  filter: saturate(0.98);
+}
+
+.motion-loading-shell[aria-busy='true'] .ds-skeleton {
+  animation-duration: calc(var(--ds-motion-duration-loading) * 0.9);
+}
+
+.motion-search-shell {
+  transition: border-color var(--ds-motion-duration-base) var(--ds-motion-ease-standard),
+    background-color var(--ds-motion-duration-base) var(--ds-motion-ease-standard),
+    box-shadow var(--ds-motion-duration-base) var(--ds-motion-ease-standard),
+    transform var(--ds-motion-duration-base) var(--ds-motion-ease-standard);
+}
+
+.motion-search-shell:focus-within {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ds-color-accent-primary) 14%, transparent),
+    0 12px 30px rgba(23, 34, 53, 0.07);
+}
+
+.motion-nav-shell {
+  transition: background-color var(--ds-motion-duration-base) var(--ds-motion-ease-standard),
+    border-color var(--ds-motion-duration-base) var(--ds-motion-ease-standard),
+    box-shadow var(--ds-motion-duration-base) var(--ds-motion-ease-standard),
+    backdrop-filter var(--ds-motion-duration-base) var(--ds-motion-ease-standard);
+}
+
+.motion-nav-item {
+  transition: transform var(--ds-motion-duration-fast) var(--ds-motion-ease-standard),
+    color var(--ds-motion-duration-base) var(--ds-motion-ease-standard),
+    background-color var(--ds-motion-duration-base) var(--ds-motion-ease-standard),
+    border-color var(--ds-motion-duration-base) var(--ds-motion-ease-standard),
+    box-shadow var(--ds-motion-duration-base) var(--ds-motion-ease-standard),
+    opacity var(--ds-motion-duration-fast) var(--ds-motion-ease-standard);
+}
+
+.motion-nav-item:hover,
+.motion-nav-item:focus-visible {
+  transform: translateY(-1px);
+}
+
+.motion-modal-continuity {
+  transition: box-shadow var(--ds-motion-duration-base) var(--ds-motion-ease-standard),
+    border-color var(--ds-motion-duration-base) var(--ds-motion-ease-standard),
+    background-color var(--ds-motion-duration-base) var(--ds-motion-ease-standard);
+}
+
+.motion-section-anchor {
+  scroll-margin-top: 108px;
+}
+
+.motion-continuity-anchor {
+  scroll-margin-top: 84px;
+}
+
+::view-transition-old(brandsoul-root),
+::view-transition-new(brandsoul-root) {
+  animation-duration: var(--ds-motion-duration-base);
+  animation-timing-function: var(--ds-motion-ease-standard);
+}
+
+::view-transition-old(brandsoul-root) {
+  animation-name: motion-view-old;
+}
+
+::view-transition-new(brandsoul-root) {
+  animation-name: motion-view-new;
+}
+
+@keyframes motion-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(var(--motion-settle-distance));
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes motion-reveal-item {
+  from {
+    opacity: 0;
+    transform: translateY(var(--motion-settle-distance));
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes motion-view-old {
+  from {
+    opacity: 1;
+    filter: blur(0px);
+  }
+
+  to {
+    opacity: 0.985;
+    filter: blur(1px);
+  }
+}
+
+@keyframes motion-view-new {
+  from {
+    opacity: 0.985;
+    filter: blur(1px);
+  }
+
+  to {
+    opacity: 1;
+    filter: blur(0px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce), (update: slow) {
+  .motion-page,
+  .motion-reveal > *,
+  ::view-transition-old(brandsoul-root),
+  ::view-transition-new(brandsoul-root) {
+    animation: none !important;
+  }
+
+  .motion-tactile,
+  .motion-surface,
+  .motion-context-busy {
+    transition: none !important;
+  }
+
+  .motion-tactile:hover:not(:disabled),
+  .motion-tactile:active:not(:disabled) {
+    transform: none;
+  }
+}

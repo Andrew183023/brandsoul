@@ -1,0 +1,27 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.legal.tsbuildinfo"
+  },
+  "include": [
+    "src/main.legal.tsx",
+    "src/AppLegal.tsx"
+  ],
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/pages/CreatePersonaPage.tsx",
+    "src/pages/CustomerChatPage.tsx",
+    "src/pages/EntityPublicPage.tsx",
+    "src/pages/BrandInteractionPage.tsx",
+    "src/pages/AdminBusinessConfigPage.tsx",
+    "src/pages/AdminEntityIdentityPage.tsx",
+    "src/pages/AdminEntityInteractionPage.tsx",
+    "src/pages/AdminEntityIntelligencePage.tsx",
+    "src/pages/AdminEntityOperationPage.tsx",
+    "src/pages/AdminEntityRuntimePage.tsx",
+    "src/pages/AdminEntityCasesPage.tsx",
+    "src/backend-bridge/api/publicFlowMindPartialApi.ts",
+    "src/pages/public-presence/services/publicFlowMindPartial.ts"
+  ]
+}

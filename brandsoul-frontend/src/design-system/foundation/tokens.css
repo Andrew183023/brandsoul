@@ -1,0 +1,103 @@
+:root {
+  --ds-color-bg-canvas: #f6f1ea;
+  --ds-color-bg-surface: #ffffff;
+  --ds-color-bg-subtle: #f7f3ed;
+  --ds-color-bg-inverse: #1d2a40;
+
+  --ds-color-text-primary: #172235;
+  --ds-color-text-secondary: #4b5a70;
+  --ds-color-text-muted: #68778d;
+  --ds-color-text-inverse: #f9fafb;
+
+  --ds-color-border-default: #ddd1c2;
+  --ds-color-border-strong: #c1b19f;
+
+  --ds-color-accent-primary: #9a5c33;
+  --ds-color-accent-primary-hover: #874f2b;
+  --ds-color-accent-primary-active: #744526;
+
+  --ds-color-state-confirmed-bg: #ecfdf3;
+  --ds-color-state-confirmed-fg: #0f5132;
+  --ds-color-state-confirmed-border: #8ad1a8;
+
+  --ds-color-state-estimated-bg: #fff7e6;
+  --ds-color-state-estimated-fg: #7a4a00;
+  --ds-color-state-estimated-border: #e9c889;
+
+  --ds-color-state-unavailable-bg: #f3f4f6;
+  --ds-color-state-unavailable-fg: #374151;
+  --ds-color-state-unavailable-border: #c7ccd4;
+
+  --ds-color-state-degraded-bg: #fff4f4;
+  --ds-color-state-degraded-fg: #7f1d1d;
+  --ds-color-state-degraded-border: #f2b1b1;
+
+  --ds-color-state-overload-bg: #fff5eb;
+  --ds-color-state-overload-fg: #7c2d12;
+  --ds-color-state-overload-border: #efc5a2;
+
+  --ds-font-family-display: "Cormorant Garamond", "Times New Roman", serif;
+  --ds-font-family-body: "Source Sans 3", "Segoe UI", sans-serif;
+
+  --ds-font-size-display-xl: clamp(2.4rem, 5.5vw, 4.1rem);
+  --ds-font-size-display-lg: clamp(1.95rem, 3.8vw, 2.95rem);
+  --ds-font-size-title-lg: 1.7rem;
+  --ds-font-size-title-md: 1.35rem;
+  --ds-font-size-body-lg: 1.125rem;
+  --ds-font-size-body-md: 1rem;
+  --ds-font-size-body-sm: 0.875rem;
+  --ds-font-size-label-md: 0.8125rem;
+  --ds-font-size-label-sm: 0.75rem;
+
+  --ds-line-height-display: 1.04;
+  --ds-line-height-title: 1.25;
+  --ds-line-height-body: 1.62;
+
+  --ds-space-1: 0.25rem;
+  --ds-space-2: 0.5rem;
+  --ds-space-3: 0.75rem;
+  --ds-space-4: 1.1rem;
+  --ds-space-5: 1.75rem;
+  --ds-space-6: 2.4rem;
+  --ds-space-7: 3.5rem;
+  --ds-space-section: clamp(1.8rem, 3.6vw, 3rem);
+  --ds-space-cluster: clamp(0.65rem, 1.4vw, 1rem);
+  --ds-space-card-pad: clamp(1.1rem, 2.4vw, 1.6rem);
+
+  --ds-radius-sm: 0.375rem;
+  --ds-radius-md: 0.72rem;
+  --ds-radius-lg: 1rem;
+
+  --ds-elevation-1: 0 8px 20px rgba(38, 48, 64, 0.08);
+  --ds-elevation-2: 0 18px 42px rgba(38, 48, 64, 0.14);
+
+  --ds-motion-duration-fast: 120ms;
+  --ds-motion-duration-base: 180ms;
+  --ds-motion-duration-slow: 260ms;
+  --ds-motion-duration-emphasis: 320ms;
+  --ds-motion-duration-loading: 1200ms;
+  --ds-motion-ease-standard: cubic-bezier(0.2, 0, 0.2, 1);
+  --ds-motion-ease-enter: cubic-bezier(0.16, 1, 0.3, 1);
+  --ds-motion-ease-exit: cubic-bezier(0.7, 0, 0.84, 0);
+  --ds-motion-ease-emphasis: cubic-bezier(0.2, 0.75, 0.3, 1);
+  --ds-motion-distance-sm: 4px;
+  --ds-motion-distance-md: 10px;
+  --ds-motion-alpha-soft: 0.7;
+  --ds-motion-alpha-base: 0.88;
+
+  --ds-font-size-section-title: clamp(1.75rem, 3.2vw, 2.45rem);
+  --ds-font-size-card-title: clamp(1.18rem, 2.2vw, 1.45rem);
+  --ds-cta-min-height: 3rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ds-motion-duration-fast: 0ms;
+    --ds-motion-duration-base: 0ms;
+    --ds-motion-duration-slow: 0ms;
+    --ds-motion-duration-emphasis: 0ms;
+    --ds-motion-duration-loading: 0ms;
+    --ds-motion-distance-sm: 0px;
+    --ds-motion-distance-md: 0px;
+  }
+}
