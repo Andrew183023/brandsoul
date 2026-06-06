@@ -1376,6 +1376,35 @@ function resolveLegacyCaseParticipantAccess(args: {
   }
 }
 
+function hasLegacyOperationalAdminRole(args: {
+  auth: AuthContext
+  entity: {
+    ownerTenantId?: number
+  }
+}) {
+  const normalizedRoles = Array.isArray(args.auth.roles)
+    ? args.auth.roles.map((role) => role.trim().toLowerCase())
+    : []
+
+  return args.entity.ownerTenantId === args.auth.tenantId
+    && normalizedRoles.some((role) => role === 'admin' || role === 'operator')
+}
+
+function canCloseLegacyCase(args: {
+  auth: AuthContext
+  entity: {
+    ownerTenantId?: number
+  }
+  access: {
+    isOwner: boolean
+  }
+}) {
+  return args.access.isOwner || hasLegacyOperationalAdminRole({
+    auth: args.auth,
+    entity: args.entity,
+  })
+}
+
 async function resolveCaseForAuthenticatedAccess(args: {
   app: FastifyInstance
   request: FastifyRequest
@@ -5169,6 +5198,11 @@ export async function registerEntityRoutes(app: FastifyInstance) {
     }
 
     const access = resolveLegacyCaseParticipantAccess({ auth, legalCase: found.legalCase, entity: found.entity })
+    const canClose = canCloseLegacyCase({
+      auth,
+      entity: found.entity,
+      access,
+    })
     logCasesAuthDebug({
       request,
       auth,
@@ -5183,12 +5217,22 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       isLawyer: access.isLawyer,
       accessAllowed: access.accessAllowed,
     })
-    if (!access.accessAllowed) {
+    if (!access.accessAllowed && !canClose) {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'CASE_NOT_FOUND',
+          message: `Case "${request.params.id}" was not found.`,
+        },
+      })
+    }
+
+    if (!canClose) {
       return reply.status(403).send({
         status: 'failed',
         error: {
-          code: 'CASE_ACCESS_FORBIDDEN',
-          message: 'You do not have access to this case.',
+          code: 'CASE_MUTATION_FORBIDDEN',
+          message: 'You do not have permission to close this case.',
         },
       })
     }

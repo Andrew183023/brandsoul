@@ -42,6 +42,10 @@ function createEntityProfileFixture(id: string): EntityProfile {
   } as unknown as EntityProfile
 }
 
+function createLegacyCaseNote(caseRecord: Record<string, unknown>) {
+  return `legal:case:${JSON.stringify(caseRecord)}`
+}
+
 async function createAccessToken(
   userId: number,
   tenantId: number,
@@ -176,6 +180,40 @@ async function seedLegalActors(harness: Harness) {
       ownerUserId: 300,
       ownerTenantId: 2,
       entityProfile: createEntityProfileFixture('entity-t2-owned'),
+    })
+
+    await repository.createEntity({
+      id: 'entity-t1-legacy',
+      ownerId: 'user:100:tenant:1',
+      ownerUserId: 100,
+      ownerTenantId: 1,
+      entityProfile: {
+        ...createEntityProfileFixture('entity-t1-legacy'),
+        metadata: {
+          ...createEntityProfileFixture('entity-t1-legacy').metadata,
+          notes: [
+            createLegacyCaseNote({
+              id: 'case-legacy-client1-t1',
+              tenantId: 1,
+              entityId: 'entity-t1-legacy',
+              status: 'open',
+              createdAt: now,
+              updatedAt: now,
+              creatorUserId: 101,
+              creatorTenantId: 1,
+              assignedLawyerId: 'prof-assigned',
+              assignmentState: 'active',
+              responseState: 'active',
+              isAssigned: true,
+              description: 'Caso legado para validar fallback de close.',
+              practiceArea: 'consumer',
+              source: 'public-interaction',
+              messages: [],
+              timeline: [],
+            }),
+          ],
+        },
+      } as EntityProfile,
     })
   }, 'backend/src/api/caseLifecycleAuthorization.test.ts#seedLegalActors')
 
@@ -431,6 +469,36 @@ test('case lifecycle mutations are restricted to operational roles', { concurren
       assert.equal(response.statusCode, 403)
     })
 
+    await t.test('legacy fallback denies client close mutation', async () => {
+      const response = await harness.app.inject({
+        method: 'POST',
+        url: '/cases/case-legacy-client1-t1/close',
+        headers: authHeaders(clientT1),
+        payload: {
+          rating: 3,
+          feedback: 'Cliente tentando fechar caso legado',
+          closedBy: 'cliente',
+        },
+      })
+
+      assert.equal(response.statusCode, 403)
+    })
+
+    await t.test('legacy fallback allows owner close mutation', async () => {
+      const response = await harness.app.inject({
+        method: 'POST',
+        url: '/cases/case-legacy-client1-t1/close',
+        headers: authHeaders(ownerT1),
+        payload: {
+          rating: 5,
+          feedback: 'Owner encerrou caso legado',
+          closedBy: 'owner',
+        },
+      })
+
+      assert.equal(response.statusCode, 200)
+    })
+
     await t.test('owner can close case', async () => {
       const response = await harness.app.inject({
         method: 'POST',
@@ -468,6 +536,21 @@ test('case lifecycle mutations are restricted to operational roles', { concurren
         payload: {
           rating: 1,
           feedback: 'Cross tenant probe',
+          closedBy: 'owner',
+        },
+      })
+
+      assert.equal(response.statusCode, 404)
+    })
+
+    await t.test('legacy fallback returns generic not found for cross-tenant close mutation', async () => {
+      const response = await harness.app.inject({
+        method: 'POST',
+        url: '/cases/case-legacy-client1-t1/close',
+        headers: authHeaders(ownerT2),
+        payload: {
+          rating: 1,
+          feedback: 'Cross tenant legacy probe',
           closedBy: 'owner',
         },
       })
