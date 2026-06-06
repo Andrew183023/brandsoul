@@ -1962,6 +1962,42 @@ function isPostgresCaseParticipant(args: {
   return isClient || isOwner || isAssignedLawyerByUserId || isAssignedLawyerByProfessionalId
 }
 
+function resolvePostgresCaseActorAccess(args: {
+  auth: AuthContext
+  legalCase: LegacyCompatibleCaseRecord
+  entity: { ownerUserId?: number; ownerTenantId?: number } | null
+  professionalId?: string
+}) {
+  const { auth, legalCase, entity, professionalId } = args
+  const isClient = legalCase.creatorUserId === auth.userId
+  const isOwner = entity?.ownerUserId === auth.userId && entity?.ownerTenantId === auth.tenantId
+  const isAssignedLawyer = legalCase.assignedLawyerId === String(auth.userId)
+    || legalCase.assignedLawyerId === buildLegacyOwnerId(auth.userId, auth.tenantId)
+    || (Boolean(professionalId) && legalCase.assignedLawyerId === professionalId)
+
+  return {
+    isClient,
+    isOwner,
+    isAssignedLawyer,
+    hasParticipantAccess: isClient || isOwner || isAssignedLawyer,
+  }
+}
+
+function canUpdatePostgresCaseStatus(args: {
+  hasAccess: boolean
+  isOwner: boolean
+  isAssignedLawyer: boolean
+}) {
+  return args.hasAccess && (args.isOwner || args.isAssignedLawyer)
+}
+
+function canClosePostgresCase(args: {
+  hasAccess: boolean
+  isOwner: boolean
+}) {
+  return args.hasAccess && args.isOwner
+}
+
 async function resolveMarketplaceCasesAccess(args: {
   app: FastifyInstance
   auth: AuthContext
@@ -2077,12 +2113,14 @@ async function resolvePostgresCaseForRead(args: {
       && marketplaceAccess.marketplaceEntityId === legalCase.entityId,
   )
 
-  const hasAccess = isPostgresCaseParticipant({
+  const actorAccess = resolvePostgresCaseActorAccess({
     auth: args.auth,
     legalCase,
     entity,
     professionalId: professional?.id,
-  }) || hasMarketplaceReadAccess
+  })
+
+  const hasAccess = actorAccess.hasParticipantAccess || hasMarketplaceReadAccess
 
   logCasesAuthDebug({
     request: args.request,
@@ -2094,11 +2132,9 @@ async function resolvePostgresCaseForRead(args: {
     entityOwnerTenantId: entity?.ownerTenantId,
     professionalId: professional?.id,
     assignedLawyerId: legalCase.assignedLawyerId,
-    isClient: legalCase.creatorUserId === args.auth.userId,
-    isOwner: entity?.ownerUserId === args.auth.userId && entity?.ownerTenantId === args.auth.tenantId,
-    isLawyer: legalCase.assignedLawyerId === String(args.auth.userId)
-      || legalCase.assignedLawyerId === buildLegacyOwnerId(args.auth.userId, args.auth.tenantId)
-      || (Boolean(professional?.id) && legalCase.assignedLawyerId === professional?.id),
+    isClient: actorAccess.isClient,
+    isOwner: actorAccess.isOwner,
+    isLawyer: actorAccess.isAssignedLawyer,
     accessAllowed: hasAccess,
   })
 
@@ -2107,6 +2143,9 @@ async function resolvePostgresCaseForRead(args: {
     legalCase,
     entity,
     hasAccess,
+    isClient: actorAccess.isClient,
+    isOwner: actorAccess.isOwner,
+    isAssignedLawyer: actorAccess.isAssignedLawyer,
     messages: legalCase.messages,
   }
 }
@@ -2908,11 +2947,21 @@ export async function registerEntityRoutes(app: FastifyInstance) {
     }
 
     if (!postgresCase.hasAccess) {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'CASE_NOT_FOUND',
+          message: `Case "${request.params.id}" was not found.`,
+        },
+      })
+    }
+
+    if (!canUpdatePostgresCaseStatus(postgresCase)) {
       return reply.status(403).send({
         status: 'failed',
         error: {
-          code: 'CASE_ACCESS_FORBIDDEN',
-          message: 'You do not have access to this case.',
+          code: 'CASE_MUTATION_FORBIDDEN',
+          message: 'You do not have permission to update this case lifecycle.',
         },
       })
     }
@@ -4982,11 +5031,21 @@ export async function registerEntityRoutes(app: FastifyInstance) {
     if (postgresCase) {
       trackCaseRouteMetric(app, 'postgres_case_hit', 'POST /cases/:id/close')
       if (!postgresCase.hasAccess) {
+        return reply.status(404).send({
+          status: 'failed',
+          error: {
+            code: 'CASE_NOT_FOUND',
+            message: `Case "${request.params.id}" was not found.`,
+          },
+        })
+      }
+
+      if (!canClosePostgresCase(postgresCase)) {
         return reply.status(403).send({
           status: 'failed',
           error: {
-            code: 'CASE_ACCESS_FORBIDDEN',
-            message: 'You do not have access to this case.',
+            code: 'CASE_MUTATION_FORBIDDEN',
+            message: 'You do not have permission to close this case.',
           },
         })
       }
