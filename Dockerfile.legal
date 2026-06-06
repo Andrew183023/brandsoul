@@ -1,0 +1,32 @@
+FROM node:20-bookworm-slim AS backend-build
+WORKDIR /app/backend
+COPY backend/package*.json ./
+RUN npm ci
+COPY backend ./
+RUN npm run build:legal
+
+FROM node:20-bookworm-slim AS backend-runtime
+WORKDIR /app/backend
+ENV NODE_ENV=production
+COPY --from=backend-build /app/backend/package*.json ./
+COPY --from=backend-build /app/backend/node_modules ./node_modules
+COPY --from=backend-build /app/backend/dist ./dist
+COPY --from=backend-build /app/backend/scripts ./scripts
+EXPOSE 3011
+CMD ["npm", "run", "start:legal"]
+
+FROM node:20-bookworm-slim AS frontend-build
+WORKDIR /app/brandsoul-frontend
+COPY brandsoul-frontend/package*.json ./
+RUN npm ci
+COPY brandsoul-frontend ./
+RUN npm run build:legal
+
+FROM node:20-bookworm-slim AS frontend-runtime
+WORKDIR /app/brandsoul-frontend
+ENV NODE_ENV=production
+COPY --from=frontend-build /app/brandsoul-frontend/package*.json ./
+COPY --from=frontend-build /app/brandsoul-frontend/node_modules ./node_modules
+COPY --from=frontend-build /app/brandsoul-frontend/dist ./dist
+EXPOSE 4174
+CMD ["npm", "run", "preview:legal"]

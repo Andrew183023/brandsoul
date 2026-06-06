@@ -1,0 +1,32 @@
+services:
+  legal-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.legal
+      target: backend-runtime
+    env_file:
+      - .env.legal
+    ports:
+      - "3011:3011"
+    volumes:
+      - ./backend/data:/app/backend/data
+      - ./backend/tmp:/app/backend/tmp
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3011/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  legal-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.legal
+      target: frontend-runtime
+    env_file:
+      - .env.legal
+    ports:
+      - "4174:4174"
+    depends_on:
+      legal-backend:
+        condition: service_healthy

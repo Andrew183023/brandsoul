@@ -1,0 +1,48 @@
+services:
+  - type: web
+    name: brandsoul-legal-backend
+    env: node
+    rootDir: backend
+    buildCommand: npm ci && npm run build:legal
+    startCommand: npm run start:legal
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: DATABASE_URL
+        sync: false
+      - key: SQLITE_FILE
+        sync: false
+      - key: ASSET_STORAGE_DIR
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: AUTH_ISSUER
+        sync: false
+      - key: AUTH_AUDIENCE
+        sync: false
+      - key: AUTH_ACTIVE_KID
+        sync: false
+      - key: AUTH_PRIVATE_KEY_REF
+        sync: false
+      - key: AUTH_PUBLIC_KEY_PATH
+        sync: false
+      - key: CORS_ORIGIN
+        sync: false
+      - key: LEGAL_MARKETPLACE_ENTITY_ID
+        sync: false
+      - key: RENDER_DEPLOY_MODE
+        value: production
+
+  - type: static
+    name: brandsoul-legal-frontend
+    rootDir: brandsoul-frontend
+    buildCommand: npm ci && npm run build:legal
+    publishDir: dist
+    envVars:
+      - key: VITE_API_URL
+        sync: false
+      - key: VITE_AUTH_API_URL
+        sync: false
