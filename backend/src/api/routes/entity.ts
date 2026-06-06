@@ -104,7 +104,7 @@ import {
 } from '../../orchestrator/orchestratorState.js'
 import { buildRuntimeSceneProjection } from '../../orchestrator/runtimeSceneProjection.js'
 import { createCaseRepository } from '../../modules/legalCases/caseRepository.js'
-import type { CaseMessageRecord, CaseRecord, CaseTimelineEventRecord } from '../../modules/legalCases/caseTypes.js'
+import type { CaseMessageRecord, CasePriority, CaseRecord, CaseTimelineEventRecord } from '../../modules/legalCases/caseTypes.js'
 import { createCaseService } from '../../modules/legalCases/caseService.js'
 
 type BackendContext = {
@@ -247,6 +247,18 @@ type CasesQuerystring = {
   entityId?: string
 }
 
+type CreateCaseBody = {
+  entityId?: string
+  title?: string
+  description?: string
+  priority?: CasePriority
+  practiceArea?: string
+  metadata?: Record<string, unknown>
+  initialMessage?: {
+    body?: string
+  }
+}
+
 const REBRAND_DIAGNOSIS_NOTE_PREFIX = 'rebrand:diagnosis:'
 
 function getRepository(app: FastifyInstance) {
@@ -339,6 +351,17 @@ function createOwnerId() {
 
 function createExportRecordId() {
   return `exp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function getCaseClaimToken(request: FastifyRequest) {
+  const headerValue = request.headers['x-case-claim-token']
+  const rawValue = Array.isArray(headerValue) ? headerValue[0] : headerValue
+  const value = typeof rawValue === 'string' ? rawValue.trim() : ''
+  return value.length > 0 ? value : undefined
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0
 }
 
 function normalizePortalTimestamp(value: string | Date | null | undefined) {
@@ -1147,6 +1170,16 @@ const publicReadRateLimit = createRateLimit({
 const publicActionRateLimit = createRateLimit({
   namespace: 'public-action',
   max: 40,
+  windowMs: 60_000,
+  key: (request) => {
+    const auth = getRequestAuth(request)
+    return auth ? buildLegacyOwnerId(auth.userId, auth.tenantId) : (request.ip || 'unknown')
+  },
+})
+
+const publicCaseCreateRateLimit = createRateLimit({
+  namespace: 'public-case-create',
+  max: 20,
   windowMs: 60_000,
   key: (request) => {
     const auth = getRequestAuth(request)
@@ -3855,7 +3888,7 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       action: actionResult.actionType,
     })
 
-    await getSovereignMutationCommandService(app).submitCommand({
+  await getSovereignMutationCommandService(app).submitCommand({
       type: 'public.interaction.resolve',
       commandId: `public-interaction-resolved:${request.params.id}:${interactionWithAction.requestId}`,
       entityId: request.params.id,
@@ -3879,6 +3912,110 @@ export async function registerEntityRoutes(app: FastifyInstance) {
     })
 
     return reply.status(200).send(interactionWithAction)
+  })
+
+  app.post<{ Body: CreateCaseBody }>('/cases', { preHandler: [optionalAuth, publicCaseCreateRateLimit] }, async (request, reply) => {
+    const auth = getRequestAuth(request)
+    const claimToken = getCaseClaimToken(request)
+
+    if (!isNonEmptyString(request.body?.entityId) || !isNonEmptyString(request.body?.title)) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_CASE_CREATE_PAYLOAD',
+          message: 'entityId and title are required.',
+        },
+      })
+    }
+
+    const entityOwner = await getRepository(app).getEntityById(request.body.entityId)
+    const tenantId = Number(entityOwner?.ownerTenantId)
+
+    if (!Number.isInteger(tenantId) || tenantId <= 0) {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'ENTITY_NOT_FOUND',
+          message: 'Entity not found or unavailable for intake.',
+        },
+      })
+    }
+
+    if (
+      typeof request.body.priority !== 'undefined'
+      && !['low', 'normal', 'high', 'urgent'].includes(request.body.priority)
+    ) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_CASE_PRIORITY',
+          message: 'Invalid priority.',
+        },
+      })
+    }
+
+    if (
+      typeof request.body.initialMessage !== 'undefined'
+      && typeof request.body.initialMessage !== 'object'
+    ) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_INITIAL_MESSAGE',
+          message: 'Invalid initialMessage.',
+        },
+      })
+    }
+
+    if (
+      request.body.initialMessage
+      && typeof request.body.initialMessage.body !== 'undefined'
+      && !isNonEmptyString(request.body.initialMessage.body)
+    ) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_INITIAL_MESSAGE_BODY',
+          message: 'initialMessage.body must be a non-empty string.',
+        },
+      })
+    }
+
+    const legalCase = await getLegalCaseService(app).createCase({
+      tenantId,
+      entityId: request.body.entityId,
+      createdByUserId: Number.isInteger(auth?.userId) ? Number(auth?.userId) : undefined,
+      title: request.body.title.trim(),
+      description: isNonEmptyString(request.body.description) ? request.body.description.trim() : undefined,
+      priority: request.body.priority,
+      practiceArea: isNonEmptyString(request.body.practiceArea) ? request.body.practiceArea.trim() : undefined,
+      metadata: {
+        ...(request.body.metadata && typeof request.body.metadata === 'object' && !Array.isArray(request.body.metadata)
+          ? request.body.metadata
+          : {}),
+        ...(claimToken ? { caseClaimToken: claimToken } : {}),
+      },
+      autoDispatch: true,
+      initialMessage: isNonEmptyString(request.body.initialMessage?.body)
+        ? {
+          body: request.body.initialMessage.body.trim(),
+        }
+        : undefined,
+    })
+
+    request.log.info({
+      event: 'cases.public_intake_created',
+      traceId: request.traceId ?? request.id,
+      tenantId,
+      entityId: request.body.entityId,
+      sourceIp: request.ip,
+      caseId: legalCase.id,
+    }, 'Public legal intake case created')
+
+    return reply.status(201).send({
+      status: 'ready',
+      case: legalCase,
+    })
   })
 
   app.get<{ Params: { id: string } }>('/cases/:id', { preHandler: [requireAuth, publicReadRateLimit] }, async (request, reply) => {

@@ -239,6 +239,9 @@ const publicCaseCreateRateLimit = createRateLimit({
   windowMs: 60_000,
 })
 
+// Legacy/internal case routes. The canonical published /cases surface lives in
+// backend/src/api/routes/entity.ts and this module is intentionally not mounted
+// by the main API runtime.
 export async function registerCaseRoutes(app: FastifyInstance) {
   if (!hasRoute(app, 'POST', '/cases')) {
     app.post<{ Body: CreateCaseBody }>('/cases', { preHandler: [optionalAuth, publicCaseCreateRateLimit] }, async (request, reply) => {
