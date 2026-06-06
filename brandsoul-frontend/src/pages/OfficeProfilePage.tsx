@@ -7,14 +7,16 @@ import {
 } from '../backend-bridge/api/publicEntityInteractionApi'
 import {
   getOfficeTrustEvidence,
-  getOfficeBusinessConfig,
   getOfficePublicProfessionals,
   getOfficePublicPresenceLoadResult,
   PublicOfficePresenceApiError,
   type PublicOfficeProfessional,
   type OfficeTrustEvidenceItem,
-  type PublicOfficeBusinessConfig,
 } from '../backend-bridge/api/publicEntityApi'
+import {
+  getOfficeBusinessConfig,
+  type PublicOfficeBusinessConfig,
+} from '../backend-bridge/api/publicOfficeBusinessConfigApi'
 import {
   getOfficeSocialState,
   registerOfficeSignal,

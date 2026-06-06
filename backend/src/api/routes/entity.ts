@@ -819,6 +819,40 @@ function writeEntityBusinessConfig(entityProfile: EntityProfile, businessConfig:
   }
 }
 
+function projectPublicOfficeBusinessConfig(
+  businessConfig: EntityBusinessConfig | undefined,
+): Partial<EntityBusinessConfig> | undefined {
+  if (!businessConfig) {
+    return undefined
+  }
+
+  return {
+    businessType: businessConfig.businessType,
+    officeName: businessConfig.officeName,
+    description: businessConfig.description,
+    institutionalDescription: businessConfig.institutionalDescription,
+    legalAreas: businessConfig.legalAreas,
+    servedCities: businessConfig.servedCities,
+    attendanceModel: businessConfig.attendanceModel,
+    operatingHours: businessConfig.operatingHours,
+    avgResponseMinutes: businessConfig.avgResponseMinutes,
+    officeGallery: businessConfig.officeGallery,
+    institutionalVideo: businessConfig.institutionalVideo,
+    publicMessages: businessConfig.publicMessages,
+    triagePolicies: businessConfig.triagePolicies
+      ? {
+          intakeCriteria: businessConfig.triagePolicies.intakeCriteria,
+          priorityRules: businessConfig.triagePolicies.priorityRules,
+        }
+      : undefined,
+    serviceRules: businessConfig.serviceRules
+      ? {
+          responseWindowLabel: businessConfig.serviceRules.responseWindowLabel,
+        }
+      : undefined,
+  }
+}
+
 function parseTimestamp(value?: string) {
   if (!value) {
     return 0
@@ -2647,23 +2681,24 @@ export async function registerEntityRoutes(app: FastifyInstance) {
     }
   })
 
-  app.get<{ Params: { id: string } }>('/entity/:id/business-config', { preHandler: publicReadRateLimit }, async (request, reply) => {
-    const entity = await getRepository(app).getEntityById(request.params.id)
-    if (!entity) {
-      return reply.status(404).send({
-        status: 'failed',
-        error: {
-          code: 'ENTITY_NOT_FOUND',
-          message: `Entity "${request.params.id}" was not found.`,
-        },
-      })
-    }
-
+  app.get<{ Params: { id: string } }>('/entity/:id/business-config', { preHandler: [requireAuth, requireEntityOwner] }, async (request) => {
+    const entity = request.entityRecord!
     const businessConfig = readEntityBusinessConfig(entity.entityProfile as EntityProfile)
 
     return {
       status: 'ready',
       entityId: request.params.id,
+      businessConfig: businessConfig ?? null,
+    }
+  })
+
+  app.get<{ Params: { id: string } }>('/escritorios/:id/configuracao', { preHandler: [requireAuth, requireEntityOwner] }, async (request) => {
+    const entity = request.entityRecord!
+    const businessConfig = readEntityBusinessConfig(entity.entityProfile as EntityProfile)
+
+    return {
+      status: 'ready',
+      officeId: request.params.id,
       businessConfig: businessConfig ?? null,
     }
   })
@@ -3223,6 +3258,52 @@ export async function registerEntityRoutes(app: FastifyInstance) {
         error: {
           code: 'ENTITY_NOT_FOUND',
           message: `Entity "${request.params.id}" was not found.`,
+        },
+      })
+    }
+
+    reply.header('Cache-Control', 'public, max-age=30, stale-while-revalidate=60')
+    return payload
+  })
+
+  app.get<{ Params: { id: string } }>('/escritorios/:id/publico', { preHandler: publicReadRateLimit }, async (request, reply) => {
+    const repository = getRepository(app)
+    const cache = getPublicCacheService(app)
+    const cacheKey = `office-public:${request.params.id}`
+
+    const payload = await cache.getOrSet(cacheKey, 30_000, async () => {
+      const entity = await repository.getEntityById(request.params.id)
+      if (!entity) {
+        return null
+      }
+
+      const eventLogRepository = getEventLogRepository(app)
+      const exportRepository = getEntityExportRepository(app)
+      const [events, exports] = await Promise.all([
+        eventLogRepository.getRecentEvents(request.params.id, 100),
+        exportRepository.getExports(request.params.id),
+      ])
+
+      return {
+        status: 'ready',
+        officeId: request.params.id,
+        publicProfile: mapEntityProfileToPublicProfile({
+          entity: entity.entityProfile,
+          events,
+          exports,
+        }),
+        businessConfig: projectPublicOfficeBusinessConfig(
+          readEntityBusinessConfig(entity.entityProfile as EntityProfile),
+        ) ?? null,
+      }
+    })
+
+    if (!payload) {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'OFFICE_NOT_FOUND',
+          message: `Office "${request.params.id}" was not found.`,
         },
       })
     }
