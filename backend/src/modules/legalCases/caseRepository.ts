@@ -610,24 +610,55 @@ export class CaseRepository {
     return row ?? null
   }
 
+  async getProfessionalRecordByUserId(tenantId: number, userId: number): Promise<{ id: string } | null> {
+    return this.getProfessionalByUserId(tenantId, userId)
+  }
+
   async listDetailedProfessionalsForTenant(tenantId: number): Promise<Array<{
     id: string
+    tenantId: number
+    userId?: number
     displayName: string
+    email?: string
+    phone?: string
+    status: 'active' | 'inactive' | 'suspended'
+    officeId?: string
     photoUrl?: string
     oabCredential?: string
     specialties: string[]
+    bio?: string
+    isResponsible: boolean
+    isPublic: boolean
+    createdAt: string
+    updatedAt: string
   }>> {
     const rows = await this.db.all<Array<{
       id: string
+      tenant_id: number
+      user_id: number | null
       display_name: string
+      primary_email: string | null
+      primary_phone: string | null
+      status: 'active' | 'inactive' | 'suspended'
+      professional_metadata: unknown
       specialties: unknown
+      bio: string | null
       profile_metadata: unknown
+      created_at: string | Date
+      updated_at: string | Date
     }>>(
       `
         SELECT
           professionals.id,
+          professionals.tenant_id,
+          professionals.user_id,
           professionals.display_name,
+          professionals.primary_email,
+          professionals.primary_phone,
+          professionals.status,
+          professionals.metadata AS professional_metadata,
           professional_profiles.specialties,
+          professional_profiles.bio,
           professional_profiles.metadata AS profile_metadata
         FROM professionals
         LEFT JOIN professional_profiles
@@ -640,6 +671,7 @@ export class CaseRepository {
     )
 
     return rows.map((row) => {
+      const professionalMetadata = parseJsonObject(row.professional_metadata)
       const profileMetadata = parseJsonObject(row.profile_metadata)
       const specialties = parseJsonArray(row.specialties)
         .filter((value): value is string => typeof value === 'string')
@@ -648,7 +680,15 @@ export class CaseRepository {
 
       return {
         id: row.id,
+        tenantId: row.tenant_id,
+        userId: row.user_id ?? undefined,
         displayName: row.display_name,
+        email: row.primary_email ?? undefined,
+        phone: row.primary_phone ?? undefined,
+        status: row.status,
+        officeId: typeof professionalMetadata.officeId === 'string' && professionalMetadata.officeId.trim().length > 0
+          ? professionalMetadata.officeId.trim()
+          : undefined,
         photoUrl: typeof profileMetadata.photoUrl === 'string' && profileMetadata.photoUrl.trim().length > 0
           ? profileMetadata.photoUrl.trim()
           : undefined,
@@ -656,8 +696,224 @@ export class CaseRepository {
           ? profileMetadata.oabCredential.trim()
           : undefined,
         specialties,
+        bio: row.bio ?? undefined,
+        isResponsible: professionalMetadata.isResponsible === true,
+        isPublic: professionalMetadata.isPublic === true,
+        createdAt: normalizeTimestamp(row.created_at),
+        updatedAt: normalizeTimestamp(row.updated_at),
       }
     })
+  }
+
+  async listTimelineEvents(tenantId: number, caseId: string): Promise<CaseTimelineEventRecord[]> {
+    const rows = await this.db.all<Array<NonNullable<Parameters<typeof mapCaseTimelineRow>[0]>>>(
+      `
+        SELECT
+          id, tenant_id, case_id, event_type, actor_professional_id, actor_user_id, occurred_at, payload, created_at, updated_at
+        FROM case_timeline
+        WHERE tenant_id = ? AND case_id = ?
+        ORDER BY occurred_at ASC, created_at ASC, id ASC
+      `,
+      tenantId,
+      caseId,
+    )
+
+    return rows.map((row) => mapCaseTimelineRow(row)).filter((row): row is CaseTimelineEventRecord => Boolean(row))
+  }
+
+  async clearResponsibleFlagForOffice(tenantId: number, officeId: string, exceptProfessionalId?: string): Promise<void> {
+    const professionals = await this.listDetailedProfessionalsForTenant(tenantId)
+    const targets = professionals.filter((professional) => (
+      professional.officeId === officeId
+      && professional.isResponsible
+      && professional.id !== exceptProfessionalId
+    ))
+
+    for (const professional of targets) {
+      await this.updateManagedProfessional({
+        tenantId,
+        officeId,
+        professionalId: professional.id,
+        displayName: professional.displayName,
+        email: professional.email,
+        phone: professional.phone,
+        photoUrl: professional.photoUrl,
+        oabCredential: professional.oabCredential,
+        specialties: professional.specialties,
+        bio: professional.bio,
+        isResponsible: false,
+        isPublic: professional.isPublic,
+        status: professional.status,
+      })
+    }
+  }
+
+  async createManagedProfessional(input: {
+    tenantId: number
+    officeId: string
+    displayName: string
+    email?: string
+    phone?: string
+    photoUrl?: string
+    oabCredential?: string
+    specialties?: string[]
+    bio?: string
+    isResponsible: boolean
+    isPublic: boolean
+    status: 'active' | 'inactive' | 'suspended'
+  }): Promise<{ id: string }> {
+    const id = randomUUID()
+    const profileId = randomUUID()
+    const now = new Date().toISOString()
+    const professionalMetadata = {
+      officeId: input.officeId,
+      isResponsible: input.isResponsible,
+      isPublic: input.isPublic,
+    }
+    const profileMetadata = {
+      photoUrl: input.photoUrl,
+      oabCredential: input.oabCredential,
+    }
+
+    const insertProfessionalSql = this.db.dialect === 'postgres'
+      ? `
+          INSERT INTO professionals (
+            id, tenant_id, user_id, kind, status, display_name, primary_email, primary_phone, metadata, created_at, updated_at
+          )
+          VALUES (?, ?, NULL, 'human', ?, ?, ?, ?, ?::jsonb, ?, ?)
+        `
+      : `
+          INSERT INTO professionals (
+            id, tenant_id, user_id, kind, status, display_name, primary_email, primary_phone, metadata, created_at, updated_at
+          )
+          VALUES (?, ?, NULL, 'human', ?, ?, ?, ?, ?, ?, ?)
+        `
+
+    const insertProfileSql = this.db.dialect === 'postgres'
+      ? `
+          INSERT INTO professional_profiles (
+            id, tenant_id, professional_id, bio, specialties, metadata, created_at, updated_at
+          )
+          VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?)
+        `
+      : `
+          INSERT INTO professional_profiles (
+            id, tenant_id, professional_id, bio, specialties, metadata, created_at, updated_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `
+
+    await this.db.run(
+      insertProfessionalSql,
+      id,
+      input.tenantId,
+      input.status,
+      input.displayName,
+      input.email ?? null,
+      input.phone ?? null,
+      JSON.stringify(professionalMetadata),
+      now,
+      now,
+    )
+
+    await this.db.run(
+      insertProfileSql,
+      profileId,
+      input.tenantId,
+      id,
+      input.bio ?? null,
+      JSON.stringify(input.specialties ?? []),
+      JSON.stringify(profileMetadata),
+      now,
+      now,
+    )
+
+    return { id }
+  }
+
+  async updateManagedProfessional(input: {
+    tenantId: number
+    officeId: string
+    professionalId: string
+    displayName: string
+    email?: string
+    phone?: string
+    photoUrl?: string
+    oabCredential?: string
+    specialties?: string[]
+    bio?: string
+    isResponsible: boolean
+    isPublic: boolean
+    status: 'active' | 'inactive' | 'suspended'
+  }): Promise<void> {
+    const now = new Date().toISOString()
+    const professionalMetadata = {
+      officeId: input.officeId,
+      isResponsible: input.isResponsible,
+      isPublic: input.isPublic,
+    }
+    const profileMetadata = {
+      photoUrl: input.photoUrl,
+      oabCredential: input.oabCredential,
+    }
+    const updateProfessionalSql = this.db.dialect === 'postgres'
+      ? `
+          UPDATE professionals
+          SET status = ?, display_name = ?, primary_email = ?, primary_phone = ?, metadata = ?::jsonb, updated_at = ?
+          WHERE tenant_id = ? AND id = ?
+        `
+      : `
+          UPDATE professionals
+          SET status = ?, display_name = ?, primary_email = ?, primary_phone = ?, metadata = ?, updated_at = ?
+          WHERE tenant_id = ? AND id = ?
+        `
+    const updateProfileSql = this.db.dialect === 'postgres'
+      ? `
+          UPDATE professional_profiles
+          SET bio = ?, specialties = ?::jsonb, metadata = ?::jsonb, updated_at = ?
+          WHERE tenant_id = ? AND professional_id = ?
+        `
+      : `
+          UPDATE professional_profiles
+          SET bio = ?, specialties = ?, metadata = ?, updated_at = ?
+          WHERE tenant_id = ? AND professional_id = ?
+        `
+
+    await this.db.run(
+      updateProfessionalSql,
+      input.status,
+      input.displayName,
+      input.email ?? null,
+      input.phone ?? null,
+      JSON.stringify(professionalMetadata),
+      now,
+      input.tenantId,
+      input.professionalId,
+    )
+
+    await this.db.run(
+      updateProfileSql,
+      input.bio ?? null,
+      JSON.stringify(input.specialties ?? []),
+      JSON.stringify(profileMetadata),
+      now,
+      input.tenantId,
+      input.professionalId,
+    )
+  }
+
+  async deactivateManagedProfessional(tenantId: number, professionalId: string): Promise<void> {
+    const now = new Date().toISOString()
+    await this.db.run(
+      `
+        UPDATE professionals
+        SET status = 'inactive', updated_at = ?
+        WHERE tenant_id = ? AND id = ?
+      `,
+      now,
+      tenantId,
+      professionalId,
+    )
   }
 
   async addMessage(input: AddCaseMessageInput): Promise<CaseMessageRecord> {

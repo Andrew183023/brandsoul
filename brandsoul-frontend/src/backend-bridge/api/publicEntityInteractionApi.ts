@@ -50,6 +50,8 @@ export class PublicEntityInteractionApiError extends Error {
   }
 }
 
+export const PublicOfficeInteractionApiError = PublicEntityInteractionApiError
+
 export async function requestPublicEntityInteraction(args: {
   entityId: string
   request: PublicEntityInteractionRequest
@@ -98,4 +100,14 @@ export async function requestPublicEntityInteraction(args: {
   }
 
   return payload
+}
+
+export async function requestPublicOfficeInteraction(args: {
+  officeId: string
+  request: PublicEntityInteractionRequest
+}, baseUrl = getBackendBaseUrl()): Promise<PublicEntityDecisionResponse> {
+  return requestPublicEntityInteraction({
+    entityId: args.officeId,
+    request: args.request,
+  }, baseUrl)
 }

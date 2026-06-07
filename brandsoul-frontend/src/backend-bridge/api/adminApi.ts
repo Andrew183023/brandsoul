@@ -40,6 +40,12 @@ export type EntityBusinessType = 'restaurant' | 'store' | 'legal' | 'services'
 export type EntityBusinessConfig = {
   businessType: EntityBusinessType
   description?: string
+  officeName?: string
+  institutionalDescription?: string
+  legalAreas?: string[]
+  servedCities?: string[]
+  attendanceModel?: 'sales' | 'support' | 'guidance' | 'mixed' | 'online' | 'in_person' | 'hybrid'
+  operatingHours?: string
   toneProfile?: {
     voice?: string
     style?: string
@@ -51,6 +57,7 @@ export type EntityBusinessConfig = {
     email?: string
     address?: string
     website?: string
+    other?: string
   }
   serviceRules?: {
     attendanceMode?: 'sales' | 'support' | 'guidance' | 'mixed'
@@ -60,6 +67,55 @@ export type EntityBusinessConfig = {
   }
   maxCapacity?: number
   avgResponseMinutes?: number
+  publicMessages?: {
+    heroMessage?: string
+    intakeMessage?: string
+    availabilityMessage?: string
+  }
+  triagePolicies?: {
+    intakeCriteria?: string
+    priorityRules?: string
+    disqualificationRules?: string
+  }
+  trustEvidence?: {
+    enabled?: boolean
+    approvedCaseIds?: string[]
+  }
+  team?: Array<{
+    id: string
+    name: string
+    role?: string
+    oabCredential?: string
+    photoUrl?: string
+    specialties?: string[]
+    yearsOfExperience?: number
+    shortBio?: string
+    email?: string
+    phone?: string
+    status?: 'active' | 'inactive' | 'suspended'
+    isResponsible?: boolean
+    isPublic?: boolean
+  }>
+  responsibleProfessional?: {
+    photoUrl?: string
+    fullName: string
+    oabCredential?: string
+    specialties: string[]
+    yearsOfExperience?: number
+    shortBio?: string
+  }
+  officeGallery?: Array<{
+    id: string
+    url: string
+    isCover?: boolean
+  }>
+  institutionalVideo?: {
+    mode: 'external' | 'uploaded'
+    provider?: 'youtube' | 'vimeo' | 'upload'
+    url: string
+    title?: string
+    intro?: string
+  }
 }
 
 export type DiagnosisArtifact = {
@@ -88,6 +144,39 @@ export type EntityBusinessConfigResponse = {
 }
 
 export type OfficeBusinessConfig = EntityBusinessConfig
+
+export type OfficeProfessional = {
+  id: string
+  displayName: string
+  email?: string
+  phone?: string
+  photoUrl?: string
+  oabCredential?: string
+  specialties: string[]
+  bio?: string
+  isResponsible: boolean
+  isPublic: boolean
+  status: 'active' | 'inactive' | 'suspended'
+}
+
+export type OfficeProfessionalPayload = {
+  displayName: string
+  email?: string
+  phone?: string
+  photoUrl?: string
+  oabCredential?: string
+  specialties?: string[]
+  bio?: string
+  isResponsible?: boolean
+  isPublic?: boolean
+  status?: 'active' | 'inactive' | 'suspended'
+}
+
+export type OfficeMediaItem = {
+  id: string
+  url: string
+  isCover?: boolean
+}
 
 export type AdminLegalCaseStatus = 'open' | 'pending' | 'dispatched' | 'accepted' | 'in_progress' | 'closed'
 export type AdminLegalCaseTransitionTargetStatus = 'in_progress' | 'pending' | 'on_hold'
@@ -369,6 +458,90 @@ export async function getOfficeBusinessConfig(
     businessConfig: payload.businessConfig,
     updatedAt: payload.updatedAt,
   }
+}
+
+export async function saveOfficeBusinessConfig(
+  officeId: string,
+  businessConfig: OfficeBusinessConfig,
+  baseUrl = getBackendBaseUrl(),
+): Promise<{ status: 'ready'; officeId: string; businessConfig: OfficeBusinessConfig | null; updatedAt?: string }> {
+  const response = await fetch(`${baseUrl}/escritorios/${encodeURIComponent(officeId)}/configuracao`, {
+    method: 'POST',
+    headers: await buildRequiredBackendAuthHeaders({
+      'Content-Type': 'application/json',
+    }),
+    body: JSON.stringify({ businessConfig }),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, `Failed to save office configuration (${response.status}).`))
+  }
+
+  return response.json() as Promise<{ status: 'ready'; officeId: string; businessConfig: OfficeBusinessConfig | null; updatedAt?: string }>
+}
+
+export async function createAdminOffice(
+  input: CreateAdminEntityInput,
+  baseUrl = getBackendBaseUrl(),
+): Promise<{ officeId: string }> {
+  const created = await createAdminEntity(input, baseUrl)
+  return { officeId: created.entityId }
+}
+
+export async function listOfficeProfessionals(
+  officeId: string,
+  baseUrl = getBackendBaseUrl(),
+): Promise<{ status: 'ready'; officeId: string; professionals: OfficeProfessional[] }> {
+  const response = await fetch(`${baseUrl}/escritorios/${encodeURIComponent(officeId)}/profissionais`, {
+    headers: await buildRequiredBackendAuthHeaders(),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, `Failed to list office professionals (${response.status}).`))
+  }
+
+  return response.json() as Promise<{ status: 'ready'; officeId: string; professionals: OfficeProfessional[] }>
+}
+
+export async function createOfficeProfessional(
+  officeId: string,
+  professional: OfficeProfessionalPayload,
+  baseUrl = getBackendBaseUrl(),
+): Promise<{ status: 'ready'; officeId: string; professional: OfficeProfessional | null }> {
+  const response = await fetch(`${baseUrl}/escritorios/${encodeURIComponent(officeId)}/profissionais`, {
+    method: 'POST',
+    headers: await buildRequiredBackendAuthHeaders({
+      'Content-Type': 'application/json',
+    }),
+    body: JSON.stringify({ professional }),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, `Failed to create office professional (${response.status}).`))
+  }
+
+  return response.json() as Promise<{ status: 'ready'; officeId: string; professional: OfficeProfessional | null }>
+}
+
+export async function updateOfficeProfessional(
+  officeId: string,
+  professionalId: string,
+  professional: OfficeProfessionalPayload,
+  baseUrl = getBackendBaseUrl(),
+): Promise<{ status: 'ready'; officeId: string; professional: OfficeProfessional | null }> {
+  const response = await fetch(`${baseUrl}/escritorios/${encodeURIComponent(officeId)}/profissionais/${encodeURIComponent(professionalId)}`, {
+    method: 'POST',
+    headers: await buildRequiredBackendAuthHeaders({
+      'Content-Type': 'application/json',
+    }),
+    body: JSON.stringify({ professional }),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, `Failed to update office professional (${response.status}).`))
+  }
+
+  return response.json() as Promise<{ status: 'ready'; officeId: string; professional: OfficeProfessional | null }>
 }
 
 export async function saveEntityBusinessConfig(

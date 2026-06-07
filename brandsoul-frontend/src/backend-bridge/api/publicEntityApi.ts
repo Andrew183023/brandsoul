@@ -13,6 +13,14 @@ export type PublicEntityBusinessType = 'restaurant' | 'store' | 'legal' | 'servi
 export type PublicEntityBusinessConfig = {
   businessType: PublicEntityBusinessType
   description?: string
+  officeName?: string
+  institutionalDescription?: string
+  legalAreas?: string[]
+  servedCities?: string[]
+  attendanceModel?: 'sales' | 'support' | 'guidance' | 'mixed'
+  operatingHours?: string
+  maxCapacity?: number
+  avgResponseMinutes?: number
   toneProfile?: {
     voice?: string
     style?: string
@@ -24,6 +32,7 @@ export type PublicEntityBusinessConfig = {
     email?: string
     address?: string
     website?: string
+    other?: string
   }
   catalog?: {
     categories?: Array<{
@@ -63,6 +72,90 @@ export type PublicEntityBusinessConfig = {
     href?: string
     active?: boolean
   }>
+  publicMessages?: {
+    heroMessage?: string
+    intakeMessage?: string
+    availabilityMessage?: string
+  }
+  triagePolicies?: {
+    intakeCriteria?: string
+    priorityRules?: string
+    disqualificationRules?: string
+  }
+  trustEvidence?: {
+    enabled?: boolean
+    approvedCaseIds?: string[]
+  }
+  team?: Array<{
+    id: string
+    name: string
+    oabCredential?: string
+    photoUrl?: string
+    specialties?: string[]
+    shortBio?: string
+    email?: string
+    phone?: string
+    status?: 'active' | 'inactive' | 'suspended'
+    isResponsible?: boolean
+    isPublic?: boolean
+  }>
+  responsibleProfessional?: {
+    photoUrl?: string
+    fullName: string
+    oabCredential?: string
+    specialties: string[]
+    yearsOfExperience?: number
+    shortBio?: string
+  }
+  officeGallery?: Array<{
+    id: string
+    url: string
+    isCover?: boolean
+  }>
+  institutionalVideo?: {
+    mode: 'external' | 'uploaded'
+    provider?: 'youtube' | 'vimeo' | 'upload'
+    url: string
+    title?: string
+    intro?: string
+  }
+}
+
+export type PublicOfficeBusinessConfig = PublicEntityBusinessConfig
+
+export type OfficeTrustEvidenceItem = {
+  caseId: string
+  firstName?: string
+  city?: string
+  serviceType?: string
+  review: string
+  rating: number
+}
+
+export type PublicOfficeProfessional = {
+  id: string
+  fullName: string
+  photoUrl?: string
+  oabCredential?: string
+  specialties: string[]
+  bio?: string
+}
+
+export type PublicOfficeProfessionalsLoadResult = {
+  status: 'ready'
+  officeId: string
+  responsible?: PublicOfficeProfessional
+  professionals: PublicOfficeProfessional[]
+}
+
+export class PublicOfficePresenceApiError extends Error {
+  readonly status?: number
+
+  constructor(message: string, status?: number) {
+    super(message)
+    this.name = 'PublicOfficePresenceApiError'
+    this.status = status
+  }
 }
 
 function getBackendBaseUrl() {
@@ -148,6 +241,63 @@ export async function getEntityBusinessConfig(entityId: string, baseUrl = getBac
   } catch {
     return undefined
   }
+}
+
+export async function getOfficePublicPresenceLoadResult(
+  officeId: string,
+  baseUrl = getBackendBaseUrl(),
+): Promise<{ status: 'ready'; presence: PublicPresenceResponse }> {
+  const response = await fetch(`${baseUrl}/public/escritorios/${encodeURIComponent(officeId)}/presenca`)
+
+  if (!response.ok) {
+    throw new PublicOfficePresenceApiError(
+      await readApiErrorMessage(response, `Failed to load office presence (${response.status}).`),
+      response.status,
+    )
+  }
+
+  const payload = await response.json() as { presence?: PublicPresenceResponse }
+  if (!payload.presence) {
+    throw new PublicOfficePresenceApiError('Invalid office presence response.', 502)
+  }
+
+  return {
+    status: 'ready',
+    presence: payload.presence,
+  }
+}
+
+export async function getOfficePublicProfessionals(
+  officeId: string,
+  baseUrl = getBackendBaseUrl(),
+): Promise<PublicOfficeProfessionalsLoadResult | undefined> {
+  const response = await fetch(`${baseUrl}/public/escritorios/${encodeURIComponent(officeId)}/profissionais`)
+
+  if (!response.ok) {
+    throw new PublicOfficePresenceApiError(
+      await readApiErrorMessage(response, `Failed to load office professionals (${response.status}).`),
+      response.status,
+    )
+  }
+
+  return response.json() as Promise<PublicOfficeProfessionalsLoadResult>
+}
+
+export async function getOfficeTrustEvidence(
+  officeId: string,
+  baseUrl = getBackendBaseUrl(),
+): Promise<OfficeTrustEvidenceItem[]> {
+  const response = await fetch(`${baseUrl}/public/escritorios/${encodeURIComponent(officeId)}/prova-social`)
+
+  if (!response.ok) {
+    throw new PublicOfficePresenceApiError(
+      await readApiErrorMessage(response, `Failed to load office trust evidence (${response.status}).`),
+      response.status,
+    )
+  }
+
+  const payload = await response.json() as { items?: OfficeTrustEvidenceItem[] }
+  return payload.items ?? []
 }
 
 export async function getClientPortalCase(

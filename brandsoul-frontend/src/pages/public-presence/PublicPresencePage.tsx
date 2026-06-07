@@ -22,6 +22,7 @@ import type { BrandSoulPolicyProfile } from '../../domain/identity/contracts/Bra
 import type { BrandSoulVisualRuntimePatch } from '../../domain/rendering/contracts/BrandSoulVisualRuntimePatch'
 import type {
   PublicPresenceAdaptiveSovereigntyTurn,
+  PublicPresenceDegradedResponse,
   PublicPresenceVisualDebug,
 } from './brandSoulPresenceRuntime'
 import type { PublicPresenceCognitiveIndicator } from './services/deriveCognitivePresenceIndicator'
@@ -988,6 +989,7 @@ type PublicPresencePageProps = {
   visualDebug?: PublicPresenceVisualDebug
   officialDecisionDebugSummary?: PublicEntityDecisionDebugSummary
   operationalFallbackReason?: string
+  operationalFallbackContract?: PublicPresenceDegradedResponse
   legalCaseState?: PublicEntityDecisionResponse['actionResult']
   showVisualDebug?: boolean
   onMessageChange: (value: string) => void

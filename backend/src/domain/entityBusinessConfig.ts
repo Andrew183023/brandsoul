@@ -12,6 +12,7 @@ export type EntityBusinessChannels = {
   email?: string
   address?: string
   website?: string
+  other?: string
 }
 
 export type EntityCatalogItem = {
@@ -81,9 +82,62 @@ export type EntityServiceRules = {
   catalogEnabled?: boolean
 }
 
+export type EntityBusinessTeamMember = {
+  id: string
+  name: string
+  oabCredential?: string
+  photoUrl?: string
+  specialties?: string[]
+  shortBio?: string
+  email?: string
+  phone?: string
+  status?: 'active' | 'inactive' | 'suspended'
+  isResponsible?: boolean
+  isPublic?: boolean
+}
+
+export type EntityTrustEvidenceConfig = {
+  enabled?: boolean
+  approvedCaseIds?: string[]
+}
+
+export type EntityPublicMessages = {
+  heroMessage?: string
+  intakeMessage?: string
+  availabilityMessage?: string
+}
+
+export type EntityTriagePolicies = {
+  intakeCriteria?: string
+  priorityRules?: string
+  disqualificationRules?: string
+}
+
+export type EntityInstitutionalVideo = {
+  mode: 'external' | 'uploaded'
+  provider?: 'youtube' | 'vimeo' | 'upload'
+  url: string
+  title?: string
+  intro?: string
+}
+
+export type EntityOfficeGalleryItem = {
+  id: string
+  url: string
+  isCover?: boolean
+}
+
 export type EntityBusinessConfig = {
   businessType: EntityBusinessType
   description?: string
+  officeName?: string
+  institutionalDescription?: string
+  legalAreas?: string[]
+  servedCities?: string[]
+  attendanceModel?: 'sales' | 'support' | 'guidance' | 'mixed'
+  operatingHours?: string
+  maxCapacity?: number
+  avgResponseMinutes?: number
   toneProfile?: EntityToneProfile
   channels?: EntityBusinessChannels
   catalog?: EntityCatalogConfig
@@ -92,4 +146,18 @@ export type EntityBusinessConfig = {
   legalMode?: EntityLegalModeConfig
   publicCtas?: EntityPublicCta[]
   serviceRules?: EntityServiceRules
+  publicMessages?: EntityPublicMessages
+  triagePolicies?: EntityTriagePolicies
+  trustEvidence?: EntityTrustEvidenceConfig
+  team?: EntityBusinessTeamMember[]
+  responsibleProfessional?: {
+    photoUrl?: string
+    fullName: string
+    oabCredential?: string
+    specialties: string[]
+    yearsOfExperience?: number
+    shortBio?: string
+  }
+  officeGallery?: EntityOfficeGalleryItem[]
+  institutionalVideo?: EntityInstitutionalVideo
 }
