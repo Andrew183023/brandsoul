@@ -6,6 +6,7 @@ import type { AssetStorageService } from '../../services/assetStorageService.js'
 import type { BackendDatabase } from '../../db/index.js'
 import type { EntityRepository } from '../../repositories/entityRepository.js'
 import { ensureCanonicalEntityIdentity } from '../../entities/identity/entityIdentityBuilder.js'
+import { buildSemanticFingerprint, getSemanticMutationExecutor } from '../../sovereignty/semanticMutationExecutor.js'
 import { getRequestAuth, optionalAuth, requireAuth } from '../middleware/requireAuth.js'
 import { createRateLimit } from '../middleware/rateLimit.js'
 import { createCaseRepository } from '../../modules/legalCases/caseRepository.js'
@@ -232,6 +233,80 @@ function createOfficeEntityProfile(officeId: string, officeName: string, primary
   })
 }
 
+async function createOfficeThroughAuthorityBoundary(args: {
+  repository: EntityRepository
+  officeId: string
+  officeName: string
+  ownerId: string
+  ownerUserId: number
+  ownerTenantId: number
+  entityProfile: EntityProfile
+}) {
+  const now = new Date().toISOString()
+
+  const { result } = await getSemanticMutationExecutor().executeSemanticMutation({
+    authoritySource: 'backend/src/api/routes/legalBetaPublicOfficeRoutes.ts#createOfficeThroughAuthorityBoundary',
+    intent: {
+      intentId: `legal-office-create:${args.ownerTenantId}:${args.ownerUserId}:${args.officeId}`,
+      intentType: 'legal.office.create',
+      domain: 'entity',
+      actor: 'admin',
+      targetRef: {
+        entityId: args.officeId,
+        userId: String(args.ownerUserId),
+        tenantId: String(args.ownerTenantId),
+      },
+      semanticPurpose: 'create a governed legal office entity for the authenticated office owner',
+      expectedInstitutionalEffect: ['legal_office_created', 'entity_owner_context_attached'],
+      riskLevel: 'high',
+      replayRelevant: true,
+      continuityRelevant: true,
+      authRelevant: false,
+      createdAt: now,
+    },
+    captureBeforeState: async () => ({
+      existingEntity: await args.repository.getEntityById<EntityProfile>(args.officeId),
+    }),
+    executePersistence: async () => args.repository.createEntity({
+      id: args.officeId,
+      ownerId: args.ownerId,
+      ownerUserId: args.ownerUserId,
+      ownerTenantId: args.ownerTenantId,
+      entityProfile: args.entityProfile,
+      createdAt: now,
+      updatedAt: now,
+    }),
+    captureAfterState: (persisted) => ({
+      entityId: persisted.id,
+      ownerId: persisted.ownerId,
+      ownerUserId: persisted.ownerUserId,
+      ownerTenantId: persisted.ownerTenantId,
+      businessConfig: readEntityBusinessConfig(persisted.entityProfile as EntityProfile),
+    }),
+    deriveEffect: ({ intent, beforeState, afterState, sovereignAttestation }) => ({
+      effectId: `${intent.intentId}:effect`,
+      intentId: intent.intentId,
+      effectType: 'legal.office.create.completed',
+      domain: intent.domain,
+      beforeFingerprint: buildSemanticFingerprint(beforeState),
+      afterFingerprint: buildSemanticFingerprint(afterState),
+      changedFields: ['entity_profile', 'entity_owner_context', 'entity_business_config'],
+      institutionalMeaning: 'the legal office was created through the governed sovereign mutation boundary',
+      replayFingerprint: buildSemanticFingerprint({
+        intentType: intent.intentType,
+        officeId: args.officeId,
+        ownerUserId: args.ownerUserId,
+        ownerTenantId: args.ownerTenantId,
+      }),
+      continuityLineageHash: sovereignAttestation.lineageHash,
+      mutationLineageHash: '',
+      verified: false,
+    }),
+  })
+
+  return result
+}
+
 const publicReadRateLimit = createRateLimit({
   namespace: 'legal-beta-public-read',
   max: 120,
@@ -295,8 +370,10 @@ export async function registerLegalBetaPublicOfficeRoutes(app: FastifyInstance) 
     const ownerId = buildLegacyOwnerId(auth.userId, auth.tenantId)
     const entityProfile = createOfficeEntityProfile(officeId, officeName, request.body?.primaryColor)
 
-    await getRepository(app).createEntity({
-      id: officeId,
+    await createOfficeThroughAuthorityBoundary({
+      repository: getRepository(app),
+      officeId,
+      officeName,
       ownerId,
       ownerUserId: auth.userId,
       ownerTenantId: auth.tenantId,
