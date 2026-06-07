@@ -30,7 +30,7 @@ Entrypoint publicado:
 - Install: `npm ci`
 - Build: `npm run build:legal`
 - Preview local: `npm run preview:legal`
-- Publish dir: `dist`
+- Publish dir: `dist-legal`
 
 Entrypoint publicado:
 
@@ -110,6 +110,10 @@ Frontend:
 - `/admin`
 - `/admin/escritorios/:officeId/visao-geral`
 - `/admin/escritorios/:officeId/casos`
+
+Contrato automatizado:
+
+- na raiz do repositorio: `npm run smoke:legal`
 
 ## 8. O Que Nao Faz Parte Deste Deploy
 

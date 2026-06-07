@@ -1,0 +1,8 @@
+{
+  "name": "brandsoul-legal-recovery-contract",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "smoke:legal": "node scripts/smoke-legal.mjs"
+  }
+}
