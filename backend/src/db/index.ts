@@ -1295,9 +1295,42 @@ export async function createDatabaseConnection(config = getDatabaseConfig()): Pr
   return createClientConnection(config)
 }
 
+export function filterSqliteOnlyDdlForPostgres(statements: string[]) {
+  const filtered: string[] = []
+  let skippingSqliteTriggerBody = false
+
+  for (const statement of statements) {
+    const normalized = statement.trim()
+
+    if (skippingSqliteTriggerBody) {
+      if (/^END$/i.test(normalized)) {
+        skippingSqliteTriggerBody = false
+      }
+      continue
+    }
+
+    if (/^CREATE TRIGGER\b/i.test(normalized)) {
+      skippingSqliteTriggerBody = /\bBEGIN\b/i.test(normalized)
+      continue
+    }
+
+    if (/^END$/i.test(normalized)) {
+      continue
+    }
+
+    filtered.push(statement)
+  }
+
+  return filtered
+}
+
+export function buildPostgresBaseSchemaStatements() {
+  return filterSqliteOnlyDdlForPostgres(splitSqlStatements(toPostgresCreateTable(sqliteSchema)))
+}
+
 async function initializeBaseSchema(db: BackendDatabase) {
   if (db.dialect === 'postgres') {
-    for (const statement of splitSqlStatements(toPostgresCreateTable(sqliteSchema))) {
+    for (const statement of buildPostgresBaseSchemaStatements()) {
       await db.exec(statement)
     }
     return
