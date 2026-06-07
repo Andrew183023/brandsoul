@@ -5,7 +5,7 @@ import { captureAdminAuthContinuation, consumeAuthContinuationReturnTo } from '.
 import { hasInstitutionalOnboardingContinuationPending } from './lib/institutionalOnboarding'
 import { useAuthSession } from './lib/session'
 
-const AdminApp = lazy(() => import('./app/AdminApp.tsx'))
+const LegalAdminApp = lazy(() => import('./app/LegalAdminApp.tsx'))
 const InstitutionalOnboardingWizardPage = lazy(() => import('./pages/InstitutionalOnboardingWizardPage.tsx'))
 const DiscoveryPage = lazy(() => import('./pages/DiscoveryPage.tsx'))
 const HomePublicPage = lazy(() => import('./pages/HomePublicPage.tsx'))
@@ -145,7 +145,7 @@ function LegalRoot() {
   }
 
   if (showAdminPage) {
-    return <AdminApp />
+    return <LegalAdminApp />
   }
 
   if (clientPortalRoute) {

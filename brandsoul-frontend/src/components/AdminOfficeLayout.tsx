@@ -1,7 +1,8 @@
 import React, { type ReactNode } from 'react'
 
 void React
-import AdminShell from '../app/shells/AdminShell'
+
+import { LEGAL_ROUTES } from '../app/routes/legalRoutes'
 
 export default function AdminOfficeLayout({
   officeId,
@@ -16,11 +17,47 @@ export default function AdminOfficeLayout({
   subtitle: string
   children: ReactNode
 }) {
-  const mappedSection = section === 'casos' ? 'cases' : 'operation'
+  const navItems = [
+    { id: 'visao-geral', label: 'Visao geral' },
+    { id: 'casos', label: 'Casos' },
+    { id: 'triagem', label: 'Triagem' },
+    { id: 'equipe', label: 'Equipe' },
+    { id: 'cobertura', label: 'Cobertura' },
+    { id: 'disponibilidade', label: 'Disponibilidade' },
+    { id: 'perfil-publico', label: 'Perfil publico' },
+    { id: 'publicacao', label: 'Publicacao' },
+    { id: 'configuracoes', label: 'Configuracoes' },
+  ] as const
 
   return (
-    <AdminShell entityId={officeId} section={mappedSection} title={title} subtitle={subtitle}>
-      {children}
-    </AdminShell>
+    <main className="admin-shell">
+      <section className="admin-panel">
+        <div className="admin-header">
+          <div>
+            <p className="admin-kicker">admin juridico</p>
+            <h1>{title}</h1>
+            <p className="admin-subtitle">{subtitle}</p>
+          </div>
+          <div className="admin-actions">
+            <a href="/admin" className="admin-button admin-button--ghost">Trocar escritorio</a>
+            <a href={LEGAL_ROUTES.public.escritorioPerfil(officeId)} className="admin-button">Ver publico</a>
+          </div>
+        </div>
+
+        <nav className="admin-actions" aria-label="Secoes do escritorio">
+          {navItems.map((item) => (
+            <a
+              key={item.id}
+              href={LEGAL_ROUTES.admin.escritorio(officeId, item.id)}
+              className={`admin-button ${item.id === section ? '' : 'admin-button--ghost'}`}
+            >
+              {item.label}
+            </a>
+          ))}
+        </nav>
+
+        {children}
+      </section>
+    </main>
   )
 }

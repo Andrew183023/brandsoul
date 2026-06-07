@@ -1,0 +1,49 @@
+import AdminOfficeGatewayPage from '../pages/AdminOfficeGatewayPage'
+import AdminOfficeCasesPage from '../pages/AdminOfficeCasesPage'
+import AdminOfficeOverviewPage from '../pages/AdminOfficeOverviewPage'
+
+function decodeRouteSegment(value?: string | null) {
+  return value ? decodeURIComponent(value) : null
+}
+
+type LegalAdminSection =
+  | 'visao-geral'
+  | 'casos'
+  | 'triagem'
+  | 'equipe'
+  | 'cobertura'
+  | 'disponibilidade'
+  | 'perfil-publico'
+  | 'publicacao'
+  | 'configuracoes'
+
+function RouteNotFoundPage() {
+  return (
+    <main className="discovery-shell discovery-shell--loading">
+      <div className="discovery-panel">
+        <p>Rota administrativa invalida.</p>
+        <a href="/admin">Voltar ao admin juridico</a>
+      </div>
+    </main>
+  )
+}
+
+export default function LegalAdminApp() {
+  const officeSectionMatch = window.location.pathname.match(/^\/admin\/escritorios\/([^/]+)\/(visao-geral|casos|triagem|equipe|cobertura|disponibilidade|perfil-publico|publicacao|configuracoes)\/?$/)
+  const officeId = decodeRouteSegment(officeSectionMatch?.[1])
+  const section = officeSectionMatch?.[2] as LegalAdminSection | undefined
+
+  if (window.location.pathname === '/admin') {
+    return <AdminOfficeGatewayPage />
+  }
+
+  if (!officeId || !section) {
+    return <RouteNotFoundPage />
+  }
+
+  if (section === 'casos') {
+    return <AdminOfficeCasesPage officeId={officeId} />
+  }
+
+  return <AdminOfficeOverviewPage officeId={officeId} section={section} />
+}

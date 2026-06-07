@@ -5,6 +5,7 @@ import type { EntityBusinessConfig } from '../../domain/entityBusinessConfig.js'
 import type { AssetStorageService } from '../../services/assetStorageService.js'
 import type { BackendDatabase } from '../../db/index.js'
 import type { EntityRepository } from '../../repositories/entityRepository.js'
+import { ensureCanonicalEntityIdentity } from '../../entities/identity/entityIdentityBuilder.js'
 import { getRequestAuth, optionalAuth, requireAuth } from '../middleware/requireAuth.js'
 import { createRateLimit } from '../middleware/rateLimit.js'
 import { createCaseRepository } from '../../modules/legalCases/caseRepository.js'
@@ -69,6 +70,12 @@ type PublicInteractionRequest = {
 type OfficeMediaUploadBody = {
   fileName?: string
   dataUrl?: string
+}
+
+type CreateOfficeBody = {
+  name?: string
+  category?: string
+  primaryColor?: string
 }
 
 function getConnection(app: FastifyInstance) {
@@ -188,6 +195,43 @@ function createRequestId() {
   return `req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+function slugifyOfficeName(value: string) {
+  return value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48)
+}
+
+function createOfficeEntityProfile(officeId: string, officeName: string, primaryColor?: string): EntityProfile {
+  const createdAt = new Date().toISOString()
+  return ensureCanonicalEntityIdentity({
+    id: officeId,
+    social: {
+      publicName: officeName,
+    },
+    metadata: {
+      createdAt,
+      notes: [],
+      businessConfig: {
+        businessType: 'legal',
+        officeName,
+      },
+    },
+    palette: {
+      primary: primaryColor?.trim() || '#1f6feb',
+      contrast: '#ffffff',
+    },
+  } as unknown as EntityProfile, {
+    tenantId: undefined,
+    entityType: 'legal',
+    createdAt,
+    preserveEntityId: officeId,
+  })
+}
+
 const publicReadRateLimit = createRateLimit({
   namespace: 'legal-beta-public-read',
   max: 120,
@@ -210,6 +254,62 @@ const privateWriteRateLimit = createRateLimit({
 })
 
 export async function registerLegalBetaPublicOfficeRoutes(app: FastifyInstance) {
+  app.get('/me/escritorios', { preHandler: [requireAuth] }, async (request) => {
+    const auth = getRequestAuth(request)!
+    const entities = await getRepository(app).getEntitiesByOwnerUserId<EntityProfile>(auth.userId, auth.tenantId)
+
+    return {
+      status: 'ready' as const,
+      userId: auth.userId,
+      tenantId: auth.tenantId,
+      offices: entities
+        .filter((entity) => readEntityBusinessConfig(entity.entityProfile)?.businessType === 'legal')
+        .map((entity) => {
+          const businessConfig = readEntityBusinessConfig(entity.entityProfile)
+          return {
+            officeId: entity.id,
+            officeName: businessConfig?.officeName ?? buildPublicOfficeProfile(entity.id, entity.entityProfile).name,
+            status: businessConfig?.officeName ? 'ready' as const : 'draft' as const,
+            createdAt: entity.createdAt,
+            updatedAt: entity.updatedAt,
+          }
+        }),
+    }
+  })
+
+  app.post<{ Body: CreateOfficeBody }>('/escritorios/criar', { preHandler: [requireAuth, privateWriteRateLimit] }, async (request, reply) => {
+    const auth = getRequestAuth(request)!
+    const officeName = request.body?.name?.trim() ?? ''
+
+    if (officeName.length < 2) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_OFFICE_INPUT',
+          message: 'name is required.',
+        },
+      })
+    }
+
+    const officeId = `office-${slugifyOfficeName(officeName) || createRequestId()}-${createRequestId()}`
+    const ownerId = buildLegacyOwnerId(auth.userId, auth.tenantId)
+    const entityProfile = createOfficeEntityProfile(officeId, officeName, request.body?.primaryColor)
+
+    await getRepository(app).createEntity({
+      id: officeId,
+      ownerId,
+      ownerUserId: auth.userId,
+      ownerTenantId: auth.tenantId,
+      entityProfile,
+    })
+
+    return reply.status(201).send({
+      status: 'ready',
+      officeId,
+      officeName,
+    })
+  })
+
   app.get<{ Params: { id: string } }>('/escritorios/:id/publico', { preHandler: [publicReadRateLimit] }, async (request, reply) => {
     const entity = await getRepository(app).getEntityById<EntityProfile>(request.params.id)
     if (!entity) {

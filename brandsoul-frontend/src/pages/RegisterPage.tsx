@@ -67,7 +67,7 @@ export default function RegisterPage() {
         try {
           const payload = await finalizePendingEntityBirth()
           if (payload) {
-            navigateTo(`/admin/entity/${payload.entityId}/identity`)
+            navigateTo('/admin')
             return
           }
         } catch (error) {

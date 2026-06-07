@@ -18,6 +18,21 @@ export type AdminEntityListResponse = {
   entities: AdminEntityListItem[]
 }
 
+export type AdminOfficeListItem = {
+  officeId: string
+  officeName: string
+  status: 'ready' | 'draft'
+  createdAt?: string
+  updatedAt?: string
+}
+
+export type AdminOfficeListResponse = {
+  status: 'ready'
+  userId: number
+  tenantId: number
+  offices: AdminOfficeListItem[]
+}
+
 export type CreateAdminEntityInput = {
   name: string
   category: string
@@ -31,6 +46,12 @@ export type CreateAdminEntityResponse = {
   createdAt?: string
   updatedAt?: string
   requestId?: string
+}
+
+export type CreateAdminOfficeInput = {
+  name: string
+  category: string
+  primaryColor: string
 }
 
 export type DiagnosisArtifactStatus = 'draft' | 'approved' | 'rejected'
@@ -369,6 +390,18 @@ export async function createAdminEntity(
   return response.json() as Promise<CreateAdminEntityResponse>
 }
 
+export async function listAdminOffices(baseUrl = getBackendBaseUrl()): Promise<AdminOfficeListResponse> {
+  const response = await fetch(`${baseUrl}/me/escritorios`, {
+    headers: await buildRequiredBackendAuthHeaders(),
+  })
+
+  if (!response.ok) {
+    throw new Error(`Failed to load offices (${response.status}).`)
+  }
+
+  return response.json() as Promise<AdminOfficeListResponse>
+}
+
 export async function getDiagnosis(
   entityId: string,
   baseUrl = getBackendBaseUrl(),
@@ -451,13 +484,15 @@ export async function getOfficeBusinessConfig(
   officeId: string,
   baseUrl = getBackendBaseUrl(),
 ): Promise<{ status: 'ready'; officeId: string; businessConfig: OfficeBusinessConfig | null; updatedAt?: string }> {
-  const payload = await getEntityBusinessConfig(officeId, baseUrl)
-  return {
-    status: payload.status,
-    officeId: payload.entityId,
-    businessConfig: payload.businessConfig,
-    updatedAt: payload.updatedAt,
+  const response = await fetch(`${baseUrl}/escritorios/${encodeURIComponent(officeId)}/configuracao`, {
+    headers: await buildRequiredBackendAuthHeaders(),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, `Failed to load office configuration (${response.status}).`))
   }
+
+  return response.json() as Promise<{ status: 'ready'; officeId: string; businessConfig: OfficeBusinessConfig | null; updatedAt?: string }>
 }
 
 export async function saveOfficeBusinessConfig(
@@ -481,11 +516,34 @@ export async function saveOfficeBusinessConfig(
 }
 
 export async function createAdminOffice(
-  input: CreateAdminEntityInput,
+  input: CreateAdminOfficeInput,
   baseUrl = getBackendBaseUrl(),
 ): Promise<{ officeId: string }> {
-  const created = await createAdminEntity(input, baseUrl)
-  return { officeId: created.entityId }
+  const response = await fetch(`${baseUrl}/escritorios/criar`, {
+    method: 'POST',
+    headers: await buildRequiredBackendAuthHeaders({
+      'Content-Type': 'application/json',
+    }),
+    body: JSON.stringify(input),
+  })
+
+  if (!response.ok) {
+    let message = `Failed to create office (${response.status}).`
+
+    try {
+      const payload = await response.json() as { error?: { message?: string } }
+      if (payload.error?.message) {
+        message = payload.error.message
+      }
+    } catch {
+      // Keep the default message if the response body is not JSON.
+    }
+
+    throw new Error(message)
+  }
+
+  const payload = await response.json() as { officeId: string }
+  return { officeId: payload.officeId }
 }
 
 export async function listOfficeProfessionals(
