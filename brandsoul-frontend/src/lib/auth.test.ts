@@ -105,6 +105,35 @@ describe('auth authority client', () => {
     expect(session.refreshToken).toBe('refresh-2')
   })
 
+  it('normalizes businessName into tenant_name for legal registration', async () => {
+    axiosMock.post.mockResolvedValueOnce({
+      data: {
+        accessToken: buildToken(300),
+        refreshToken: 'refresh-2b',
+        tokenType: 'Bearer',
+        expiresIn: 300,
+        user: { id: 22, name: 'Bia', email: 'bia@brand.com', is_active: true, created_at: '', updated_at: '' },
+        tenant: { id: 111, name: 'Brand 2', slug: 'brand-2', business_model: 'service', plan: 'starter', is_active: true, created_at: '', updated_at: '' },
+      },
+    })
+
+    await registerAccount({
+      name: 'Bia',
+      email: 'bia@brand.com',
+      password: 'secret123',
+      businessName: 'Brand 2',
+      business_model: 'service',
+    })
+
+    expect(axiosMock.post).toHaveBeenCalledWith(
+      expect.stringContaining('/auth/register'),
+      expect.objectContaining({
+        businessName: 'Brand 2',
+        tenant_name: 'Brand 2',
+      }),
+    )
+  })
+
   it('routes forgot-password and reset-password through the TypeScript auth authority', async () => {
     axiosMock.post
       .mockResolvedValueOnce({ data: { message: 'reset requested' } })

@@ -88,6 +88,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
       password?: string
       tenant_name?: string
       tenantName?: string
+      businessName?: string
       companyName?: string
       business_model?: 'product' | 'service' | 'hybrid' | 'professional'
       businessModel?: 'product' | 'service' | 'hybrid' | 'professional'
@@ -99,6 +100,7 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     const password = request.body?.password ?? ''
     const tenantName = request.body?.tenant_name?.trim()
       ?? request.body?.tenantName?.trim()
+      ?? request.body?.businessName?.trim()
       ?? request.body?.companyName?.trim()
       ?? ''
     const businessModel = request.body?.business_model

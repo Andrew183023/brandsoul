@@ -80,10 +80,22 @@ export async function registerAccount(payload: {
   name: string
   email: string
   password: string
-  tenant_name: string
+  tenant_name?: string
+  tenantName?: string
+  companyName?: string
+  businessName?: string
   business_model?: 'product' | 'service' | 'hybrid' | 'professional'
 }): Promise<AuthSession> {
-  const response = await axios.post<AuthorityAuthResponse>(buildAuthApiUrl('/auth/register'), payload)
+  const tenantName = payload.tenant_name?.trim()
+    ?? payload.tenantName?.trim()
+    ?? payload.businessName?.trim()
+    ?? payload.companyName?.trim()
+    ?? ''
+
+  const response = await axios.post<AuthorityAuthResponse>(buildAuthApiUrl('/auth/register'), {
+    ...payload,
+    tenant_name: tenantName,
+  })
   return mapAuthoritySession(response.data)
 }
 
