@@ -33,7 +33,7 @@ test('postgres bootstrap statements derived from sqliteSchema keep flowmind tabl
   const statements = buildPostgresBaseSchemaStatements()
 
   assert.equal(
-    statements.some((statement) => statement.includes('CREATE TABLE IF NOT EXISTS flowmind_runtime_snapshot')),
+    statements.some((statement) => statement.includes('CREATE TABLE IF NOT EXISTS flowmind_distributed_lineage')),
     true,
   )
   assert.equal(
