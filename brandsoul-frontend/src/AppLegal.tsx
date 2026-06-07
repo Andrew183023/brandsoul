@@ -92,11 +92,6 @@ function LegalRoot() {
       return
     }
 
-    if (showOnboardingPage && hasSession && !hasPendingOnboardingContinuation) {
-      const destination = consumeAuthContinuationReturnTo(LEGAL_ROUTES.admin.home)
-      window.history.replaceState({}, '', destination)
-      setPathname(destination)
-    }
   }, [
     hasPendingOnboardingContinuation,
     hasSession,

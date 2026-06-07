@@ -27,7 +27,6 @@ export default function AdminOfficeGatewayPage() {
         setOffices(payload.offices)
 
         if (payload.offices.length === 0) {
-          navigateTo(LEGAL_ROUTES.onboarding.ativacao)
           return
         }
 
