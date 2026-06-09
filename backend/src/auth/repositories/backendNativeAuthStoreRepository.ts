@@ -168,8 +168,44 @@ export class BackendNativeAuthStoreRepository implements AuthIdentityStoreReposi
     this.now = options.now ?? (() => new Date().toISOString())
   }
 
-  async createUser(input: CreateAuthUserInput) {
-    const now = this.now()
+  private async insertUserAndResolveId(args: {
+    legacySource: string | null
+    legacyId: number | null
+    name: string
+    email: string
+    passwordHash: string
+    isActive: number
+    now: string
+  }) {
+    if (this.db.dialect === 'postgres') {
+      const row = await this.db.get<{ id: number }>(
+        `
+          INSERT INTO flow_auth_user (
+            legacy_source,
+            legacy_id,
+            name,
+            email,
+            password_hash,
+            is_active,
+            created_at,
+            updated_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          RETURNING id
+        `,
+        args.legacySource,
+        args.legacyId,
+        args.name,
+        args.email,
+        args.passwordHash,
+        args.isActive,
+        args.now,
+        args.now,
+      )
+
+      return row?.id
+    }
+
     const result = await this.db.run(
       `
         INSERT INTO flow_auth_user (
@@ -184,17 +220,167 @@ export class BackendNativeAuthStoreRepository implements AuthIdentityStoreReposi
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `,
-      input.legacySource ?? null,
-      input.legacyId ?? null,
-      input.name,
-      input.email.toLowerCase(),
-      input.passwordHash,
-      input.isActive === false ? 0 : 1,
-      now,
-      now,
+      args.legacySource,
+      args.legacyId,
+      args.name,
+      args.email,
+      args.passwordHash,
+      args.isActive,
+      args.now,
+      args.now,
     )
 
-    return this.findUserById(Number(result.lastID))
+    return result.lastID
+  }
+
+  private async insertTenantAndResolveId(args: {
+    legacySource: string | null
+    legacyId: number | null
+    name: string
+    slug: string
+    businessModel: CreateAuthTenantInput['businessModel']
+    plan: string
+    isActive: number
+    now: string
+  }) {
+    if (this.db.dialect === 'postgres') {
+      const row = await this.db.get<{ id: number }>(
+        `
+          INSERT INTO flow_auth_tenant (
+            legacy_source,
+            legacy_id,
+            name,
+            slug,
+            business_model,
+            plan,
+            is_active,
+            created_at,
+            updated_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          RETURNING id
+        `,
+        args.legacySource,
+        args.legacyId,
+        args.name,
+        args.slug,
+        args.businessModel,
+        args.plan,
+        args.isActive,
+        args.now,
+        args.now,
+      )
+
+      return row?.id
+    }
+
+    const result = await this.db.run(
+      `
+        INSERT INTO flow_auth_tenant (
+          legacy_source,
+          legacy_id,
+          name,
+          slug,
+          business_model,
+          plan,
+          is_active,
+          created_at,
+          updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      args.legacySource,
+      args.legacyId,
+      args.name,
+      args.slug,
+      args.businessModel,
+      args.plan,
+      args.isActive,
+      args.now,
+      args.now,
+    )
+
+    return result.lastID
+  }
+
+  private async insertMembershipAndResolveId(args: {
+    legacySource: string | null
+    legacyId: number | null
+    userId: number
+    tenantId: number
+    role: string
+    isActive: number
+    now: string
+  }) {
+    if (this.db.dialect === 'postgres') {
+      const row = await this.db.get<{ id: number }>(
+        `
+          INSERT INTO flow_auth_membership (
+            legacy_source,
+            legacy_id,
+            user_id,
+            tenant_id,
+            role,
+            is_active,
+            created_at,
+            updated_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          RETURNING id
+        `,
+        args.legacySource,
+        args.legacyId,
+        args.userId,
+        args.tenantId,
+        args.role,
+        args.isActive,
+        args.now,
+        args.now,
+      )
+
+      return row?.id
+    }
+
+    const result = await this.db.run(
+      `
+        INSERT INTO flow_auth_membership (
+          legacy_source,
+          legacy_id,
+          user_id,
+          tenant_id,
+          role,
+          is_active,
+          created_at,
+          updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      args.legacySource,
+      args.legacyId,
+      args.userId,
+      args.tenantId,
+      args.role,
+      args.isActive,
+      args.now,
+      args.now,
+    )
+
+    return result.lastID
+  }
+
+  async createUser(input: CreateAuthUserInput) {
+    const now = this.now()
+    const insertedId = await this.insertUserAndResolveId({
+      legacySource: input.legacySource ?? null,
+      legacyId: input.legacyId ?? null,
+      name: input.name,
+      email: input.email.toLowerCase(),
+      passwordHash: input.passwordHash,
+      isActive: input.isActive === false ? 0 : 1,
+      now,
+    })
+
+    return this.findUserById(Number(insertedId))
   }
 
   async findUserByEmail(email: string) {
@@ -260,33 +446,18 @@ export class BackendNativeAuthStoreRepository implements AuthIdentityStoreReposi
 
   async createTenant(input: CreateAuthTenantInput) {
     const now = this.now()
-    const result = await this.db.run(
-      `
-        INSERT INTO flow_auth_tenant (
-          legacy_source,
-          legacy_id,
-          name,
-          slug,
-          business_model,
-          plan,
-          is_active,
-          created_at,
-          updated_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      input.legacySource ?? null,
-      input.legacyId ?? null,
-      input.name,
-      input.slug,
-      input.businessModel,
-      input.plan ?? 'starter',
-      input.isActive === false ? 0 : 1,
+    const insertedId = await this.insertTenantAndResolveId({
+      legacySource: input.legacySource ?? null,
+      legacyId: input.legacyId ?? null,
+      name: input.name,
+      slug: input.slug,
+      businessModel: input.businessModel,
+      plan: input.plan ?? 'starter',
+      isActive: input.isActive === false ? 0 : 1,
       now,
-      now,
-    )
+    })
 
-    return this.findTenantById(Number(result.lastID))
+    return this.findTenantById(Number(insertedId))
   }
 
   async findTenantById(tenantId: number) {
@@ -348,29 +519,15 @@ export class BackendNativeAuthStoreRepository implements AuthIdentityStoreReposi
 
   async createMembership(input: CreateAuthMembershipInput) {
     const now = this.now()
-    const result = await this.db.run(
-      `
-        INSERT INTO flow_auth_membership (
-          legacy_source,
-          legacy_id,
-          user_id,
-          tenant_id,
-          role,
-          is_active,
-          created_at,
-          updated_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-      input.legacySource ?? null,
-      input.legacyId ?? null,
-      input.userId,
-      input.tenantId,
-      input.role,
-      input.isActive === false ? 0 : 1,
+    const insertedId = await this.insertMembershipAndResolveId({
+      legacySource: input.legacySource ?? null,
+      legacyId: input.legacyId ?? null,
+      userId: input.userId,
+      tenantId: input.tenantId,
+      role: input.role,
+      isActive: input.isActive === false ? 0 : 1,
       now,
-      now,
-    )
+    })
 
     const row = await this.db.get<MembershipRow>(
       `
@@ -378,7 +535,7 @@ export class BackendNativeAuthStoreRepository implements AuthIdentityStoreReposi
         FROM flow_auth_membership
         WHERE id = ?
       `,
-      Number(result.lastID),
+      Number(insertedId),
     )
     return mapMembershipRow(row)
   }

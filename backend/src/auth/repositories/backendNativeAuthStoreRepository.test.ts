@@ -5,6 +5,7 @@ import path from 'node:path'
 import test from 'node:test'
 
 import { initializeDatabase, createDatabaseConnection } from '../../db/index.js'
+import type { BackendDatabase } from '../../db/dbClient.js'
 import { createBackendNativeAuthStoreRepository } from './backendNativeAuthStoreRepository.js'
 
 async function createHarness(prefix: string) {
@@ -64,6 +65,85 @@ async function seedUserTenantMembership(harness: Awaited<ReturnType<typeof creat
   })
 
   return { user, tenant, membership }
+}
+
+function createPostgresHarness() {
+  const getCalls: Array<{ sql: string; params: unknown[] }> = []
+  const runCalls: Array<{ sql: string; params: unknown[] }> = []
+  const db: BackendDatabase = {
+    dialect: 'postgres',
+    async run(sql: string, ...params: unknown[]) {
+      runCalls.push({ sql, params })
+      return { changes: 1 }
+    },
+    async get<T>(sql: string, ...params: unknown[]) {
+      getCalls.push({ sql, params })
+      if (sql.includes('INSERT INTO flow_auth_user')) {
+        return { id: 101 } as T
+      }
+      if (sql.includes('INSERT INTO flow_auth_tenant')) {
+        return { id: 202 } as T
+      }
+      if (sql.includes('INSERT INTO flow_auth_membership')) {
+        return { id: 303 } as T
+      }
+      if (sql.includes('FROM flow_auth_user')) {
+        return {
+          id: 101,
+          legacy_source: null,
+          legacy_id: null,
+          name: 'Postgres User',
+          email: 'pg@example.com',
+          password_hash: 'hash-pg',
+          is_active: 1,
+          created_at: '2026-05-09T10:00:00.000Z',
+          updated_at: '2026-05-09T10:00:00.000Z',
+        } as T
+      }
+      if (sql.includes('FROM flow_auth_tenant')) {
+        return {
+          id: 202,
+          legacy_source: null,
+          legacy_id: null,
+          name: 'Postgres Tenant',
+          slug: 'postgres-tenant',
+          business_model: 'service',
+          plan: 'starter',
+          is_active: 1,
+          created_at: '2026-05-09T10:00:01.000Z',
+          updated_at: '2026-05-09T10:00:01.000Z',
+        } as T
+      }
+      if (sql.includes('FROM flow_auth_membership')) {
+        return {
+          id: 303,
+          legacy_source: null,
+          legacy_id: null,
+          user_id: 101,
+          tenant_id: 202,
+          role: 'owner',
+          is_active: 1,
+          created_at: '2026-05-09T10:00:02.000Z',
+          updated_at: '2026-05-09T10:00:02.000Z',
+        } as T
+      }
+      return undefined
+    },
+    async all<T>() {
+      return [] as T
+    },
+    async exec() {},
+    async transaction<T>(callback: (db: BackendDatabase) => Promise<T>) {
+      return callback(db)
+    },
+    async close() {},
+  }
+
+  const repository = createBackendNativeAuthStoreRepository(db, {
+    now: () => '2026-05-09T10:00:00.000Z',
+  })
+
+  return { repository, getCalls, runCalls }
 }
 
 test('createUser + findUserByEmail', async () => {
@@ -182,6 +262,32 @@ test('createMembership + findMembershipForUserAndTenant', async () => {
   } finally {
     await harness.cleanup()
   }
+})
+
+test('postgres createUser/createTenant/createMembership use RETURNING instead of lastID', async () => {
+  const harness = createPostgresHarness()
+
+  const user = await harness.repository.createUser({
+    name: 'Postgres User',
+    email: 'pg@example.com',
+    passwordHash: 'hash-pg',
+  })
+  const tenant = await harness.repository.createTenant({
+    name: 'Postgres Tenant',
+    slug: 'postgres-tenant',
+    businessModel: 'service',
+  })
+  const membership = await harness.repository.createMembership({
+    userId: user!.id,
+    tenantId: tenant!.id,
+    role: 'owner',
+  })
+
+  assert.equal(user?.id, 101)
+  assert.equal(tenant?.id, 202)
+  assert.equal(membership?.id, 303)
+  assert.equal(harness.runCalls.length, 0)
+  assert.equal(harness.getCalls.filter((call) => call.sql.includes('RETURNING id')).length, 3)
 })
 
 test('duplicate user/tenant membership fails', async () => {
