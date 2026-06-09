@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -134,4 +134,11 @@ test('semanticReplayHydrationInvariant enforces non-null replay payload and adap
   } finally {
     await harness.close()
   }
+})
+
+test('semanticReplayHydrationInvariant does not use rowid in runtime queries', async () => {
+  const source = await readFile(new URL('./semanticReplayHydrationService.ts', import.meta.url), 'utf8')
+
+  assert.equal(source.includes('rowid'), false)
+  assert.equal(source.includes('ORDER BY created_at DESC, replay_result_id DESC'), true)
 })

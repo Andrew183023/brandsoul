@@ -854,6 +854,7 @@ const sqliteSchema = `
   );
 
   CREATE TABLE IF NOT EXISTS flowmind_semantic_replay_result (
+    replay_result_id TEXT PRIMARY KEY,
     replay_fingerprint TEXT,
     semantic_intent_id TEXT NOT NULL,
     mutation_lineage_hash TEXT NOT NULL,
@@ -1206,7 +1207,8 @@ const indexStatements = [
   'CREATE INDEX IF NOT EXISTS idx_flowmind_auth_sovereign_attestation_created_at ON flowmind_auth_sovereign_attestation(created_at)',
   'CREATE INDEX IF NOT EXISTS idx_flowmind_semantic_mutation_attestation_domain ON flowmind_semantic_mutation_attestation(domain, verified)',
   'CREATE INDEX IF NOT EXISTS idx_flowmind_semantic_mutation_attestation_created_at ON flowmind_semantic_mutation_attestation(created_at)',
-  'CREATE INDEX IF NOT EXISTS idx_flowmind_semantic_replay_result_intent_created_at ON flowmind_semantic_replay_result(semantic_intent_id, created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_semantic_replay_result_intent_created_at_id ON flowmind_semantic_replay_result(semantic_intent_id, created_at, replay_result_id)',
+  'CREATE INDEX IF NOT EXISTS idx_flowmind_semantic_replay_result_intent_replay_created_at_id ON flowmind_semantic_replay_result(semantic_intent_id, replay_fingerprint, created_at, replay_result_id)',
   'CREATE INDEX IF NOT EXISTS idx_flowmind_semantic_replay_result_replay_fingerprint ON flowmind_semantic_replay_result(replay_fingerprint)',
   'CREATE INDEX IF NOT EXISTS idx_flowmind_semantic_replay_result_shape_hash ON flowmind_semantic_replay_result(result_shape_hash)',
   'CREATE INDEX IF NOT EXISTS idx_flowmind_sovereign_persistence_queue_operation_id ON flowmind_sovereign_persistence_queue(operation_id)',
@@ -1441,6 +1443,131 @@ async function migratePostgresPortfolioProposalSchema(db: BackendDatabase) {
     'entity_portfolio_proposal',
     'entity_portfolio_proposal_status_check_v2',
     `CHECK (status IN ('proposed', 'acknowledged', 'approved', 'rejected', 'expired', 'executed', 'evaluated')) NOT VALID`,
+  )
+}
+
+async function migrateSqliteSemanticReplayResultSchema(db: BackendDatabase) {
+  if (db.dialect !== 'sqlite') {
+    return
+  }
+
+  const row = await db.get<{ sql?: string }>(
+    `
+      SELECT sql
+      FROM sqlite_master
+      WHERE type = 'table'
+        AND name = 'flowmind_semantic_replay_result'
+      LIMIT 1
+    `,
+  )
+
+  if (!row?.sql || row.sql.includes('replay_result_id TEXT PRIMARY KEY')) {
+    return
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.exec(`
+      CREATE TABLE flowmind_semantic_replay_result_next (
+        replay_result_id TEXT PRIMARY KEY,
+        replay_fingerprint TEXT,
+        semantic_intent_id TEXT NOT NULL,
+        mutation_lineage_hash TEXT NOT NULL,
+        result_shape_hash TEXT NOT NULL,
+        payload_snapshot TEXT NOT NULL,
+        semantic_integrity TEXT NOT NULL,
+        replay_result_state TEXT NOT NULL,
+        lineage_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        CHECK (semantic_integrity IN ('verified', 'partial', 'invalid')),
+        CHECK (replay_result_state IN ('original', 'hydrated', 'reconstructed', 'fallback-safe', 'invalid'))
+      );
+    `)
+
+    await tx.exec(`
+      INSERT INTO flowmind_semantic_replay_result_next (
+        replay_result_id,
+        replay_fingerprint,
+        semantic_intent_id,
+        mutation_lineage_hash,
+        result_shape_hash,
+        payload_snapshot,
+        semantic_integrity,
+        replay_result_state,
+        lineage_hash,
+        created_at
+      )
+      SELECT
+        'legacy-replay-' || printf('%020d', rowid),
+        replay_fingerprint,
+        semantic_intent_id,
+        mutation_lineage_hash,
+        result_shape_hash,
+        payload_snapshot,
+        semantic_integrity,
+        replay_result_state,
+        lineage_hash,
+        created_at
+      FROM flowmind_semantic_replay_result
+      ORDER BY created_at ASC, rowid ASC
+    `)
+
+    await tx.exec('DROP TABLE flowmind_semantic_replay_result')
+    await tx.exec('ALTER TABLE flowmind_semantic_replay_result_next RENAME TO flowmind_semantic_replay_result')
+  })
+}
+
+async function migratePostgresSemanticReplayResultSchema(db: BackendDatabase) {
+  if (db.dialect !== 'postgres') {
+    return
+  }
+
+  if (!await postgresTableExists(db, 'flowmind_semantic_replay_result')) {
+    return
+  }
+
+  if (!await postgresColumnExists(db, 'flowmind_semantic_replay_result', 'replay_result_id')) {
+    await db.exec('ALTER TABLE flowmind_semantic_replay_result ADD COLUMN replay_result_id TEXT')
+  }
+
+  await db.exec(`
+    WITH ordered AS (
+      SELECT
+        ctid,
+        'legacy-replay-' || LPAD(
+          ROW_NUMBER() OVER (
+            ORDER BY
+              created_at ASC,
+              semantic_intent_id ASC,
+              COALESCE(replay_fingerprint, '') ASC,
+              mutation_lineage_hash ASC,
+              result_shape_hash ASC,
+              lineage_hash ASC,
+              payload_snapshot ASC,
+              ctid::text ASC
+          )::text,
+          20,
+          '0'
+        ) AS replay_result_id
+      FROM flowmind_semantic_replay_result
+      WHERE replay_result_id IS NULL
+         OR BTRIM(replay_result_id) = ''
+    )
+    UPDATE flowmind_semantic_replay_result AS target
+    SET replay_result_id = ordered.replay_result_id
+    FROM ordered
+    WHERE target.ctid = ordered.ctid
+  `)
+
+  await db.exec(`
+    ALTER TABLE flowmind_semantic_replay_result
+    ALTER COLUMN replay_result_id SET NOT NULL
+  `)
+
+  await postgresAddConstraintIfMissing(
+    db,
+    'flowmind_semantic_replay_result',
+    'flowmind_semantic_replay_result_pkey',
+    'PRIMARY KEY (replay_result_id)',
   )
 }
 
@@ -2539,6 +2666,7 @@ export async function initializeDatabase(db: BackendDatabase) {
   await initializeBaseSchema(db)
   await initializeSqliteLegalCaseSchema(db)
   await migrateSqlitePortfolioProposalSchema(db)
+  await migrateSqliteSemanticReplayResultSchema(db)
 
   await ensureColumn(db, 'entity_event_log', 'caused_by_command_id', 'TEXT')
   await ensureColumn(db, 'entity_profile', 'owner_user_id', 'INTEGER')
@@ -2575,6 +2703,7 @@ export async function initializeDatabase(db: BackendDatabase) {
   await ensureColumn(db, 'flowmind_learning_checkpoint', 'checkpoint_attestation_state', 'TEXT')
   await ensureColumn(db, 'flowmind_learning_checkpoint', 'attestation_lineage_hash', 'TEXT')
   await ensureColumn(db, 'flowmind_learning_checkpoint', 'replay_verification_metadata_json', 'TEXT')
+  await ensureColumn(db, 'flowmind_semantic_replay_result', 'replay_result_id', 'TEXT')
   await ensureColumn(db, 'flowmind_runtime_continuity_attestation', 'reconstructed_on_recovery', 'INTEGER NOT NULL DEFAULT 0')
   await ensureColumn(db, 'flowmind_runtime_continuity_attestation', 'reconstruction_lineage_hash', 'TEXT')
   await ensureColumn(db, 'flowmind_runtime_continuity_attestation', 'reconstruction_source', 'TEXT')
@@ -2624,6 +2753,7 @@ export async function initializeDatabase(db: BackendDatabase) {
   await db.run("UPDATE entity_portfolio_lead SET status = 'routed' WHERE status IS NULL OR TRIM(status) = ''")
   await initializePostgresLegalCaseSchema(db)
   await migratePostgresPortfolioProposalSchema(db)
+  await migratePostgresSemanticReplayResultSchema(db)
   await ensureIndexes(db, indexStatements)
   await validateAdaptiveEquilibriumEvidenceSchema(db)
 }

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -288,6 +289,7 @@ test('3) replay reconstruction is marked correctly', async () => {
     await harness.connection.run(
       `
         INSERT INTO flowmind_semantic_replay_result (
+          replay_result_id,
           replay_fingerprint,
           semantic_intent_id,
           mutation_lineage_hash,
@@ -298,8 +300,9 @@ test('3) replay reconstruction is marked correctly', async () => {
           lineage_hash,
           created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
+      randomUUID(),
       attestation.replay_fingerprint,
       intentId,
       attestation.mutation_lineage_hash,
@@ -355,7 +358,7 @@ test('3) replay reconstruction is marked correctly', async () => {
         SELECT replay_result_state
         FROM flowmind_semantic_replay_result
         WHERE semantic_intent_id = ?
-        ORDER BY created_at DESC, rowid DESC
+        ORDER BY created_at DESC, replay_result_id DESC
         LIMIT 1
       `,
       intentId,

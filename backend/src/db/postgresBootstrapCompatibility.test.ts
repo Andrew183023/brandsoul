@@ -37,6 +37,13 @@ test('postgres bootstrap statements derived from sqliteSchema keep flowmind tabl
     true,
   )
   assert.equal(
+    statements.some((statement) =>
+      statement.includes('CREATE TABLE IF NOT EXISTS flowmind_semantic_replay_result')
+      && statement.includes('replay_result_id TEXT PRIMARY KEY'),
+    ),
+    true,
+  )
+  assert.equal(
     statements.some((statement) => /^CREATE TRIGGER\b/i.test(statement.trim())),
     false,
   )

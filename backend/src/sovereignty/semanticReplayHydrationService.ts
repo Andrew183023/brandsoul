@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 
 import type { FastifyBaseLogger } from 'fastify'
 
@@ -38,6 +38,7 @@ export type ReplayShapeContract = {
 }
 
 type PersistedReplayRow = {
+  replay_result_id: string
   replay_fingerprint: string | null
   semantic_intent_id: string
   mutation_lineage_hash: string
@@ -438,7 +439,7 @@ export class SemanticReplayHydrationService {
           FROM flowmind_semantic_replay_result
           WHERE semantic_intent_id = ?
             AND replay_fingerprint = ?
-          ORDER BY created_at DESC, rowid DESC
+          ORDER BY created_at DESC, replay_result_id DESC
           LIMIT 1
         `,
         args.semanticIntentId,
@@ -455,7 +456,7 @@ export class SemanticReplayHydrationService {
         SELECT *
         FROM flowmind_semantic_replay_result
         WHERE semantic_intent_id = ?
-        ORDER BY created_at DESC, rowid DESC
+        ORDER BY created_at DESC, replay_result_id DESC
         LIMIT 1
       `,
       args.semanticIntentId,
@@ -472,10 +473,12 @@ export class SemanticReplayHydrationService {
   }) {
     const payloadSnapshot = stableStringify(args.canonicalResult.payload)
     const requestedAt = new Date().toISOString()
+    const replayResultId = randomUUID()
 
     const persist = async () => this.options.db.run(
       `
         INSERT INTO flowmind_semantic_replay_result (
+          replay_result_id,
           replay_fingerprint,
           semantic_intent_id,
           mutation_lineage_hash,
@@ -486,8 +489,9 @@ export class SemanticReplayHydrationService {
           lineage_hash,
           created_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
+      replayResultId,
       args.replayFingerprint ?? null,
       args.semanticIntentId,
       args.mutationLineageHash,
