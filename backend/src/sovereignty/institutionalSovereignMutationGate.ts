@@ -514,7 +514,7 @@ export class InstitutionalSovereignMutationGate {
       `
         SELECT lineage_hash, continuity_epoch
         FROM flowmind_runtime_continuity_attestation
-        ORDER BY generated_at DESC, rowid DESC
+        ORDER BY generated_at DESC, attestation_id DESC
         LIMIT 1
       `,
     )
