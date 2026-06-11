@@ -100,6 +100,33 @@ function hashValue(value: unknown) {
     .digest('hex')
 }
 
+function maskEmail(email: string) {
+  const [localPart, domainPart] = email.split('@')
+  if (!localPart || !domainPart) {
+    return '<redacted-email>'
+  }
+
+  return `${localPart.slice(0, 2)}***@${domainPart.slice(0, 2)}***`
+}
+
+function sanitizeIntentId(intentId: string) {
+  if (intentId.startsWith('auth-register:')) {
+    const parts = intentId.split(':')
+    if (parts.length >= 3) {
+      return ['auth-register', maskEmail(parts[1] ?? ''), ...parts.slice(2)].join(':')
+    }
+  }
+
+  if (intentId.startsWith('auth-login:')) {
+    const parts = intentId.split(':')
+    if (parts.length >= 2) {
+      return ['auth-login', maskEmail(parts[1] ?? '')].join(':')
+    }
+  }
+
+  return intentId
+}
+
 function mapIntentDomainToMutationScope(intent: SemanticMutationIntent): SovereignMutationContext['mutationScope'] {
   switch (intent.domain) {
     case 'auth':
@@ -314,6 +341,16 @@ export class SemanticMutationExecutor {
           this.options.observability?.incrementMetric('adaptive_evidence_hydration_total')
         }
         this.replayEquivalentCache.set(replayCacheKey, replayedFromCache as ExecutedSemanticMutation<unknown>)
+        this.options.logger?.info({
+          event: 'semantic-mutation.replay-equivalent',
+          intentId: sanitizeIntentId(args.intent.intentId),
+          intentIdHash: hashValue(args.intent.intentId),
+          replayFingerprint: replayEquivalent.replay_fingerprint,
+          cachedPayloadFound: true,
+          payloadCandidatePresent: true,
+          returningFallback: hydratedFromCache.replayResultState === 'fallback-safe' || hydratedFromCache.replayResultState === 'invalid',
+          replayResultState: hydratedFromCache.replayResultState,
+        }, 'Replay-equivalent semantic mutation detected')
         return replayedFromCache
       }
 
@@ -393,8 +430,14 @@ export class SemanticMutationExecutor {
       this.options.observability?.incrementMetric('sovereign_mutation_replay_equivalent_total')
       this.options.logger?.info({
         event: 'semantic-mutation.replay-equivalent',
-        intentId: args.intent.intentId,
+        intentId: sanitizeIntentId(args.intent.intentId),
+        intentIdHash: hashValue(args.intent.intentId),
+        replayFingerprint: replayEquivalent.replay_fingerprint,
         replayIntentFingerprint,
+        cachedPayloadFound: false,
+        payloadCandidatePresent: false,
+        returningFallback: hydratedRecovered.replayResultState === 'fallback-safe' || hydratedRecovered.replayResultState === 'invalid',
+        replayResultState: hydratedRecovered.replayResultState,
       }, 'Replay-equivalent semantic mutation detected')
       return replayRestored
     }

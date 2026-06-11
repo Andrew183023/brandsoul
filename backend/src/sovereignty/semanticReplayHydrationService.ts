@@ -160,16 +160,88 @@ function isNil(value: unknown): value is null | undefined {
   return value === null || value === undefined
 }
 
-function parsePayloadSnapshot(raw: string | null | undefined): unknown | null {
-  if (typeof raw !== 'string' || raw.trim().length === 0) {
-    return null
+type PayloadSnapshotParseStatus = 'VALID' | 'NULL' | 'EMPTY' | 'INVALID_JSON' | 'MISSING'
+
+function inspectPayloadSnapshot(raw: string | null | undefined): {
+  payload: unknown | null
+  status: PayloadSnapshotParseStatus
+} {
+  if (raw === undefined) {
+    return {
+      payload: null,
+      status: 'MISSING',
+    }
+  }
+
+  if (raw === null) {
+    return {
+      payload: null,
+      status: 'NULL',
+    }
+  }
+
+  if (raw.trim().length === 0) {
+    return {
+      payload: null,
+      status: 'EMPTY',
+    }
   }
 
   try {
-    return JSON.parse(raw) as unknown
+    return {
+      payload: JSON.parse(raw) as unknown,
+      status: 'VALID',
+    }
   } catch {
-    return null
+    return {
+      payload: null,
+      status: 'INVALID_JSON',
+    }
   }
+}
+
+function maskEmail(email: string) {
+  const [localPart, domainPart] = email.split('@')
+  if (!localPart || !domainPart) {
+    return '<redacted-email>'
+  }
+
+  const localPrefix = localPart.slice(0, 2)
+  const domainPrefix = domainPart.slice(0, 2)
+  return `${localPrefix}***@${domainPrefix}***`
+}
+
+function sanitizeSemanticIntentId(intentId: string) {
+  if (intentId.startsWith('auth-register:')) {
+    const parts = intentId.split(':')
+    if (parts.length >= 3) {
+      return ['auth-register', maskEmail(parts[1] ?? ''), ...parts.slice(2)].join(':')
+    }
+  }
+
+  if (intentId.startsWith('auth-login:')) {
+    const parts = intentId.split(':')
+    if (parts.length >= 2) {
+      return ['auth-login', maskEmail(parts[1] ?? '')].join(':')
+    }
+  }
+
+  return intentId
+}
+
+function hashIdentifier(value: string) {
+  return createHash('sha256')
+    .update(value, 'utf8')
+    .digest('hex')
+}
+
+function hasUserTenantMembershipShape(payload: unknown) {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return false
+  }
+
+  const record = payload as Record<string, unknown>
+  return ['user', 'tenant', 'membership'].every((key) => record[key] && typeof record[key] === 'object')
 }
 
 function defaultFallback(candidate: unknown): unknown {
@@ -236,7 +308,8 @@ export class SemanticReplayHydrationService {
       semanticIntentId: args.semanticIntentId,
       replayFingerprint: args.replayFingerprint,
     })
-    const persistedPayload = parsePayloadSnapshot(persisted?.payload_snapshot)
+    const payloadSnapshotInspection = inspectPayloadSnapshot(persisted?.payload_snapshot)
+    const persistedPayload = payloadSnapshotInspection.payload
     let candidate = args.payloadCandidate ?? persistedPayload
 
     const initialVerification = verifier(candidate)
@@ -263,8 +336,21 @@ export class SemanticReplayHydrationService {
     this.options.observability?.incrementMetric('semantic_replay_shape_mismatch_total')
     this.options.logger?.warn({
       event: 'semantic-replay.shape-invalid',
-      semanticIntentId: args.semanticIntentId,
+      semanticIntentId: sanitizeSemanticIntentId(args.semanticIntentId),
+      semanticIntentIdHash: hashIdentifier(args.semanticIntentId),
       replayFingerprint: args.replayFingerprint,
+      replayResultExists: Boolean(persisted),
+      persistedPayloadPresent: !isNil(persistedPayload),
+      payloadCandidatePresent: !isNil(args.payloadCandidate),
+      payloadSnapshotParseStatus: payloadSnapshotInspection.status,
+      hasUserTenantMembershipShape: hasUserTenantMembershipShape(persistedPayload ?? args.payloadCandidate),
+      replayResultState: persisted?.replay_result_state ?? null,
+      semanticIntegrity: persisted?.semantic_integrity ?? null,
+      resultSource: !isNil(args.payloadCandidate)
+        ? 'candidate'
+        : !isNil(persistedPayload)
+          ? 'persisted'
+          : 'fallback',
       issues: initialVerification.issues,
     }, 'Canonical replay shape invalid')
 
@@ -362,15 +448,33 @@ export class SemanticReplayHydrationService {
       this.options.observability?.incrementMetric('semantic_replay_fallback_total')
       this.options.logger?.warn({
         event: 'semantic-replay.fallback-safe',
-        semanticIntentId: args.semanticIntentId,
+        semanticIntentId: sanitizeSemanticIntentId(args.semanticIntentId),
+        semanticIntentIdHash: hashIdentifier(args.semanticIntentId),
         replayFingerprint: args.replayFingerprint,
+        replayResultExists: Boolean(persisted),
+        persistedPayloadPresent: !isNil(persistedPayload),
+        payloadCandidatePresent: !isNil(args.payloadCandidate),
+        payloadSnapshotParseStatus: payloadSnapshotInspection.status,
+        hasUserTenantMembershipShape: hasUserTenantMembershipShape(fallbackPayload),
+        replayResultState: persisted?.replay_result_state ?? null,
+        semanticIntegrity: persisted?.semantic_integrity ?? null,
+        resultSource: 'fallback',
       }, 'Replay fallback-safe result used')
     } else {
       this.options.observability?.incrementMetric('semantic_replay_invalid_total')
       this.options.logger?.error({
         event: 'semantic-replay.invalid',
-        semanticIntentId: args.semanticIntentId,
+        semanticIntentId: sanitizeSemanticIntentId(args.semanticIntentId),
+        semanticIntentIdHash: hashIdentifier(args.semanticIntentId),
         replayFingerprint: args.replayFingerprint,
+        replayResultExists: Boolean(persisted),
+        persistedPayloadPresent: !isNil(persistedPayload),
+        payloadCandidatePresent: !isNil(args.payloadCandidate),
+        payloadSnapshotParseStatus: payloadSnapshotInspection.status,
+        hasUserTenantMembershipShape: hasUserTenantMembershipShape(fallbackPayload),
+        replayResultState: persisted?.replay_result_state ?? null,
+        semanticIntegrity: persisted?.semantic_integrity ?? null,
+        resultSource: 'fallback',
         issues: fallbackVerification.issues,
       }, 'Replay fallback result remained invalid')
     }
