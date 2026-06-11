@@ -379,6 +379,7 @@ export async function buildServer() {
     tokenService,
     observability,
     authSovereignMutationService,
+    app.log,
   )
   const jwksService = createJwksService(signingKeyService, tokenService)
   const globalFeedEngine = createGlobalFeedEngine(globalFeedRepository)

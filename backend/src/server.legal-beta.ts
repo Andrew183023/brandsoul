@@ -93,6 +93,7 @@ export async function buildLegalBetaServer() {
     tokenService,
     observability,
     authSovereignMutationService,
+    app.log,
   )
   const jwksService = createJwksService(signingKeyService, tokenService)
 

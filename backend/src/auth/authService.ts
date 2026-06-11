@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 
 import bcrypt from 'bcryptjs'
+import type { FastifyBaseLogger } from 'fastify'
 import type { BackendDatabase } from '../db/index.js'
 import { getEmailFrom, getPasswordResetExpiryMinutes, getPasswordResetUrlBase, getResendApiKey } from '../config/env.js'
 import type { ObservabilityService } from '../services/observabilityService.js'
@@ -29,6 +30,7 @@ export class AuthService {
     private readonly tokenService: TokenService,
     private readonly observability: ObservabilityService,
     private readonly authSovereignMutationService: AuthSovereignMutationService,
+    private readonly logger?: FastifyBaseLogger,
   ) {}
 
   private createPasswordHash(password: string) {
@@ -368,7 +370,8 @@ export class AuthService {
       const tenant = registrationBootstrapRecord?.tenant
       const membership = registrationBootstrapRecord?.membership
 
-      console.info('auth-register.replay-shape', {
+      this.logger?.info({
+        event: 'auth-register.replay-shape',
         resultType: this.getValueType(registrationBootstrap),
         resultKeys: this.getObjectKeys(registrationBootstrap),
         hasUser: Boolean(user),
@@ -380,7 +383,7 @@ export class AuthService {
         membershipKeys: this.getObjectKeys(membership),
         userKeys: this.getObjectKeys(user),
         tenantKeys: this.getObjectKeys(tenant),
-      })
+      }, 'Auth register replay shape inspected')
 
       const principal: AuthPrincipal = {
         user: user as AuthPrincipal['user'],
@@ -397,11 +400,12 @@ export class AuthService {
         ? error.stack?.split('\n').slice(1).map((line) => line.trim()).find((line) => line.length > 0) ?? null
         : null
 
-      console.error('auth-register.failure', {
+      this.logger?.error({
+        event: 'auth-register.failure',
         errorName: error instanceof Error ? error.name : typeof error,
         errorMessage: error instanceof Error ? error.message : String(error),
         stackFirstFrame,
-      })
+      }, 'Auth register failed')
       throw error
     }
   }
@@ -736,6 +740,16 @@ export function createAuthService(
   tokenService: TokenService,
   observability: ObservabilityService,
   authSovereignMutationService: AuthSovereignMutationService,
+  logger?: FastifyBaseLogger,
 ) {
-  return new AuthService(db, config, legacyAuthStoreRepository, signingKeyService, tokenService, observability, authSovereignMutationService)
+  return new AuthService(
+    db,
+    config,
+    legacyAuthStoreRepository,
+    signingKeyService,
+    tokenService,
+    observability,
+    authSovereignMutationService,
+    logger,
+  )
 }
