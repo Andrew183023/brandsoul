@@ -63,6 +63,24 @@ export class AuthService {
     return `${baseUrl}${separator}token=${encodeURIComponent(token)}`
   }
 
+  private getObjectKeys(value: unknown) {
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? Object.keys(value as Record<string, unknown>).sort((left, right) => left.localeCompare(right))
+      : []
+  }
+
+  private getValueType(value: unknown) {
+    if (Array.isArray(value)) {
+      return 'array'
+    }
+
+    if (value === null) {
+      return 'null'
+    }
+
+    return typeof value
+  }
+
   private async sendPasswordResetEmail(email: string, token: string) {
     const resetUrl = this.buildPasswordResetUrl(token)
     const resendApiKey = getResendApiKey()
@@ -266,92 +284,126 @@ export class AuthService {
     }
 
     const tenantSlug = await this.buildUniqueTenantSlug(resolvedTenantName)
-    const { result: registrationBootstrap } = await getSemanticMutationExecutor().executeSemanticMutation({
-      authoritySource: 'backend/src/auth/authService.ts#register',
-      intent: {
-        intentId: `auth-register:${normalizedEmail}:${tenantSlug}`,
-        intentType: 'auth.registration.bootstrap',
-        domain: 'auth',
-        actor: 'public',
-        targetRef: {},
-        semanticPurpose: 'create institutional user, tenant, and initial membership authority',
-        expectedInstitutionalEffect: ['user_registered', 'tenant_created', 'membership_granted'],
-        riskLevel: 'critical',
-        replayRelevant: true,
-        continuityRelevant: true,
-        authRelevant: true,
-        createdAt: new Date().toISOString(),
-      },
-      captureBeforeState: async () => ({
-        existingUser: await this.legacyAuthStoreRepository.findUserByEmail(normalizedEmail),
-        existingTenant: await this.legacyAuthStoreRepository.findTenantBySlug(tenantSlug),
-      }),
-      executePersistence: async () => {
-        const user = await this.legacyAuthStoreRepository.createUser({
-          name: normalizedName,
-          email: normalizedEmail,
-          passwordHash: this.createPasswordHash(input.password),
-        })
-        if (!user) {
-          throw AuthError.invalidRegistration('Unable to create user.')
-        }
 
-        const tenant = await this.legacyAuthStoreRepository.createTenant({
-          name: resolvedTenantName,
-          slug: tenantSlug,
-          businessModel: accountMode === 'client' ? 'professional' : input.businessModel,
-        })
-        if (!tenant) {
-          throw AuthError.invalidRegistration('Unable to create tenant.')
-        }
-
-        const membership = await this.legacyAuthStoreRepository.createMembership({
-          userId: user.id,
-          tenantId: tenant.id,
-          role: accountMode === 'client' ? 'client' : 'owner',
-        })
-        if (!membership) {
-          throw AuthError.invalidRegistration('Unable to create membership.')
-        }
-
-        return { user, tenant, membership }
-      },
-      captureAfterState: async (persisted) => ({
-        userId: persisted.user.id,
-        tenantId: persisted.tenant.id,
-        membershipId: persisted.membership.id,
-        role: persisted.membership.role,
-      }),
-      deriveEffect: ({ intent, beforeState, afterState, sovereignAttestation }) => ({
-        effectId: `${intent.intentId}:effect`,
-        intentId: intent.intentId,
-        effectType: 'auth.registration.bootstrap.completed',
-        domain: intent.domain,
-        beforeFingerprint: buildSemanticFingerprint(beforeState),
-        afterFingerprint: buildSemanticFingerprint(afterState),
-        changedFields: ['user', 'tenant', 'membership'],
-        institutionalMeaning: 'a new identity authority root was established for a tenant owner relationship',
-        replayFingerprint: buildSemanticFingerprint({
-          intentType: intent.intentType,
-          afterState,
+    try {
+      const { result: registrationBootstrap } = await getSemanticMutationExecutor().executeSemanticMutation({
+        authoritySource: 'backend/src/auth/authService.ts#register',
+        intent: {
+          intentId: `auth-register:${normalizedEmail}:${tenantSlug}`,
+          intentType: 'auth.registration.bootstrap',
+          domain: 'auth',
+          actor: 'public',
+          targetRef: {},
+          semanticPurpose: 'create institutional user, tenant, and initial membership authority',
+          expectedInstitutionalEffect: ['user_registered', 'tenant_created', 'membership_granted'],
+          riskLevel: 'critical',
+          replayRelevant: true,
+          continuityRelevant: true,
+          authRelevant: true,
+          createdAt: new Date().toISOString(),
+        },
+        captureBeforeState: async () => ({
+          existingUser: await this.legacyAuthStoreRepository.findUserByEmail(normalizedEmail),
+          existingTenant: await this.legacyAuthStoreRepository.findTenantBySlug(tenantSlug),
         }),
-        continuityLineageHash: sovereignAttestation.lineageHash,
-        mutationLineageHash: '',
-        verified: false,
-      }),
-    })
-    const { user, tenant, membership } = registrationBootstrap
+        executePersistence: async () => {
+          const user = await this.legacyAuthStoreRepository.createUser({
+            name: normalizedName,
+            email: normalizedEmail,
+            passwordHash: this.createPasswordHash(input.password),
+          })
+          if (!user) {
+            throw AuthError.invalidRegistration('Unable to create user.')
+          }
 
-    const principal: AuthPrincipal = {
-      user,
-      tenant,
-      membership,
-      roles: [membership.role.trim().toLowerCase()],
+          const tenant = await this.legacyAuthStoreRepository.createTenant({
+            name: resolvedTenantName,
+            slug: tenantSlug,
+            businessModel: accountMode === 'client' ? 'professional' : input.businessModel,
+          })
+          if (!tenant) {
+            throw AuthError.invalidRegistration('Unable to create tenant.')
+          }
+
+          const membership = await this.legacyAuthStoreRepository.createMembership({
+            userId: user.id,
+            tenantId: tenant.id,
+            role: accountMode === 'client' ? 'client' : 'owner',
+          })
+          if (!membership) {
+            throw AuthError.invalidRegistration('Unable to create membership.')
+          }
+
+          return { user, tenant, membership }
+        },
+        captureAfterState: async (persisted) => ({
+          userId: persisted.user.id,
+          tenantId: persisted.tenant.id,
+          membershipId: persisted.membership.id,
+          role: persisted.membership.role,
+        }),
+        deriveEffect: ({ intent, beforeState, afterState, sovereignAttestation }) => ({
+          effectId: `${intent.intentId}:effect`,
+          intentId: intent.intentId,
+          effectType: 'auth.registration.bootstrap.completed',
+          domain: intent.domain,
+          beforeFingerprint: buildSemanticFingerprint(beforeState),
+          afterFingerprint: buildSemanticFingerprint(afterState),
+          changedFields: ['user', 'tenant', 'membership'],
+          institutionalMeaning: 'a new identity authority root was established for a tenant owner relationship',
+          replayFingerprint: buildSemanticFingerprint({
+            intentType: intent.intentType,
+            afterState,
+          }),
+          continuityLineageHash: sovereignAttestation.lineageHash,
+          mutationLineageHash: '',
+          verified: false,
+        }),
+      })
+
+      const registrationBootstrapRecord = registrationBootstrap && typeof registrationBootstrap === 'object' && !Array.isArray(registrationBootstrap)
+        ? registrationBootstrap as Record<string, unknown>
+        : null
+      const user = registrationBootstrapRecord?.user
+      const tenant = registrationBootstrapRecord?.tenant
+      const membership = registrationBootstrapRecord?.membership
+
+      console.info('auth-register.replay-shape', {
+        resultType: this.getValueType(registrationBootstrap),
+        resultKeys: this.getObjectKeys(registrationBootstrap),
+        hasUser: Boolean(user),
+        hasTenant: Boolean(tenant),
+        hasMembership: Boolean(membership),
+        membershipType: this.getValueType(membership),
+        userType: this.getValueType(user),
+        tenantType: this.getValueType(tenant),
+        membershipKeys: this.getObjectKeys(membership),
+        userKeys: this.getObjectKeys(user),
+        tenantKeys: this.getObjectKeys(tenant),
+      })
+
+      const principal: AuthPrincipal = {
+        user: user as AuthPrincipal['user'],
+        tenant: tenant as AuthPrincipal['tenant'],
+        membership: membership as AuthPrincipal['membership'],
+        roles: [((membership as AuthPrincipal['membership']).role).trim().toLowerCase()],
+      }
+
+      const bundle = await this.issueTokenBundle(principal, clientContext, 'login')
+      this.observability.increment('auth_login_success')
+      return bundle
+    } catch (error) {
+      const stackFirstFrame = error instanceof Error
+        ? error.stack?.split('\n').slice(1).map((line) => line.trim()).find((line) => line.length > 0) ?? null
+        : null
+
+      console.error('auth-register.failure', {
+        errorName: error instanceof Error ? error.name : typeof error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        stackFirstFrame,
+      })
+      throw error
     }
-
-    const bundle = await this.issueTokenBundle(principal, clientContext, 'login')
-    this.observability.increment('auth_login_success')
-    return bundle
   }
 
   async refresh(rawRefreshToken: string, clientContext: RequestClientContext): Promise<AuthTokenBundle> {
