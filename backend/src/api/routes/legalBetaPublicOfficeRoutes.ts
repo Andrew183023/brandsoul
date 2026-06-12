@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 
 import type { EntityProfile } from '../../brain/domain/entity/contracts/EntityProfile.js'
 import type { EntityBusinessConfig } from '../../domain/entityBusinessConfig.js'
+import type { StoredEntityProfile } from '../../domain/entityProfile.js'
 import type { AssetStorageService } from '../../services/assetStorageService.js'
 import type { BackendDatabase } from '../../db/index.js'
 import type { EntityRepository } from '../../repositories/entityRepository.js'
@@ -233,6 +234,18 @@ function createOfficeEntityProfile(officeId: string, officeName: string, primary
   })
 }
 
+function isGovernedOfficeEntityResult(value: unknown): value is StoredEntityProfile<EntityProfile> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false
+  }
+
+  const record = value as Record<string, unknown>
+  return typeof record.id === 'string'
+    && typeof record.entityProfile === 'object'
+    && record.entityProfile !== null
+    && !Array.isArray(record.entityProfile)
+}
+
 async function createOfficeThroughAuthorityBoundary(args: {
   repository: EntityRepository
   officeId: string
@@ -302,6 +315,113 @@ async function createOfficeThroughAuthorityBoundary(args: {
       mutationLineageHash: '',
       verified: false,
     }),
+  })
+
+  return result
+}
+
+async function updateOfficeConfigurationThroughAuthorityBoundary(args: {
+  repository: EntityRepository
+  office: StoredEntityProfile<EntityProfile> | null
+  auth: { userId: number; tenantId: number }
+  businessConfig: EntityBusinessConfig
+}) {
+  if (!args.office) {
+    return null
+  }
+
+  const office = args.office
+  const now = new Date().toISOString()
+  const nextProfile = writeEntityBusinessConfig(office.entityProfile as EntityProfile, args.businessConfig)
+  const previousBusinessConfig = readEntityBusinessConfig(office.entityProfile as EntityProfile)
+  const changedFields = Object.keys(args.businessConfig).length > 0
+    ? ['entity_business_config', 'entity_profile', ...Object.keys(args.businessConfig).map((field) => `business_config.${field}`)]
+    : ['entity_business_config', 'entity_profile']
+
+  const { result } = await getSemanticMutationExecutor().executeSemanticMutation({
+    authoritySource: 'backend/src/api/routes/legalBetaPublicOfficeRoutes.ts#updateOfficeConfiguration',
+    intent: {
+      intentId: `legal-office-configure:${office.id}:${args.auth.userId}:${args.auth.tenantId}`,
+      intentType: 'legal.office.configure',
+      domain: 'entity',
+      actor: 'admin',
+      targetRef: {
+        entityId: office.id,
+        userId: String(args.auth.userId),
+        tenantId: String(args.auth.tenantId),
+      },
+      semanticPurpose: 'update the governed legal office business configuration for the authenticated owner',
+      expectedInstitutionalEffect: ['legal_office_configuration_updated'],
+      riskLevel: 'high',
+      replayRelevant: true,
+      continuityRelevant: true,
+      authRelevant: false,
+      createdAt: now,
+    },
+    captureBeforeState: async () => ({
+      officeId: office.id,
+      ownerUserId: office.ownerUserId,
+      ownerTenantId: office.ownerTenantId,
+      businessConfig: previousBusinessConfig,
+      updatedAt: office.updatedAt,
+    }),
+    executePersistence: async () => {
+      const updated = await args.repository.updateEntity<EntityProfile>({
+        id: office.id,
+        entityProfile: nextProfile,
+      })
+      if (!updated) {
+        throw new Error(`Legal office ${office.id} disappeared during governed configuration update.`)
+      }
+      return updated
+    },
+    captureAfterState: async (persisted) => ({
+      officeId: persisted.id,
+      ownerUserId: persisted.ownerUserId,
+      ownerTenantId: persisted.ownerTenantId,
+      businessConfig: readEntityBusinessConfig(persisted.entityProfile as EntityProfile),
+      updatedAt: persisted.updatedAt,
+    }),
+    deriveEffect: ({ intent, beforeState, afterState, sovereignAttestation }) => ({
+      effectId: `${intent.intentId}:effect`,
+      intentId: intent.intentId,
+      effectType: 'legal.office.configuration.updated',
+      domain: intent.domain,
+      beforeFingerprint: buildSemanticFingerprint(beforeState),
+      afterFingerprint: buildSemanticFingerprint(afterState),
+      changedFields,
+      institutionalMeaning: 'the governed legal office configuration was updated through the sovereign mutation boundary',
+      replayFingerprint: buildSemanticFingerprint({
+        intentType: intent.intentType,
+        officeId: office.id,
+        ownerUserId: args.auth.userId,
+        ownerTenantId: args.auth.tenantId,
+        changedFields,
+      }),
+      continuityLineageHash: sovereignAttestation.lineageHash,
+      mutationLineageHash: '',
+      verified: false,
+    }),
+    canonicalReplayShape: {
+      requiredFields: ['id', 'entityProfile'],
+    },
+    canonicalShapeVerifier: (payload) => {
+      if (!isGovernedOfficeEntityResult(payload)) {
+        return {
+          canonicalShapeVerified: false,
+          semanticIntegrity: 'invalid' as const,
+          issues: ['governed_office_entity_result_invalid'],
+        }
+      }
+
+      return {
+        canonicalShapeVerified: true,
+        semanticIntegrity: 'verified' as const,
+        issues: [],
+        normalizedPayload: payload,
+      }
+    },
+    replayHydrateResult: async (payload) => (isGovernedOfficeEntityResult(payload) ? payload : null),
   })
 
   return result
@@ -461,9 +581,11 @@ export async function registerLegalBetaPublicOfficeRoutes(app: FastifyInstance) 
       })
     }
 
-    const updated = await getRepository(app).updateEntity<EntityProfile>({
-      id: owned.entity.id,
-      entityProfile: writeEntityBusinessConfig(owned.entity.entityProfile as EntityProfile, mergedBusinessConfig),
+    const updated = await updateOfficeConfigurationThroughAuthorityBoundary({
+      repository: getRepository(app),
+      office: owned.entity,
+      auth: owned.auth,
+      businessConfig: mergedBusinessConfig,
     })
 
     if (!updated) {
