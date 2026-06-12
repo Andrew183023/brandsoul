@@ -213,26 +213,44 @@ export class EntityRepository {
   }
 
   async getEntitiesByOwnerUserId<T extends EntityProfileDocument>(ownerUserId: number, ownerTenantId?: number): Promise<Array<StoredEntityProfile<T>>> {
-    const rows = await this.db.all<Array<{
-      id: string
-      owner_id: string | null
-      owner_user_id: number | null
-      owner_tenant_id: number | null
-      created_at: string
-      updated_at: string
-      entity_profile: string
-    }>>(
-      `
-        SELECT id, owner_id, owner_user_id, owner_tenant_id, created_at, updated_at, entity_profile
-        FROM entity_profile
-        WHERE owner_user_id = ?
-          AND (? IS NULL OR owner_tenant_id = ?)
-        ORDER BY updated_at DESC
-      `,
-      ownerUserId,
-      ownerTenantId ?? null,
-      ownerTenantId ?? null,
-    )
+    const baseSelect = `
+      SELECT id, owner_id, owner_user_id, owner_tenant_id, created_at, updated_at, entity_profile
+      FROM entity_profile
+      WHERE owner_user_id = ?
+    `
+    const rows = ownerTenantId === undefined || ownerTenantId === null
+      ? await this.db.all<Array<{
+        id: string
+        owner_id: string | null
+        owner_user_id: number | null
+        owner_tenant_id: number | null
+        created_at: string
+        updated_at: string
+        entity_profile: string
+      }>>(
+        `
+          ${baseSelect}
+          ORDER BY updated_at DESC
+        `,
+        ownerUserId,
+      )
+      : await this.db.all<Array<{
+        id: string
+        owner_id: string | null
+        owner_user_id: number | null
+        owner_tenant_id: number | null
+        created_at: string
+        updated_at: string
+        entity_profile: string
+      }>>(
+        `
+          ${baseSelect}
+            AND owner_tenant_id = ?
+          ORDER BY updated_at DESC
+        `,
+        ownerUserId,
+        ownerTenantId,
+      )
 
     return rows
       .map((row) => mapRowToStoredEntityProfile<T>(row))
