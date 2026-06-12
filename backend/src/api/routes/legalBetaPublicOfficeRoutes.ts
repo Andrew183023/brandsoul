@@ -526,27 +526,21 @@ export async function registerLegalBetaPublicOfficeRoutes(app: FastifyInstance) 
     }
   })
 
-  app.get<{ Params: { id: string } }>('/escritorios/:id/configuracao', { preHandler: [publicReadRateLimit] }, async (request, reply) => {
-    const entity = await getRepository(app).getEntityById<EntityProfile>(request.params.id)
-    if (!entity || typeof entity.ownerTenantId !== 'number') {
-      return reply.status(404).send({
-        status: 'failed',
-        error: {
-          code: 'OFFICE_NOT_FOUND',
-          message: `Office "${request.params.id}" was not found.`,
-        },
-      })
+  app.get<{ Params: { id: string } }>('/escritorios/:id/configuracao', { preHandler: [requireAuth, publicReadRateLimit] }, async (request, reply) => {
+    const owned = await requireOwnedOffice(app, request, reply)
+    if (!owned) {
+      return
     }
 
     const businessConfig = await getCaseService(app).buildOfficeBusinessConfig(
-      entity.ownerTenantId,
-      request.params.id,
-      entity.entityProfile as EntityProfile,
+      owned.entity.ownerTenantId ?? owned.auth.tenantId,
+      owned.entity.id,
+      owned.entity.entityProfile as EntityProfile,
     )
 
     return {
       status: 'ready',
-      officeId: request.params.id,
+      officeId: owned.entity.id,
       businessConfig,
     }
   })
