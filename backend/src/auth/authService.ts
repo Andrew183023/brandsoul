@@ -20,6 +20,7 @@ import { createRefreshSessionService } from './refreshSessionService.js'
 import { SigningKeyService } from './signingKeyService.js'
 import { TokenService, verifyPassword } from './tokenService.js'
 import type { AuthContext } from './authTypes.js'
+import type { CanonicalReplayShapeVerification } from '../sovereignty/semanticReplayHydrationService.js'
 
 type RegistrationBootstrapResult = {
   user: AuthPrincipal['user']
@@ -142,6 +143,48 @@ export class AuthService {
       tenant: value.tenant,
       membership: value.membership,
       roles: [this.normalizeRole(value.membership.role)],
+    }
+  }
+
+  private verifyRegistrationBootstrapReplayShape(value: unknown): CanonicalReplayShapeVerification<RegistrationBootstrapResult> {
+    const issues: string[] = []
+
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      issues.push('payload_is_not_object')
+    } else {
+      const record = value as Record<string, unknown>
+      const user = record.user
+      const tenant = record.tenant
+      const membership = record.membership
+      const membershipRecord = membership && typeof membership === 'object' && !Array.isArray(membership)
+        ? membership as Record<string, unknown>
+        : null
+      const role = membershipRecord?.role
+
+      if (!user || typeof user !== 'object' || Array.isArray(user)) {
+        issues.push('missing_required_field:user')
+      }
+
+      if (!tenant || typeof tenant !== 'object' || Array.isArray(tenant)) {
+        issues.push('missing_required_field:tenant')
+      }
+
+      if (!membershipRecord) {
+        issues.push('missing_required_field:membership')
+      }
+
+      if (typeof role !== 'string' || role.trim().length === 0) {
+        issues.push('missing_required_field:membership.role')
+      }
+    }
+
+    const canonicalShapeVerified = issues.length === 0 && this.isRegistrationBootstrapResult(value)
+
+    return {
+      canonicalShapeVerified,
+      semanticIntegrity: canonicalShapeVerified ? 'verified' : 'invalid',
+      issues,
+      normalizedPayload: canonicalShapeVerified ? value as RegistrationBootstrapResult : undefined,
     }
   }
 
@@ -423,6 +466,10 @@ export class AuthService {
           mutationLineageHash: '',
           verified: false,
         }),
+        canonicalReplayShape: {
+          requiredFields: ['user', 'tenant', 'membership', 'membership.role'],
+        },
+        canonicalShapeVerifier: (payload) => this.verifyRegistrationBootstrapReplayShape(payload),
       })
 
       const registrationBootstrapRecord = registrationBootstrap && typeof registrationBootstrap === 'object' && !Array.isArray(registrationBootstrap)

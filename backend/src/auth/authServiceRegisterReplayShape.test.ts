@@ -3,15 +3,93 @@ import test from 'node:test'
 
 import { AuthError } from './authErrors.js'
 import { AuthService } from './authService.js'
+import type { AuthTokenBundle, RequestClientContext } from './authTypes.js'
+import { installSemanticMutationExecutor } from '../sovereignty/semanticMutationExecutor.js'
 
 type LoggerEvent = {
-  level: 'warn'
+  level: 'info' | 'warn' | 'error'
   payload: Record<string, unknown>
   message?: string
 }
 
-function createServiceHarness() {
+type CapturedRegisterArgs = {
+  canonicalReplayShape?: {
+    requiredFields?: string[]
+    iterableFields?: string[]
+    allowNullPayload?: boolean
+  }
+  canonicalShapeVerifier?: (payload: unknown) => {
+    canonicalShapeVerified: boolean
+    semanticIntegrity: 'verified' | 'partial' | 'invalid'
+    issues: string[]
+    normalizedPayload?: unknown
+  }
+}
+
+const clientContext: RequestClientContext = {
+  ip: '127.0.0.1',
+  userAgent: 'node:test',
+}
+
+function createLogger(events: LoggerEvent[]) {
+  return {
+    info(payload: Record<string, unknown>, message?: string) {
+      events.push({ level: 'info', payload, message })
+    },
+    warn(payload: Record<string, unknown>, message?: string) {
+      events.push({ level: 'warn', payload, message })
+    },
+    error(payload: Record<string, unknown>, message?: string) {
+      events.push({ level: 'error', payload, message })
+    },
+  }
+}
+
+function createValidReplayPayload() {
+  return {
+    user: {
+      id: 1,
+      name: 'Owner User',
+      email: 'owner@example.com',
+      passwordHash: 'hashed',
+      isActive: true,
+      createdAt: '2026-06-12T00:00:00.000Z',
+      updatedAt: '2026-06-12T00:00:00.000Z',
+    },
+    tenant: {
+      id: 2,
+      name: 'BrandSoul Legal',
+      slug: 'brandsoul-legal',
+      businessModel: 'service' as const,
+      plan: 'pro',
+      isActive: true,
+      createdAt: '2026-06-12T00:00:00.000Z',
+      updatedAt: '2026-06-12T00:00:00.000Z',
+    },
+    membership: {
+      id: 3,
+      userId: 1,
+      tenantId: 2,
+      role: 'owner',
+      createdAt: '2026-06-12T00:00:00.000Z',
+    },
+  }
+}
+
+function createRegisterHarness(options: {
+  replayResult: unknown
+  onExecute?: (args: CapturedRegisterArgs) => void
+}) {
   const loggerEvents: LoggerEvent[] = []
+  const logger = createLogger(loggerEvents)
+
+  installSemanticMutationExecutor({
+    async executeSemanticMutation(args: CapturedRegisterArgs) {
+      options.onExecute?.(args)
+      return { result: options.replayResult }
+    },
+  } as never)
+
   const service = new AuthService(
     {} as never,
     { refreshTokenTtlDays: 30 } as never,
@@ -37,31 +115,92 @@ function createServiceHarness() {
     {} as never,
     { increment() {} } as never,
     {} as never,
-    {
-      warn(payload: Record<string, unknown>, message?: string) {
-        loggerEvents.push({ level: 'warn', payload, message })
-      },
-    } as never,
+    logger as never,
   )
 
-  return {
-    service: service as never as {
-      createRegistrationPrincipal(value: unknown): {
-        user: { id: number; name: string; email: string }
-        tenant: { id: number; slug: string }
-        membership: { role: string }
-        roles: string[]
-      }
+  ;(service as unknown as {
+    issueTokenBundle: (principal: unknown, context: RequestClientContext, flow: 'login' | 'refresh') => Promise<AuthTokenBundle>
+  }).issueTokenBundle = async (principal) => ({
+    tokenType: 'Bearer',
+    accessToken: 'access-token',
+    refreshToken: 'refresh-token',
+    expiresIn: 900,
+    token: 'access-token',
+    user: {
+      id: (principal as { user: { id: number; name: string; email: string } }).user.id,
+      name: (principal as { user: { name: string } }).user.name,
+      email: (principal as { user: { email: string } }).user.email,
+      is_active: true,
+      created_at: '2026-06-12T00:00:00.000Z',
+      updated_at: '2026-06-12T00:00:00.000Z',
     },
-    loggerEvents,
-  }
+    tenant: {
+      id: (principal as { tenant: { id: number; name: string; slug: string } }).tenant.id,
+      name: (principal as { tenant: { name: string } }).tenant.name,
+      slug: (principal as { tenant: { slug: string } }).tenant.slug,
+      business_model: 'service',
+      plan: 'pro',
+      is_active: true,
+      created_at: '2026-06-12T00:00:00.000Z',
+      updated_at: '2026-06-12T00:00:00.000Z',
+    },
+  })
+
+  return { service, loggerEvents }
 }
 
-test('registration replay contract rejects empty object with controlled AuthError', () => {
-  const { service, loggerEvents } = createServiceHarness()
+test('register declares canonical replay contract and accepts valid bootstrap payload', async () => {
+  let capturedArgs: CapturedRegisterArgs | null = null
+  const validPayload = createValidReplayPayload()
+  const { service, loggerEvents } = createRegisterHarness({
+    replayResult: validPayload,
+    onExecute: (args) => {
+      capturedArgs = args
+    },
+  })
 
-  assert.throws(
-    () => service.createRegistrationPrincipal({}),
+  const bundle = await service.register({
+    name: 'Owner User',
+    email: 'owner@example.com',
+    password: 'correct horse battery staple',
+    tenantName: 'BrandSoul Legal',
+    businessModel: 'service',
+  }, clientContext)
+
+  assert.equal(bundle.tokenType, 'Bearer')
+  assert.ok(capturedArgs)
+  assert.deepEqual(capturedArgs?.canonicalReplayShape?.requiredFields, ['user', 'tenant', 'membership', 'membership.role'])
+
+  const verifier = capturedArgs?.canonicalShapeVerifier
+  assert.equal(typeof verifier, 'function')
+  assert.equal(verifier?.({}).canonicalShapeVerified, false)
+  assert.deepEqual(verifier?.({}).issues, [
+    'missing_required_field:user',
+    'missing_required_field:tenant',
+    'missing_required_field:membership',
+    'missing_required_field:membership.role',
+  ])
+  assert.equal(verifier?.(validPayload).canonicalShapeVerified, true)
+  assert.ok(loggerEvents.some((event) => event.payload.event === 'auth-register.replay-shape'))
+})
+
+test('register does not accept empty replay object as success', async () => {
+  let capturedArgs: CapturedRegisterArgs | null = null
+  const { service, loggerEvents } = createRegisterHarness({
+    replayResult: {},
+    onExecute: (args) => {
+      capturedArgs = args
+    },
+  })
+
+  await assert.rejects(
+    () => service.register({
+      name: 'Owner User',
+      email: 'owner@example.com',
+      password: 'correct horse battery staple',
+      tenantName: 'BrandSoul Legal',
+      businessModel: 'service',
+    }, clientContext),
     (error: unknown) => {
       assert.ok(error instanceof AuthError)
       assert.equal(error.code, 'invalid_registration')
@@ -70,68 +209,38 @@ test('registration replay contract rejects empty object with controlled AuthErro
     },
   )
 
-  assert.equal(loggerEvents.length, 1)
-  assert.equal(loggerEvents[0]?.payload.event, 'auth-register.invalid-replay-shape')
-  assert.equal(loggerEvents[0]?.payload.hasMembership, false)
+  assert.ok(capturedArgs?.canonicalShapeVerifier)
+  assert.equal(capturedArgs.canonicalShapeVerifier?.({}).canonicalShapeVerified, false)
+  assert.ok(loggerEvents.some((event) => event.payload.event === 'auth-register.invalid-replay-shape'))
+  assert.ok(loggerEvents.some((event) => event.payload.event === 'auth-register.failure'))
 })
 
-test('registration replay contract accepts user tenant membership shape and normalizes role', () => {
-  const { service, loggerEvents } = createServiceHarness()
-
-  const principal = service.createRegistrationPrincipal({
-    user: {
-      id: 1,
-      name: 'Owner User',
-      email: 'owner@example.com',
-      passwordHash: 'hashed',
-      isActive: true,
-      createdAt: '2026-06-12T00:00:00.000Z',
-      updatedAt: '2026-06-12T00:00:00.000Z',
-    },
-    tenant: {
-      id: 2,
-      name: 'BrandSoul Legal',
-      slug: 'brandsoul-legal',
-      businessModel: 'service',
-      plan: 'pro',
-      isActive: true,
-      createdAt: '2026-06-12T00:00:00.000Z',
-      updatedAt: '2026-06-12T00:00:00.000Z',
-    },
+test('register rejects replay payload when membership.role is missing', async () => {
+  let capturedArgs: CapturedRegisterArgs | null = null
+  const invalidPayload = {
+    ...createValidReplayPayload(),
     membership: {
       id: 3,
       userId: 1,
       tenantId: 2,
-      role: ' Owner ',
       createdAt: '2026-06-12T00:00:00.000Z',
+    },
+  }
+  const { service, loggerEvents } = createRegisterHarness({
+    replayResult: invalidPayload,
+    onExecute: (args) => {
+      capturedArgs = args
     },
   })
 
-  assert.equal(principal.membership.role, ' Owner ')
-  assert.deepEqual(principal.roles, ['owner'])
-  assert.equal(loggerEvents.length, 0)
-})
-
-test('registration replay contract rejects membership without role string', () => {
-  const { service, loggerEvents } = createServiceHarness()
-
-  assert.throws(
-    () => service.createRegistrationPrincipal({
-      user: {
-        id: 1,
-        name: 'Owner User',
-        email: 'owner@example.com',
-      },
-      tenant: {
-        id: 2,
-        slug: 'brandsoul-legal',
-      },
-      membership: {
-        id: 3,
-        userId: 1,
-        tenantId: 2,
-      },
-    }),
+  await assert.rejects(
+    () => service.register({
+      name: 'Owner User',
+      email: 'owner@example.com',
+      password: 'correct horse battery staple',
+      tenantName: 'BrandSoul Legal',
+      businessModel: 'service',
+    }, clientContext),
     (error: unknown) => {
       assert.ok(error instanceof AuthError)
       assert.equal(error.code, 'invalid_registration')
@@ -139,8 +248,9 @@ test('registration replay contract rejects membership without role string', () =
     },
   )
 
-  assert.equal(loggerEvents.length, 1)
-  assert.equal(loggerEvents[0]?.payload.event, 'auth-register.invalid-replay-shape')
-  assert.equal(loggerEvents[0]?.payload.hasMembership, true)
-  assert.equal(loggerEvents[0]?.payload.membershipType, 'object')
+  assert.ok(capturedArgs?.canonicalShapeVerifier)
+  const verification = capturedArgs.canonicalShapeVerifier?.(invalidPayload)
+  assert.equal(verification?.canonicalShapeVerified, false)
+  assert.ok(verification?.issues.includes('missing_required_field:membership.role'))
+  assert.ok(loggerEvents.some((event) => event.payload.event === 'auth-register.invalid-replay-shape'))
 })
