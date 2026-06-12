@@ -21,6 +21,12 @@ import { SigningKeyService } from './signingKeyService.js'
 import { TokenService, verifyPassword } from './tokenService.js'
 import type { AuthContext } from './authTypes.js'
 
+type RegistrationBootstrapResult = {
+  user: AuthPrincipal['user']
+  tenant: AuthPrincipal['tenant']
+  membership: AuthPrincipal['membership']
+}
+
 export class AuthService {
   constructor(
     private readonly db: BackendDatabase,
@@ -81,6 +87,62 @@ export class AuthService {
     }
 
     return typeof value
+  }
+
+  private isRegistrationBootstrapResult(value: unknown): value is RegistrationBootstrapResult {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return false
+    }
+
+    const record = value as Record<string, unknown>
+    const membership = record.membership
+    const membershipRecord = membership && typeof membership === 'object' && !Array.isArray(membership)
+      ? membership as Record<string, unknown>
+      : null
+    const role = membershipRecord?.role
+
+    return Boolean(
+      record.user && typeof record.user === 'object'
+      && record.tenant && typeof record.tenant === 'object'
+      && membershipRecord
+      && typeof role === 'string'
+      && role.trim().length > 0,
+    )
+  }
+
+  private assertRegistrationBootstrapResult(value: unknown): asserts value is RegistrationBootstrapResult {
+    if (this.isRegistrationBootstrapResult(value)) {
+      return
+    }
+
+    const record = value && typeof value === 'object' && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : null
+    const membership = record?.membership
+
+    this.logger?.warn({
+      event: 'auth-register.invalid-replay-shape',
+      resultType: this.getValueType(value),
+      resultKeys: this.getObjectKeys(value),
+      hasUser: Boolean(record?.user),
+      hasTenant: Boolean(record?.tenant),
+      hasMembership: Boolean(membership),
+      membershipType: this.getValueType(membership),
+      membershipKeys: this.getObjectKeys(membership),
+    }, 'Auth register replay result had invalid shape')
+
+    throw AuthError.invalidRegistration('Registration replay result is missing required user, tenant, or membership data.')
+  }
+
+  private createRegistrationPrincipal(value: unknown): AuthPrincipal {
+    this.assertRegistrationBootstrapResult(value)
+
+    return {
+      user: value.user,
+      tenant: value.tenant,
+      membership: value.membership,
+      roles: [this.normalizeRole(value.membership.role)],
+    }
   }
 
   private async sendPasswordResetEmail(email: string, token: string) {
@@ -385,12 +447,7 @@ export class AuthService {
         tenantKeys: this.getObjectKeys(tenant),
       }, 'Auth register replay shape inspected')
 
-      const principal: AuthPrincipal = {
-        user: user as AuthPrincipal['user'],
-        tenant: tenant as AuthPrincipal['tenant'],
-        membership: membership as AuthPrincipal['membership'],
-        roles: [((membership as AuthPrincipal['membership']).role).trim().toLowerCase()],
-      }
+      const principal = this.createRegistrationPrincipal(registrationBootstrap)
 
       const bundle = await this.issueTokenBundle(principal, clientContext, 'login')
       this.observability.increment('auth_login_success')
