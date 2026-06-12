@@ -66,6 +66,102 @@ async function createHarness() {
   }
 }
 
+function getReplayCacheSize(executor: unknown) {
+  return ((executor as { replayEquivalentCache: Map<string, unknown> }).replayEquivalentCache).size
+}
+
+function buildReplayTestIntent(intentId: string) {
+  return {
+    intentId,
+    intentType: 'runtime.audit',
+    domain: 'runtime' as const,
+    actor: 'runtime',
+    targetRef: {},
+    semanticPurpose: 'cache replay test intent',
+    expectedInstitutionalEffect: ['runtime_audit_recorded'],
+    riskLevel: 'high' as const,
+    replayRelevant: true,
+    continuityRelevant: true,
+    authRelevant: false,
+    createdAt: '2026-05-13T11:00:00.000Z',
+  }
+}
+
+function buildReplayTestEffect(args: {
+  intentId: string
+  beforeState: unknown
+  afterState: unknown
+  lineageHash: string
+}) {
+  return {
+    effectId: `${args.intentId}:effect`,
+    intentId: args.intentId,
+    effectType: 'runtime.audit.recorded',
+    domain: 'runtime' as const,
+    changedFields: ['runtimeAudit'],
+    institutionalMeaning: 'runtime audit recorded',
+    replayFingerprint: JSON.stringify(args.afterState),
+    continuityLineageHash: args.lineageHash,
+    mutationLineageHash: '',
+    beforeFingerprint: JSON.stringify(args.beforeState),
+    afterFingerprint: JSON.stringify(args.afterState),
+    verified: false,
+  }
+}
+
+async function appendReplayResultOverride(args: {
+  connection: Awaited<ReturnType<typeof createHarness>>['connection']
+  semanticIntentId: string
+  payloadSnapshot: string
+  semanticIntegrity: 'partial' | 'invalid' | 'verified'
+  replayResultState: 'fallback-safe' | 'invalid' | 'hydrated' | 'original'
+}) {
+  const base = await args.connection.get<{
+    replay_fingerprint: string
+    mutation_lineage_hash: string
+    lineage_hash: string
+    created_at: string
+  }>(
+    `
+      SELECT replay_fingerprint, mutation_lineage_hash, lineage_hash, created_at
+      FROM flowmind_semantic_replay_result
+      WHERE semantic_intent_id = ?
+      ORDER BY created_at DESC, rowid DESC
+      LIMIT 1
+    `,
+    args.semanticIntentId,
+  )
+
+  assert.ok(base)
+
+  const createdAt = new Date(new Date(base.created_at).getTime() + 1000).toISOString()
+  await args.connection.run(
+    `
+      INSERT INTO flowmind_semantic_replay_result (
+        replay_fingerprint,
+        semantic_intent_id,
+        mutation_lineage_hash,
+        result_shape_hash,
+        payload_snapshot,
+        semantic_integrity,
+        replay_result_state,
+        lineage_hash,
+        created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    base.replay_fingerprint,
+    args.semanticIntentId,
+    base.mutation_lineage_hash,
+    `test-shape:${args.replayResultState}`,
+    args.payloadSnapshot,
+    args.semanticIntegrity,
+    args.replayResultState,
+    base.lineage_hash,
+    createdAt,
+  )
+}
+
 test('semantic mutation attestation is persisted and status reports coverage', async () => {
   const harness = await createHarness()
 
@@ -244,6 +340,236 @@ test('existing sovereign gate still blocks unsafe semantic mutation', async () =
         verified: false,
       }),
     }))
+  } finally {
+    await harness.close()
+  }
+})
+
+test('valid original semantic replay result is cached', async () => {
+  const harness = await createHarness()
+
+  try {
+    await harness.executor.executeSemanticMutation({
+      authoritySource: 'test.semantic.cache.original-valid',
+      intent: buildReplayTestIntent('intent:test:cache:original-valid'),
+      captureBeforeState: () => ({ marker: 'a' }),
+      executePersistence: async () => ({ id: 'payload-1', marker: 'a' }),
+      captureAfterState: (persisted) => persisted,
+      canonicalReplayShape: {
+        requiredFields: ['id', 'marker'],
+      },
+      deriveEffect: ({ intent, beforeState, afterState, sovereignAttestation }) => buildReplayTestEffect({
+        intentId: intent.intentId,
+        beforeState,
+        afterState,
+        lineageHash: sovereignAttestation.lineageHash,
+      }),
+    })
+
+    assert.equal(getReplayCacheSize(harness.executor), 1)
+  } finally {
+    await harness.close()
+  }
+})
+
+test('hydrated replay-equivalent semantic result is cached when payload remains valid', async () => {
+  const harness = await createHarness()
+
+  try {
+    const intentId = 'intent:test:cache:hydrated-valid'
+    await harness.executor.executeSemanticMutation({
+      authoritySource: 'test.semantic.cache.hydrated-valid.seed',
+      intent: buildReplayTestIntent(intentId),
+      captureBeforeState: () => ({ marker: 'seed' }),
+      executePersistence: async () => ({ id: 'payload-2', marker: 'seed' }),
+      captureAfterState: (persisted) => persisted,
+      canonicalReplayShape: {
+        requiredFields: ['id', 'marker'],
+      },
+      deriveEffect: ({ intent, beforeState, afterState, sovereignAttestation }) => buildReplayTestEffect({
+        intentId: intent.intentId,
+        beforeState,
+        afterState,
+        lineageHash: sovereignAttestation.lineageHash,
+      }),
+    })
+
+    const replayExecutor = createSemanticMutationExecutor({
+      db: harness.connection,
+    })
+
+    await replayExecutor.executeSemanticMutation({
+      authoritySource: 'test.semantic.cache.hydrated-valid.replay',
+      intent: buildReplayTestIntent(intentId),
+      captureBeforeState: () => ({ marker: 'seed' }),
+      executePersistence: async () => {
+        throw new Error('replay should not execute persistence')
+      },
+      canonicalReplayShape: {
+        requiredFields: ['id', 'marker'],
+      },
+      deriveEffect: ({ intent, beforeState, afterState, sovereignAttestation }) => buildReplayTestEffect({
+        intentId: intent.intentId,
+        beforeState,
+        afterState,
+        lineageHash: sovereignAttestation.lineageHash,
+      }),
+    })
+
+    assert.equal(getReplayCacheSize(replayExecutor), 1)
+  } finally {
+    await harness.close()
+  }
+})
+
+test('fallback-safe replay result does not enter replayEquivalentCache', async () => {
+  const harness = await createHarness()
+
+  try {
+    const intentId = 'intent:test:cache:fallback-safe'
+    await harness.executor.executeSemanticMutation({
+      authoritySource: 'test.semantic.cache.fallback-safe.seed',
+      intent: buildReplayTestIntent(intentId),
+      captureBeforeState: () => ({ marker: 'seed' }),
+      executePersistence: async () => ({ payload: ['ok'] }),
+      captureAfterState: (persisted) => persisted,
+      canonicalReplayShape: {
+        requiredFields: ['payload'],
+        iterableFields: ['payload'],
+      },
+      deriveEffect: ({ intent, beforeState, afterState, sovereignAttestation }) => buildReplayTestEffect({
+        intentId: intent.intentId,
+        beforeState,
+        afterState,
+        lineageHash: sovereignAttestation.lineageHash,
+      }),
+    })
+
+    await appendReplayResultOverride({
+      connection: harness.connection,
+      semanticIntentId: intentId,
+      payloadSnapshot: '{}',
+      semanticIntegrity: 'partial',
+      replayResultState: 'fallback-safe',
+    })
+
+    const replayExecutor = createSemanticMutationExecutor({
+      db: harness.connection,
+    })
+
+    await replayExecutor.executeSemanticMutation({
+      authoritySource: 'test.semantic.cache.fallback-safe.replay',
+      intent: buildReplayTestIntent(intentId),
+      captureBeforeState: () => ({ marker: 'seed' }),
+      executePersistence: async () => {
+        throw new Error('replay should not execute persistence')
+      },
+      canonicalReplayShape: {
+        requiredFields: ['payload'],
+        iterableFields: ['payload'],
+      },
+      replayFallbackResult: () => ({ payload: [] }),
+      deriveEffect: ({ intent, beforeState, afterState, sovereignAttestation }) => buildReplayTestEffect({
+        intentId: intent.intentId,
+        beforeState,
+        afterState,
+        lineageHash: sovereignAttestation.lineageHash,
+      }),
+    })
+
+    assert.equal(getReplayCacheSize(replayExecutor), 0)
+  } finally {
+    await harness.close()
+  }
+})
+
+test('invalid replay result does not enter replayEquivalentCache', async () => {
+  const harness = await createHarness()
+
+  try {
+    const intentId = 'intent:test:cache:invalid'
+    await harness.executor.executeSemanticMutation({
+      authoritySource: 'test.semantic.cache.invalid.seed',
+      intent: buildReplayTestIntent(intentId),
+      captureBeforeState: () => ({ marker: 'seed' }),
+      executePersistence: async () => ({ payload: ['ok'] }),
+      captureAfterState: (persisted) => persisted,
+      canonicalReplayShape: {
+        requiredFields: ['payload'],
+        iterableFields: ['payload'],
+      },
+      deriveEffect: ({ intent, beforeState, afterState, sovereignAttestation }) => buildReplayTestEffect({
+        intentId: intent.intentId,
+        beforeState,
+        afterState,
+        lineageHash: sovereignAttestation.lineageHash,
+      }),
+    })
+
+    await appendReplayResultOverride({
+      connection: harness.connection,
+      semanticIntentId: intentId,
+      payloadSnapshot: '{}',
+      semanticIntegrity: 'invalid',
+      replayResultState: 'invalid',
+    })
+
+    const replayExecutor = createSemanticMutationExecutor({
+      db: harness.connection,
+    })
+
+    await replayExecutor.executeSemanticMutation({
+      authoritySource: 'test.semantic.cache.invalid.replay',
+      intent: buildReplayTestIntent(intentId),
+      captureBeforeState: () => ({ marker: 'seed' }),
+      executePersistence: async () => {
+        throw new Error('replay should not execute persistence')
+      },
+      canonicalReplayShape: {
+        requiredFields: ['payload'],
+        iterableFields: ['payload'],
+      },
+      replayFallbackResult: () => ({} as { payload: string[] }),
+      deriveEffect: ({ intent, beforeState, afterState, sovereignAttestation }) => buildReplayTestEffect({
+        intentId: intent.intentId,
+        beforeState,
+        afterState,
+        lineageHash: sovereignAttestation.lineageHash,
+      }),
+    })
+
+    assert.equal(getReplayCacheSize(replayExecutor), 0)
+  } finally {
+    await harness.close()
+  }
+})
+
+test('empty object original result does not enter replayEquivalentCache', async () => {
+  const harness = await createHarness()
+
+  try {
+    await harness.executor.executeSemanticMutation({
+      authoritySource: 'test.semantic.cache.empty-object',
+      intent: buildReplayTestIntent('intent:test:cache:empty-object'),
+      captureBeforeState: () => ({ marker: 'a' }),
+      executePersistence: async () => ({ persisted: true }),
+      captureAfterState: (persisted) => persisted,
+      canonicalShapeVerifier: () => ({
+        canonicalShapeVerified: true,
+        semanticIntegrity: 'verified',
+        issues: [],
+        normalizedPayload: {} as Record<string, never>,
+      }),
+      mapResult: () => ({} as Record<string, never>),
+      deriveEffect: ({ intent, beforeState, afterState, sovereignAttestation }) => buildReplayTestEffect({
+        intentId: intent.intentId,
+        beforeState,
+        afterState,
+        lineageHash: sovereignAttestation.lineageHash,
+      }),
+    })
+
+    assert.equal(getReplayCacheSize(harness.executor), 0)
   } finally {
     await harness.close()
   }

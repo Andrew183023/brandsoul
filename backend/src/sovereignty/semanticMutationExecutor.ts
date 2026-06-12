@@ -228,6 +228,31 @@ function defaultVerifyEffect(args: {
   return expectedMutationLineageHash === args.effect.mutationLineageHash
 }
 
+type CacheableReplayState = 'original' | 'hydrated' | 'reconstructed' | 'fallback-safe' | 'invalid'
+
+function describeReplayPayload(payload: unknown) {
+  if (payload === null) {
+    return { payloadType: 'null', payloadKeys: [] as string[] }
+  }
+
+  if (payload === undefined) {
+    return { payloadType: 'undefined', payloadKeys: [] as string[] }
+  }
+
+  if (Array.isArray(payload)) {
+    return { payloadType: 'array', payloadKeys: [] as string[] }
+  }
+
+  if (typeof payload === 'object') {
+    return {
+      payloadType: 'object',
+      payloadKeys: Object.keys(payload as Record<string, unknown>).sort().slice(0, 20),
+    }
+  }
+
+  return { payloadType: typeof payload, payloadKeys: [] as string[] }
+}
+
 export class SemanticMutationExecutor {
   private readonly replayEquivalentCache = new Map<string, ExecutedSemanticMutation<unknown>>()
   private readonly replayHydrationService: SemanticReplayHydrationService
@@ -340,7 +365,11 @@ export class SemanticMutationExecutor {
         if (args.intent.intentType === 'adaptive.evidence.append' && hydratedFromCache.replayResultState !== 'original') {
           this.options.observability?.incrementMetric('adaptive_evidence_hydration_total')
         }
-        this.replayEquivalentCache.set(replayCacheKey, replayedFromCache as ExecutedSemanticMutation<unknown>)
+        this.cacheReplayResult({
+          replayCacheKey,
+          mutation: replayedFromCache as ExecutedSemanticMutation<unknown>,
+          replayResultState: hydratedFromCache.replayResultState,
+        })
         this.options.logger?.info({
           event: 'semantic-mutation.replay-equivalent',
           intentId: sanitizeIntentId(args.intent.intentId),
@@ -426,7 +455,11 @@ export class SemanticMutationExecutor {
       if (args.intent.intentType === 'adaptive.evidence.append' && hydratedRecovered.replayResultState !== 'original') {
         this.options.observability?.incrementMetric('adaptive_evidence_hydration_total')
       }
-      this.replayEquivalentCache.set(replayCacheKey, replayRestored as ExecutedSemanticMutation<unknown>)
+      this.cacheReplayResult({
+        replayCacheKey,
+        mutation: replayRestored as ExecutedSemanticMutation<unknown>,
+        replayResultState: hydratedRecovered.replayResultState,
+      })
       this.options.observability?.incrementMetric('sovereign_mutation_replay_equivalent_total')
       this.options.logger?.info({
         event: 'semantic-mutation.replay-equivalent',
@@ -541,7 +574,11 @@ export class SemanticMutationExecutor {
       effect: normalizedEffect,
       sovereignAttestation,
     }
-    this.replayEquivalentCache.set(replayCacheKey, executed as ExecutedSemanticMutation<unknown>)
+    this.cacheReplayResult({
+      replayCacheKey,
+      mutation: executed as ExecutedSemanticMutation<unknown>,
+      replayResultState: canonicalExecutedResult.replayResultState,
+    })
     return executed
   }
 
@@ -591,6 +628,66 @@ export class SemanticMutationExecutor {
     if (intent.expectedInstitutionalEffect.length === 0) {
       throw new Error(`SemanticMutationIntent ${intent.intentId} requires at least one expected institutional effect.`)
     }
+  }
+
+  private cacheReplayResult(args: {
+    replayCacheKey: string
+    mutation: ExecutedSemanticMutation<unknown>
+    replayResultState: CacheableReplayState
+  }) {
+    const decision = this.shouldCacheReplayResult({
+      replayResultState: args.replayResultState,
+      payload: args.mutation.result,
+    })
+
+    if (!decision.cacheable) {
+      const payloadDescription = describeReplayPayload(args.mutation.result)
+      this.options.logger?.info({
+        event: 'semantic-mutation.replay-cache-skip',
+        intentId: sanitizeIntentId(args.mutation.intent.intentId),
+        intentIdHash: hashValue(args.mutation.intent.intentId),
+        replayFingerprint: args.mutation.effect.replayFingerprint,
+        replayResultState: args.replayResultState,
+        reason: decision.reason,
+        payloadType: payloadDescription.payloadType,
+        payloadKeys: payloadDescription.payloadKeys,
+      }, 'Replay-equivalent cache write skipped')
+      return
+    }
+
+    this.replayEquivalentCache.set(args.replayCacheKey, args.mutation)
+  }
+
+  private shouldCacheReplayResult(args: {
+    replayResultState: CacheableReplayState
+    payload: unknown
+  }): { cacheable: true } | { cacheable: false; reason: string } {
+    if (args.replayResultState !== 'original' && args.replayResultState !== 'hydrated') {
+      return {
+        cacheable: false,
+        reason: `replay_state:${args.replayResultState}`,
+      }
+    }
+
+    if (args.payload === null || args.payload === undefined) {
+      return {
+        cacheable: false,
+        reason: 'payload_nil',
+      }
+    }
+
+    if (Array.isArray(args.payload)) {
+      return { cacheable: true }
+    }
+
+    if (typeof args.payload === 'object' && Object.keys(args.payload as Record<string, unknown>).length === 0) {
+      return {
+        cacheable: false,
+        reason: 'payload_empty_object',
+      }
+    }
+
+    return { cacheable: true }
   }
 
   private normalizeEffect(
