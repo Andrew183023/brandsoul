@@ -10,7 +10,9 @@ vi.mock('axios', () => ({
   default: axiosMock,
 }))
 
-import { bootstrapSession, buildAuthenticatedHeaders, loginAccount, logoutAllSessions, registerAccount, requestPasswordReset, resetPassword } from './auth'
+import { bootstrapSession, buildAuthenticatedHeaders, loginAccount, logout, logoutAllSessions, registerAccount, requestPasswordReset, resetPassword } from './auth'
+import { captureAdminAuthContinuation } from './authContinuation'
+import { getInstitutionalOnboardingDraftStorageKey } from './institutionalOnboarding'
 import { clearSession, loadSession, saveSession } from './session'
 
 function createStorage() {
@@ -103,6 +105,36 @@ describe('auth authority client', () => {
 
     expect(axiosMock.post).toHaveBeenCalledTimes(1)
     expect(session.refreshToken).toBe('refresh-2')
+  })
+
+  it('clears stale legal continuation and onboarding draft when login switches tenant', async () => {
+    saveSession({
+      token: buildToken(300),
+      accessToken: buildToken(300),
+      refreshToken: 'refresh-old',
+      tokenType: 'Bearer',
+      accessTokenExpiresAt: null,
+      user: { id: 1, name: 'Old', email: 'old@brand.com', is_active: true, created_at: '', updated_at: '' },
+      tenant: { id: 10, name: 'Old Brand', slug: 'old-brand', business_model: 'hybrid', plan: 'pro', is_active: true, created_at: '', updated_at: '' },
+    })
+    captureAdminAuthContinuation('/admin/escritorios/office-musk/visao-geral')
+    window.localStorage.setItem(getInstitutionalOnboardingDraftStorageKey(), JSON.stringify({ officeId: 'office-musk', publicationStatus: 'published' }))
+
+    axiosMock.post.mockResolvedValueOnce({
+      data: {
+        accessToken: buildToken(300),
+        refreshToken: 'refresh-new',
+        tokenType: 'Bearer',
+        expiresIn: 300,
+        user: { id: 2, name: 'Bia', email: 'bia@brand.com', is_active: true, created_at: '', updated_at: '' },
+        tenant: { id: 11, name: 'Brand 2', slug: 'brand-2', business_model: 'service', plan: 'starter', is_active: true, created_at: '', updated_at: '' },
+      },
+    })
+
+    await loginAccount({ email: 'bia@brand.com', password: 'secret123' })
+
+    expect(window.sessionStorage.getItem('brandsoul.auth.continuation')).toBeNull()
+    expect(window.localStorage.getItem(getInstitutionalOnboardingDraftStorageKey())).toBeNull()
   })
 
   it('normalizes businessName into tenant_name for legal registration', async () => {
@@ -223,5 +255,26 @@ describe('auth authority client', () => {
 
     expect(loadSession()).toBeNull()
     expect(axiosMock.post).toHaveBeenCalledTimes(1)
+  })
+
+  it('clears legal continuation and onboarding draft on logout', async () => {
+    saveSession({
+      token: buildToken(300),
+      accessToken: buildToken(300),
+      refreshToken: 'refresh-logout',
+      tokenType: 'Bearer',
+      accessTokenExpiresAt: null,
+      user: { id: 7, name: 'Eva', email: 'eva@brand.com', is_active: true, created_at: '', updated_at: '' },
+      tenant: { id: 16, name: 'Brand 7', slug: 'brand-7', business_model: 'hybrid', plan: 'pro', is_active: true, created_at: '', updated_at: '' },
+    })
+    captureAdminAuthContinuation('/admin/escritorios/office-musk/visao-geral')
+    window.localStorage.setItem(getInstitutionalOnboardingDraftStorageKey(), JSON.stringify({ officeId: 'office-musk', publicationStatus: 'published' }))
+    axiosMock.post.mockResolvedValueOnce({ data: {} })
+
+    await logout()
+
+    expect(loadSession()).toBeNull()
+    expect(window.sessionStorage.getItem('brandsoul.auth.continuation')).toBeNull()
+    expect(window.localStorage.getItem(getInstitutionalOnboardingDraftStorageKey())).toBeNull()
   })
 })

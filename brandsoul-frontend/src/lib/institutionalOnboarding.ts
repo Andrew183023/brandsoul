@@ -102,6 +102,10 @@ function isBrowser() {
   return typeof window !== 'undefined'
 }
 
+export function getInstitutionalOnboardingDraftStorageKey() {
+  return ONBOARDING_DRAFT_KEY
+}
+
 export function createDefaultInstitutionalOnboardingProfessionalDraft(
   input: Partial<InstitutionalOnboardingProfessionalDraft> = {},
 ): InstitutionalOnboardingProfessionalDraft {

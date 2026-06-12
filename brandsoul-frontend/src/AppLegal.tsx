@@ -1,7 +1,7 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
 
 import { LEGAL_ROUTES, parseClientPortalFromPublicPath, parseOfficeIdFromPublicPath } from './app/routes/legalRoutes'
-import { captureAdminAuthContinuation, consumeAuthContinuationReturnTo } from './lib/authContinuation'
+import { captureAdminAuthContinuation, consumeSafeLegalAdminContinuationReturnTo } from './lib/authContinuation'
 import { hasInstitutionalOnboardingContinuationPending } from './lib/institutionalOnboarding'
 import { useAuthSession } from './lib/session'
 
@@ -86,7 +86,7 @@ function LegalRoot() {
     }
 
     if ((showLoginPage || showForgotPasswordPage || showResetPasswordPage) && hasSession && !hasPendingOnboardingContinuation) {
-      const destination = consumeAuthContinuationReturnTo(LEGAL_ROUTES.admin.home)
+      const destination = consumeSafeLegalAdminContinuationReturnTo(LEGAL_ROUTES.admin.home)
       window.history.replaceState({}, '', destination)
       setPathname(destination)
       return

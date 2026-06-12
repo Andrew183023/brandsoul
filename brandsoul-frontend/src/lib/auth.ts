@@ -1,6 +1,8 @@
 import axios from 'axios'
 
 import { buildAuthApiUrl } from './api'
+import { clearAuthContinuationContext } from './authContinuation'
+import { clearInstitutionalOnboardingDraft } from './institutionalOnboarding'
 import { clearSession, isSessionAccessTokenFresh, loadSession, saveSession, type AuthSession, type AuthTenant, type AuthUser } from './session'
 
 type ContextMode = 'customer' | 'admin'
@@ -31,6 +33,19 @@ export class AuthClientError extends Error {
 export const deprecatedPythonAccountFlows = [] as const
 
 let refreshPromise: Promise<AuthSession | null> | null = null
+
+function hasSessionAccountChanged(previousSession: AuthSession | null, nextSession: AuthSession) {
+  if (!previousSession) {
+    return false
+  }
+
+  return previousSession.user.id !== nextSession.user.id || previousSession.tenant.id !== nextSession.tenant.id
+}
+
+function clearLegalContinuationState() {
+  clearAuthContinuationContext()
+  clearInstitutionalOnboardingDraft()
+}
 
 function resolveExpiryIso(expiresIn?: number) {
   if (typeof expiresIn === 'number' && expiresIn > 0) {
@@ -86,6 +101,7 @@ export async function registerAccount(payload: {
   businessName?: string
   business_model?: 'product' | 'service' | 'hybrid' | 'professional'
 }): Promise<AuthSession> {
+  const previousSession = loadSession()
   const tenantName = payload.tenant_name?.trim()
     ?? payload.tenantName?.trim()
     ?? payload.businessName?.trim()
@@ -96,12 +112,23 @@ export async function registerAccount(payload: {
     ...payload,
     tenant_name: tenantName,
   })
-  return mapAuthoritySession(response.data)
+  const nextSession = mapAuthoritySession(response.data)
+  if (hasSessionAccountChanged(previousSession, nextSession)) {
+    clearLegalContinuationState()
+  }
+
+  return nextSession
 }
 
 export async function loginAccount(payload: { email: string; password: string }): Promise<AuthSession> {
+  const previousSession = loadSession()
   const response = await axios.post<AuthorityAuthResponse>(buildAuthApiUrl('/auth/login'), payload)
-  return mapAuthoritySession(response.data)
+  const nextSession = mapAuthoritySession(response.data)
+  if (hasSessionAccountChanged(previousSession, nextSession)) {
+    clearLegalContinuationState()
+  }
+
+  return nextSession
 }
 
 export async function requestPasswordReset(payload: { email: string }): Promise<MessageResponse> {
@@ -247,6 +274,7 @@ export async function logout() {
       })
     }
   } finally {
+    clearLegalContinuationState()
     clearSession()
   }
 }
@@ -265,6 +293,7 @@ export async function logoutAllSessions() {
       },
     )
   } finally {
+    clearLegalContinuationState()
     clearSession()
   }
 }

@@ -30,6 +30,10 @@ function normalizePath(path: string) {
   return normalized
 }
 
+function isDirectOfficeAdminRoute(path: string) {
+  return /^\/admin\/escritorios\/[^/]+(?:\/|$)/.test(path)
+}
+
 function safeDecodeRouteSegment(value: string) {
   try {
     return decodeURIComponent(value)
@@ -135,5 +139,20 @@ export function consumeAuthContinuationReturnTo(defaultPath = '/admin') {
   }
 
   clearAuthContinuationContext()
+  return context.returnTo
+}
+
+export function consumeSafeLegalAdminContinuationReturnTo(defaultPath = '/admin') {
+  const context = readAuthContinuationContext()
+  if (!context) {
+    return defaultPath
+  }
+
+  clearAuthContinuationContext()
+
+  if (isDirectOfficeAdminRoute(context.returnTo)) {
+    return defaultPath
+  }
+
   return context.returnTo
 }
