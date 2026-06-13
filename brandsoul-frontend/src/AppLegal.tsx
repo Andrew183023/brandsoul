@@ -87,6 +87,12 @@ function LegalRoot() {
 
     if ((showLoginPage || showForgotPasswordPage || showResetPasswordPage) && hasSession && !hasPendingOnboardingContinuation) {
       const destination = consumeSafeLegalAdminContinuationReturnTo(LEGAL_ROUTES.admin.home)
+      console.log({
+        event: 'legal-auth-post-login-redirect',
+        pathname,
+        destination,
+        hasPendingOnboardingContinuation,
+      })
       window.history.replaceState({}, '', destination)
       setPathname(destination)
       return

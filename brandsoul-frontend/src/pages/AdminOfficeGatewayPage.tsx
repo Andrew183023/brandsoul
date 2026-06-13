@@ -24,6 +24,20 @@ export default function AdminOfficeGatewayPage() {
           return
         }
 
+        console.log({
+          event: 'legal-office-list-loaded',
+          officesFromApi: payload.offices,
+          officeIds: payload.offices.map((office) => office.officeId),
+          officeCount: payload.offices.length,
+        })
+
+        console.log({
+          event: 'legal-office-gateway-decision',
+          officeCount: payload.offices.length,
+          officeIds: payload.offices.map((office) => office.officeId),
+          selectedOffice: payload.offices[0]?.officeId ?? null,
+        })
+
         setOffices(payload.offices)
 
         if (payload.offices.length === 0) {

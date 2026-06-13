@@ -113,6 +113,13 @@ export function captureAdminAuthContinuation(pathnameWithSearchAndHash: string) 
     },
   }
 
+  console.log({
+    event: 'legal-auth-continuation',
+    action: 'capture',
+    continuation: context,
+    derivedRoute: context.returnTo,
+  })
+
   window.sessionStorage.setItem(AUTH_CONTINUATION_KEY, JSON.stringify(context))
 }
 
@@ -121,7 +128,17 @@ export function readAuthContinuationContext() {
     return null
   }
 
-  return parseContinuation(window.sessionStorage.getItem(AUTH_CONTINUATION_KEY))
+  const raw = window.sessionStorage.getItem(AUTH_CONTINUATION_KEY)
+  const continuation = parseContinuation(raw)
+  console.log({
+    event: 'legal-auth-continuation',
+    action: 'read',
+    continuationRaw: raw,
+    continuation,
+    derivedRoute: continuation?.returnTo ?? null,
+  })
+
+  return continuation
 }
 
 export function clearAuthContinuationContext() {
@@ -135,24 +152,56 @@ export function clearAuthContinuationContext() {
 export function consumeAuthContinuationReturnTo(defaultPath = '/admin') {
   const context = readAuthContinuationContext()
   if (!context) {
+    console.log({
+      event: 'legal-auth-continuation',
+      action: 'consume',
+      continuation: null,
+      derivedRoute: defaultPath,
+    })
     return defaultPath
   }
 
   clearAuthContinuationContext()
+  console.log({
+    event: 'legal-auth-continuation',
+    action: 'consume',
+    continuation: context,
+    derivedRoute: context.returnTo,
+  })
   return context.returnTo
 }
 
 export function consumeSafeLegalAdminContinuationReturnTo(defaultPath = '/admin') {
   const context = readAuthContinuationContext()
   if (!context) {
+    console.log({
+      event: 'legal-auth-continuation',
+      action: 'consume-safe',
+      continuation: null,
+      derivedRoute: defaultPath,
+    })
     return defaultPath
   }
 
   clearAuthContinuationContext()
 
   if (isDirectOfficeAdminRoute(context.returnTo)) {
+    console.log({
+      event: 'legal-auth-continuation',
+      action: 'consume-safe',
+      continuation: context,
+      derivedRoute: defaultPath,
+      rejectedDirectOfficeRoute: true,
+    })
     return defaultPath
   }
 
+  console.log({
+    event: 'legal-auth-continuation',
+    action: 'consume-safe',
+    continuation: context,
+    derivedRoute: context.returnTo,
+    rejectedDirectOfficeRoute: false,
+  })
   return context.returnTo
 }

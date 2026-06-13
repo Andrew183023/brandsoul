@@ -29,9 +29,18 @@ function RouteNotFoundPage() {
 }
 
 export default function LegalAdminApp() {
+  const pathname = window.location.pathname
   const officeSectionMatch = window.location.pathname.match(/^\/admin\/escritorios\/([^/]+)\/(visao-geral|casos|triagem|equipe|cobertura|disponibilidade|perfil-publico|publicacao|configuracoes)\/?$/)
   const officeId = decodeRouteSegment(officeSectionMatch?.[1])
   const section = officeSectionMatch?.[2] as LegalAdminSection | undefined
+
+  console.log({
+    event: 'legal-admin-bootstrap',
+    pathname,
+    officeId,
+    section: section ?? null,
+    source: 'LegalAdminApp',
+  })
 
   if (window.location.pathname === '/admin') {
     return <AdminOfficeGatewayPage />

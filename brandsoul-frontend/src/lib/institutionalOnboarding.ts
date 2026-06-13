@@ -247,14 +247,21 @@ export function readInstitutionalOnboardingDraft(): InstitutionalOnboardingDraft
 
   const raw = window.localStorage.getItem(ONBOARDING_DRAFT_KEY)
   if (!raw) {
-    return createDefaultInstitutionalOnboardingDraft()
+    const emptyDraft = createDefaultInstitutionalOnboardingDraft()
+    console.log({
+      event: 'legal-onboarding-draft',
+      officeId: emptyDraft.officeId ?? null,
+      draft: emptyDraft,
+      rawDraft: raw,
+    })
+    return emptyDraft
   }
 
   try {
     const parsed = JSON.parse(raw) as Partial<InstitutionalOnboardingDraft>
     const fallback = createDefaultInstitutionalOnboardingDraft()
 
-    return sanitizeDraft({
+    const draft = sanitizeDraft({
       ...fallback,
       ...parsed,
       account: {
@@ -294,8 +301,23 @@ export function readInstitutionalOnboardingDraft(): InstitutionalOnboardingDraft
         ...(parsed.compliance ?? {}),
       },
     })
+    console.log({
+      event: 'legal-onboarding-draft',
+      officeId: draft.officeId ?? null,
+      draft,
+      rawDraft: raw,
+    })
+    return draft
   } catch {
-    return createDefaultInstitutionalOnboardingDraft()
+    const fallback = createDefaultInstitutionalOnboardingDraft()
+    console.log({
+      event: 'legal-onboarding-draft',
+      officeId: fallback.officeId ?? null,
+      draft: fallback,
+      rawDraft: raw,
+      parseError: true,
+    })
+    return fallback
   }
 }
 
