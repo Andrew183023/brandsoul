@@ -7,6 +7,15 @@ import { InstitutionalSovereignMutationBlockedError } from '../sovereignty/insti
 type BackendContext = {
   backendContext: {
       auth: {
+        config: {
+          authStoreMode: 'legacy_only' | 'native_only' | 'dual_write_legacy_read' | 'dual_write_native_read'
+        }
+        authIdentityStoreRepository: {
+          findUserByEmail(email: string): Promise<{ id: number } | null>
+          listMembershipsForUser(userId: number): Promise<Array<{
+            tenant: { id: number }
+          }>>
+        }
         authService: {
         register(input: {
           name: string
@@ -44,6 +53,10 @@ function getAuthService(app: FastifyInstance) {
 
 function getJwksService(app: FastifyInstance) {
   return (app as FastifyInstance & BackendContext).backendContext.auth.jwksService
+}
+
+function readInternalAdminToken() {
+  return (process.env.INTERNAL_ADMIN_TOKEN ?? '').trim()
 }
 
 function getClientContext(request: FastifyRequest) {
@@ -162,6 +175,38 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     } catch (error) {
       return sendAuthError(reply, error)
     }
+  })
+
+  app.get<{ Querystring: { email?: string } }>('/internal/admin/auth/user-by-email', async (request, reply) => {
+    const configuredToken = readInternalAdminToken()
+    const requestTokenHeader = request.headers['x-internal-admin-token']
+    const requestToken = Array.isArray(requestTokenHeader) ? requestTokenHeader[0] : requestTokenHeader
+    const email = request.query?.email?.trim().toLowerCase() ?? ''
+
+    if (!configuredToken || requestToken !== configuredToken) {
+      return reply.status(401).send({
+        error: 'internal_admin_unauthorized',
+      })
+    }
+
+    if (!email) {
+      return reply.status(400).send({
+        error: 'email_required',
+      })
+    }
+
+    const authRepository = (app as FastifyInstance & BackendContext).backendContext.auth.authIdentityStoreRepository
+    const user = await authRepository.findUserByEmail(email)
+    const memberships = user
+      ? await authRepository.listMembershipsForUser(user.id)
+      : []
+
+    return reply.send({
+      userFound: Boolean(user),
+      userId: user?.id ?? null,
+      tenantIds: memberships.map((record) => record.tenant.id),
+      membershipCount: memberships.length,
+    })
   })
 
   app.post<{ Body: { refreshToken?: string } }>('/auth/refresh', async (request, reply) => {

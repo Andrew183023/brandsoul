@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 
 import bcrypt from 'bcryptjs'
 import type { FastifyBaseLogger } from 'fastify'
@@ -42,6 +42,36 @@ export class AuthService {
 
   private createPasswordHash(password: string) {
     return bcrypt.hashSync(password, 10)
+  }
+
+  private hashEmailForLogs(email: string) {
+    return createHash('sha256').update(email.trim().toLowerCase(), 'utf-8').digest('hex').slice(0, 16)
+  }
+
+  private describeAuthRegisterWriteStore() {
+    switch (this.config.authStoreMode) {
+      case 'legacy_only':
+        return 'legacy'
+      case 'native_only':
+        return 'native'
+      case 'dual_write_legacy_read':
+        return 'legacy_primary+native_mirror'
+      case 'dual_write_native_read':
+        return 'native_primary+legacy_mirror'
+    }
+  }
+
+  private describeAuthLoginReadStore() {
+    switch (this.config.authStoreMode) {
+      case 'legacy_only':
+        return 'legacy'
+      case 'native_only':
+        return 'native'
+      case 'dual_write_legacy_read':
+        return 'legacy'
+      case 'dual_write_native_read':
+        return 'native'
+    }
   }
 
   private normalizeRole(role: string) {
@@ -287,11 +317,23 @@ export class AuthService {
   private async resolveMembershipSelection(userId: number, selection?: {
     tenantId?: number
     tenantSlug?: string
+  }, context?: {
+    emailHash: string
   }): Promise<AuthTenantMembershipRecord> {
     const memberships = (await this.legacyAuthStoreRepository.listMembershipsForUser(userId))
       .filter((record) => record.tenant.isActive)
 
     if (memberships.length === 0) {
+      this.logger?.warn({
+        event: 'auth-login.failure',
+        emailHash: context?.emailHash ?? 'unknown',
+        userFound: true,
+        passwordHashPresent: true,
+        passwordValid: true,
+        activeMembershipCount: 0,
+        selectedTenantId: selection?.tenantId ?? null,
+        failureReason: 'no_active_memberships',
+      }, 'Auth login denied because the user has no active memberships')
       throw AuthError.invalidCredentials()
     }
 
@@ -301,6 +343,16 @@ export class AuthService {
         || (selection.tenantSlug && record.tenant.slug === selection.tenantSlug)
       ))
       if (!selectedMembership) {
+        this.logger?.warn({
+          event: 'auth-login.failure',
+          emailHash: context?.emailHash ?? 'unknown',
+          userFound: true,
+          passwordHashPresent: true,
+          passwordValid: true,
+          activeMembershipCount: memberships.length,
+          selectedTenantId: selection?.tenantId ?? null,
+          failureReason: selection?.tenantId !== undefined ? 'selected_tenant_not_found' : 'selected_tenant_slug_not_found',
+        }, 'Auth login denied because the selected tenant is not available for the user')
         throw AuthError.invalidCredentials()
       }
 
@@ -325,14 +377,67 @@ export class AuthService {
     tenantId?: number
     tenantSlug?: string
   }): Promise<AuthPrincipal> {
+    const emailHash = this.hashEmailForLogs(email)
     const user = await this.legacyAuthStoreRepository.findUserByEmail(email)
-    if (!user?.isActive || !verifyPassword(password, user.passwordHash)) {
+    this.logger?.info({
+      event: 'auth-login.lookup',
+      emailHash,
+      authStoreMode: this.config.authStoreMode,
+      readStore: this.describeAuthLoginReadStore(),
+      userFound: Boolean(user),
+    }, 'Auth login user lookup completed')
+    const passwordHashPresent = Boolean(user?.passwordHash)
+    const passwordValid = user?.isActive ? verifyPassword(password, user.passwordHash) : false
+
+    if (!user) {
+      this.logger?.warn({
+        event: 'auth-login.failure',
+        emailHash,
+        userFound: false,
+        passwordHashPresent: false,
+        passwordValid: false,
+        activeMembershipCount: null,
+        selectedTenantId: selection?.tenantId ?? null,
+        failureReason: 'user_not_found',
+      }, 'Auth login denied because the user was not found')
       this.observability.increment('auth_login_failure')
       this.observability.increment('auth_failures')
       throw AuthError.invalidCredentials()
     }
 
-    const resolved = await this.resolveMembershipSelection(user.id, selection)
+    if (!user.isActive) {
+      this.logger?.warn({
+        event: 'auth-login.failure',
+        emailHash,
+        userFound: true,
+        passwordHashPresent,
+        passwordValid: false,
+        activeMembershipCount: null,
+        selectedTenantId: selection?.tenantId ?? null,
+        failureReason: 'user_inactive',
+      }, 'Auth login denied because the user is inactive')
+      this.observability.increment('auth_login_failure')
+      this.observability.increment('auth_failures')
+      throw AuthError.invalidCredentials()
+    }
+
+    if (!passwordValid) {
+      this.logger?.warn({
+        event: 'auth-login.failure',
+        emailHash,
+        userFound: true,
+        passwordHashPresent,
+        passwordValid: false,
+        activeMembershipCount: null,
+        selectedTenantId: selection?.tenantId ?? null,
+        failureReason: passwordHashPresent ? 'password_mismatch' : 'password_hash_missing',
+      }, 'Auth login denied because the password is invalid')
+      this.observability.increment('auth_login_failure')
+      this.observability.increment('auth_failures')
+      throw AuthError.invalidCredentials()
+    }
+
+    const resolved = await this.resolveMembershipSelection(user.id, selection, { emailHash })
 
     return {
       user,
@@ -441,6 +546,15 @@ export class AuthService {
             throw AuthError.invalidRegistration('Unable to create membership.')
           }
 
+          this.logger?.info({
+            event: 'auth-register.persistence',
+            userId: user.id,
+            emailHash: this.hashEmailForLogs(normalizedEmail),
+            authStoreMode: this.config.authStoreMode,
+            writeStore: this.describeAuthRegisterWriteStore(),
+            tenantId: tenant.id,
+          }, 'Auth register persistence completed')
+
           return { user, tenant, membership }
         },
         captureAfterState: async (persisted) => ({
@@ -495,6 +609,13 @@ export class AuthService {
       }, 'Auth register replay shape inspected')
 
       const principal = this.createRegistrationPrincipal(registrationBootstrap)
+      this.logger?.info({
+        event: 'auth-register.persistence-complete',
+        userId: principal.user.id,
+        tenantId: principal.tenant.id,
+        membershipId: principal.membership.id,
+        emailHash: this.hashEmailForLogs(normalizedEmail),
+      }, 'Auth register persistence flow completed')
 
       const bundle = await this.issueTokenBundle(principal, clientContext, 'login')
       this.observability.increment('auth_login_success')
