@@ -74,6 +74,11 @@ export function clearEntityBirthContinuationPending() {
   window.sessionStorage.removeItem(ENTITY_BIRTH_CONTINUATION_KEY)
 }
 
+export function clearEntityBirthState() {
+  clearEntityBirthDraft()
+  clearEntityBirthContinuationPending()
+}
+
 export function hasEntityBirthContinuationPending() {
   if (!isBrowser()) {
     return false

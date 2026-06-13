@@ -119,6 +119,9 @@ describe('auth authority client', () => {
     })
     captureAdminAuthContinuation('/admin/escritorios/office-musk/visao-geral')
     window.localStorage.setItem(getInstitutionalOnboardingDraftStorageKey(), JSON.stringify({ officeId: 'office-musk', publicationStatus: 'published' }))
+    window.localStorage.setItem('brandsoul:onboarding:office-setup', JSON.stringify({ currentStep: 6, completedSteps: ['institutional-step-1'], dismissed: false, updatedAt: new Date().toISOString() }))
+    window.localStorage.setItem('brandsoul.entity.birth.draft', JSON.stringify({ brandName: 'Musk Advogados' }))
+    window.sessionStorage.setItem('brandsoul.entity.birth.continuation', 'pending')
 
     axiosMock.post.mockResolvedValueOnce({
       data: {
@@ -135,6 +138,9 @@ describe('auth authority client', () => {
 
     expect(window.sessionStorage.getItem('brandsoul.auth.continuation')).toBeNull()
     expect(window.localStorage.getItem(getInstitutionalOnboardingDraftStorageKey())).toBeNull()
+    expect(window.localStorage.getItem('brandsoul:onboarding:office-setup')).toBeNull()
+    expect(window.localStorage.getItem('brandsoul.entity.birth.draft')).toBeNull()
+    expect(window.sessionStorage.getItem('brandsoul.entity.birth.continuation')).toBeNull()
   })
 
   it('normalizes businessName into tenant_name for legal registration', async () => {
@@ -269,6 +275,9 @@ describe('auth authority client', () => {
     })
     captureAdminAuthContinuation('/admin/escritorios/office-musk/visao-geral')
     window.localStorage.setItem(getInstitutionalOnboardingDraftStorageKey(), JSON.stringify({ officeId: 'office-musk', publicationStatus: 'published' }))
+    window.localStorage.setItem('brandsoul:onboarding:office-setup', JSON.stringify({ currentStep: 4, completedSteps: ['institutional-step-1'], dismissed: false, updatedAt: new Date().toISOString() }))
+    window.localStorage.setItem('brandsoul.entity.birth.draft', JSON.stringify({ brandName: 'Musk Advogados' }))
+    window.sessionStorage.setItem('brandsoul.entity.birth.continuation', 'pending')
     axiosMock.post.mockResolvedValueOnce({ data: {} })
 
     await logout()
@@ -276,5 +285,49 @@ describe('auth authority client', () => {
     expect(loadSession()).toBeNull()
     expect(window.sessionStorage.getItem('brandsoul.auth.continuation')).toBeNull()
     expect(window.localStorage.getItem(getInstitutionalOnboardingDraftStorageKey())).toBeNull()
+    expect(window.localStorage.getItem('brandsoul:onboarding:office-setup')).toBeNull()
+    expect(window.localStorage.getItem('brandsoul.entity.birth.draft')).toBeNull()
+    expect(window.sessionStorage.getItem('brandsoul.entity.birth.continuation')).toBeNull()
+  })
+
+  it('resets legal session state before register for a new account', async () => {
+    saveSession({
+      token: buildToken(300),
+      accessToken: buildToken(300),
+      refreshToken: 'refresh-old-register',
+      tokenType: 'Bearer',
+      accessTokenExpiresAt: null,
+      user: { id: 4, name: 'Musk', email: 'musk@brand.com', is_active: true, created_at: '', updated_at: '' },
+      tenant: { id: 40, name: 'Musk Brand', slug: 'musk-brand', business_model: 'hybrid', plan: 'pro', is_active: true, created_at: '', updated_at: '' },
+    })
+    captureAdminAuthContinuation('/admin/escritorios/office-musk/visao-geral')
+    window.localStorage.setItem(getInstitutionalOnboardingDraftStorageKey(), JSON.stringify({ officeId: 'office-musk', publicationStatus: 'draft' }))
+    window.localStorage.setItem('brandsoul:onboarding:office-setup', JSON.stringify({ currentStep: 5, completedSteps: ['institutional-step-1'], dismissed: false, updatedAt: new Date().toISOString() }))
+
+    axiosMock.post.mockResolvedValueOnce({
+      data: {
+        accessToken: buildToken(300),
+        refreshToken: 'refresh-new-register',
+        tokenType: 'Bearer',
+        expiresIn: 300,
+        user: { id: 5, name: 'Sabedoria', email: 'sabedoria@brand.com', is_active: true, created_at: '', updated_at: '' },
+        tenant: { id: 50, name: 'Sabedoria Advogados', slug: 'sabedoria-advogados', business_model: 'service', plan: 'starter', is_active: true, created_at: '', updated_at: '' },
+      },
+    })
+
+    const session = await registerAccount({
+      name: 'Sabedoria',
+      email: 'sabedoria@brand.com',
+      password: 'secret123',
+      tenant_name: 'Sabedoria Advogados',
+      business_model: 'service',
+    })
+    saveSession(session)
+
+    expect(loadSession()?.user.id).toBe(5)
+    expect(loadSession()?.tenant.id).toBe(50)
+    expect(window.sessionStorage.getItem('brandsoul.auth.continuation')).toBeNull()
+    expect(window.localStorage.getItem(getInstitutionalOnboardingDraftStorageKey())).toBeNull()
+    expect(window.localStorage.getItem('brandsoul:onboarding:office-setup')).toBeNull()
   })
 })

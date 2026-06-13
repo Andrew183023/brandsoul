@@ -93,3 +93,11 @@ export function dismissOnboardingFlow(flowId: OnboardingFlowId) {
     dismissed: true,
   })
 }
+
+export function clearOnboardingFlowState(flowId: OnboardingFlowId) {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.localStorage.removeItem(getStorageKey(flowId))
+}

@@ -2,7 +2,9 @@ import axios from 'axios'
 
 import { buildAuthApiUrl } from './api'
 import { clearAuthContinuationContext } from './authContinuation'
+import { clearEntityBirthState } from './entityBirth'
 import { clearInstitutionalOnboardingDraft } from './institutionalOnboarding'
+import { clearOnboardingFlowState } from './onboardingContinuity'
 import { clearSession, isSessionAccessTokenFresh, loadSession, saveSession, type AuthSession, type AuthTenant, type AuthUser } from './session'
 
 type ContextMode = 'customer' | 'admin'
@@ -45,6 +47,18 @@ function hasSessionAccountChanged(previousSession: AuthSession | null, nextSessi
 function clearLegalContinuationState() {
   clearAuthContinuationContext()
   clearInstitutionalOnboardingDraft()
+  clearOnboardingFlowState('office-setup')
+  clearEntityBirthState()
+}
+
+function resetAuthClientMemoryState() {
+  refreshPromise = null
+}
+
+export function resetLegalSessionStateBeforeAuthSwitch() {
+  resetAuthClientMemoryState()
+  clearLegalContinuationState()
+  clearSession()
 }
 
 function resolveExpiryIso(expiresIn?: number) {
@@ -102,6 +116,7 @@ export async function registerAccount(payload: {
   business_model?: 'product' | 'service' | 'hybrid' | 'professional'
 }): Promise<AuthSession> {
   const previousSession = loadSession()
+  resetLegalSessionStateBeforeAuthSwitch()
   const tenantName = payload.tenant_name?.trim()
     ?? payload.tenantName?.trim()
     ?? payload.businessName?.trim()
@@ -122,6 +137,7 @@ export async function registerAccount(payload: {
 
 export async function loginAccount(payload: { email: string; password: string }): Promise<AuthSession> {
   const previousSession = loadSession()
+  resetLegalSessionStateBeforeAuthSwitch()
   const response = await axios.post<AuthorityAuthResponse>(buildAuthApiUrl('/auth/login'), payload)
   const nextSession = mapAuthoritySession(response.data)
   if (hasSessionAccountChanged(previousSession, nextSession)) {
@@ -274,8 +290,7 @@ export async function logout() {
       })
     }
   } finally {
-    clearLegalContinuationState()
-    clearSession()
+    resetLegalSessionStateBeforeAuthSwitch()
   }
 }
 
@@ -293,7 +308,6 @@ export async function logoutAllSessions() {
       },
     )
   } finally {
-    clearLegalContinuationState()
-    clearSession()
+    resetLegalSessionStateBeforeAuthSwitch()
   }
 }
