@@ -142,7 +142,24 @@ async function requireOwnedOffice(app: FastifyInstance, request: FastifyRequest,
     return null
   }
 
-  if (!isOwnedByAuth(entity, auth.userId, auth.tenantId)) {
+  const ownerUserTenantMatch = entity.ownerUserId === auth.userId && entity.ownerTenantId === auth.tenantId
+  const legacyOwnerIdMatch = entity.ownerId === buildLegacyOwnerId(auth.userId, auth.tenantId)
+  const route = `${request.method.toUpperCase()} ${request.routeOptions.url}`
+
+  if (!ownerUserTenantMatch && !legacyOwnerIdMatch) {
+    request.log.warn({
+      event: 'legal.office.ownership-check',
+      officeId,
+      authUserId: auth.userId,
+      authTenantId: auth.tenantId,
+      entityOwnerUserId: entity.ownerUserId ?? null,
+      entityOwnerTenantId: entity.ownerTenantId ?? null,
+      entityOwnerId: entity.ownerId ?? null,
+      ownerUserTenantMatch,
+      legacyOwnerIdMatch,
+      decision: 'denied',
+      route,
+    }, 'Legal office ownership denied')
     await reply.status(403).send({
       status: 'failed',
       error: {
@@ -152,6 +169,20 @@ async function requireOwnedOffice(app: FastifyInstance, request: FastifyRequest,
     })
     return null
   }
+
+  request.log.info({
+    event: 'legal.office.ownership-check',
+    officeId,
+    authUserId: auth.userId,
+    authTenantId: auth.tenantId,
+    entityOwnerUserId: entity.ownerUserId ?? null,
+    entityOwnerTenantId: entity.ownerTenantId ?? null,
+    entityOwnerId: entity.ownerId ?? null,
+    ownerUserTenantMatch,
+    legacyOwnerIdMatch,
+    decision: 'allowed',
+    route,
+  }, 'Legal office ownership allowed')
 
   return { auth, entity }
 }
@@ -452,23 +483,38 @@ export async function registerLegalBetaPublicOfficeRoutes(app: FastifyInstance) 
   app.get('/me/escritorios', { preHandler: [requireAuth] }, async (request) => {
     const auth = getRequestAuth(request)!
     const entities = await getRepository(app).getEntitiesByOwnerUserId<EntityProfile>(auth.userId, auth.tenantId)
+    const offices = entities
+      .filter((entity) => readEntityBusinessConfig(entity.entityProfile)?.businessType === 'legal')
+      .map((entity) => {
+        const businessConfig = readEntityBusinessConfig(entity.entityProfile)
+        return {
+          officeId: entity.id,
+          officeName: businessConfig?.officeName ?? buildPublicOfficeProfile(entity.id, entity.entityProfile).name,
+          status: businessConfig?.officeName ? 'ready' as const : 'draft' as const,
+          createdAt: entity.createdAt,
+          updatedAt: entity.updatedAt,
+        }
+      })
+
+    request.log.info({
+      event: 'legal.office.list-owned',
+      authUserId: auth.userId,
+      authTenantId: auth.tenantId,
+      returnedOfficeIds: offices.map((office) => office.officeId),
+      returnedOwnerPairs: entities
+        .filter((entity) => readEntityBusinessConfig(entity.entityProfile)?.businessType === 'legal')
+        .map((entity) => ({
+          officeId: entity.id,
+          ownerUserId: entity.ownerUserId ?? null,
+          ownerTenantId: entity.ownerTenantId ?? null,
+        })),
+    }, 'Listed owned legal offices')
 
     return {
       status: 'ready' as const,
       userId: auth.userId,
       tenantId: auth.tenantId,
-      offices: entities
-        .filter((entity) => readEntityBusinessConfig(entity.entityProfile)?.businessType === 'legal')
-        .map((entity) => {
-          const businessConfig = readEntityBusinessConfig(entity.entityProfile)
-          return {
-            officeId: entity.id,
-            officeName: businessConfig?.officeName ?? buildPublicOfficeProfile(entity.id, entity.entityProfile).name,
-            status: businessConfig?.officeName ? 'ready' as const : 'draft' as const,
-            createdAt: entity.createdAt,
-            updatedAt: entity.updatedAt,
-          }
-        }),
+      offices,
     }
   })
 
