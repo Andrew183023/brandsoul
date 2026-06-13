@@ -74,6 +74,10 @@ export class AuthService {
     }
   }
 
+  private describeAuthRepositoryImplementation() {
+    return this.legacyAuthStoreRepository.constructor?.name ?? 'unknown'
+  }
+
   private normalizeRole(role: string) {
     return role.trim().toLowerCase()
   }
@@ -377,6 +381,12 @@ export class AuthService {
     tenantId?: number
     tenantSlug?: string
   }): Promise<AuthPrincipal> {
+    this.logger?.info({
+      event: 'auth-login.lookup-debug',
+      normalizedEmail: email.trim().toLowerCase(),
+      authStoreMode: this.config.authStoreMode,
+      repositoryImplementation: this.describeAuthRepositoryImplementation(),
+    }, 'Auth login lookup debug')
     const emailHash = this.hashEmailForLogs(email)
     const user = await this.legacyAuthStoreRepository.findUserByEmail(email)
     this.logger?.info({
@@ -498,6 +508,12 @@ export class AuthService {
     const tenantSlug = await this.buildUniqueTenantSlug(resolvedTenantName)
 
     try {
+      this.logger?.info({
+        event: 'auth-register.persistence-debug',
+        normalizedEmail,
+        authStoreMode: this.config.authStoreMode,
+        repositoryImplementation: this.describeAuthRepositoryImplementation(),
+      }, 'Auth register persistence debug')
       const { result: registrationBootstrap } = await getSemanticMutationExecutor().executeSemanticMutation({
         authoritySource: 'backend/src/auth/authService.ts#register',
         intent: {
