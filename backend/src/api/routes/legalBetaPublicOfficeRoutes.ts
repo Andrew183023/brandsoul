@@ -30,6 +30,13 @@ type BackendContext = {
     connection: BackendDatabase
     entityRepository: EntityRepository
     assetStorageService: AssetStorageService
+    auth: {
+      backendNativeAuthStoreRepository: {
+        findUserById(userId: number): Promise<{ id: number; isActive: boolean } | null>
+        findTenantById(tenantId: number): Promise<{ id: number; isActive: boolean } | null>
+        findMembershipForUserAndTenant(userId: number, tenantId: number): Promise<{ id: number } | null>
+      }
+    }
   }
 }
 
