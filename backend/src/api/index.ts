@@ -10,6 +10,8 @@ import { registerHealthRoute } from './routes/health.js'
 import { registerJobRoutes } from './routes/jobs.js'
 import { registerMetricsRoute } from './routes/metrics.js'
 import { registerOrchestratorRoutes } from './routes/orchestrator.js'
+import { registerCaseRoutes } from '../modules/legalCases/caseRoutes.js'
+import { registerInternalOwnershipCollisionInventoryRoutes } from './routes/internalOwnershipCollisionInventory.js'
 
 export async function registerApi(app: FastifyInstance) {
   await registerAuthRoutes(app)
@@ -21,5 +23,7 @@ export async function registerApi(app: FastifyInstance) {
   await registerDiscoveryRoutes(app)
   await registerOrchestratorRoutes(app)
   await registerEntityRoutes(app)
+  await registerCaseRoutes(app)
+  await registerInternalOwnershipCollisionInventoryRoutes(app)
   await registerFeedRoutes(app)
 }
