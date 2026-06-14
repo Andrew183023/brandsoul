@@ -84,6 +84,26 @@ function getConnection(app: FastifyInstance) {
   return (app as FastifyInstance & BackendContext).backendContext.connection
 }
 
+
+function getNativeAuthRepository(app: FastifyInstance) {
+  return (app as FastifyInstance & BackendContext).backendContext.auth.backendNativeAuthStoreRepository
+}
+
+async function isActiveNativeOwner(app: FastifyInstance, entity: { ownerUserId?: number | null; ownerTenantId?: number | null }) {
+  if (typeof entity.ownerUserId !== 'number' || typeof entity.ownerTenantId !== 'number') {
+    return false
+  }
+
+  const authRepository = getNativeAuthRepository(app)
+  const [user, tenant, membership] = await Promise.all([
+    authRepository.findUserById(entity.ownerUserId),
+    authRepository.findTenantById(entity.ownerTenantId),
+    authRepository.findMembershipForUserAndTenant(entity.ownerUserId, entity.ownerTenantId),
+  ])
+
+  return Boolean(user?.isActive && tenant?.isActive && membership)
+}
+
 function getRepository(app: FastifyInstance) {
   return (app as FastifyInstance & BackendContext).backendContext.entityRepository
 }
@@ -483,7 +503,24 @@ export async function registerLegalBetaPublicOfficeRoutes(app: FastifyInstance) 
   app.get('/me/escritorios', { preHandler: [requireAuth] }, async (request) => {
     const auth = getRequestAuth(request)!
     const entities = await getRepository(app).getEntitiesByOwnerUserId<EntityProfile>(auth.userId, auth.tenantId)
-    const offices = entities
+    const activeOwnerEntities = []
+    for (const entity of entities) {
+      if (await isActiveNativeOwner(app, entity)) {
+        activeOwnerEntities.push(entity)
+        continue
+      }
+
+      request.log.warn({
+        event: 'legal.office.ownership-orphan-filtered',
+        authUserId: auth.userId,
+        authTenantId: auth.tenantId,
+        officeId: entity.id,
+        ownerUserId: entity.ownerUserId ?? null,
+        ownerTenantId: entity.ownerTenantId ?? null,
+      }, 'Orphan legal office ownership filtered')
+    }
+
+    const offices = activeOwnerEntities
       .filter((entity) => readEntityBusinessConfig(entity.entityProfile)?.businessType === 'legal')
       .map((entity) => {
         const businessConfig = readEntityBusinessConfig(entity.entityProfile)
@@ -576,6 +613,24 @@ export async function registerLegalBetaPublicOfficeRoutes(app: FastifyInstance) 
     const owned = await requireOwnedOffice(app, request, reply)
     if (!owned) {
       return
+    }
+
+    if (!(await isActiveNativeOwner(app, owned.entity))) {
+      request.log.warn({
+        event: 'legal.office.ownership-orphan-denied',
+        authUserId: owned.auth.userId,
+        authTenantId: owned.auth.tenantId,
+        officeId: owned.entity.id,
+        ownerUserId: owned.entity.ownerUserId ?? null,
+        ownerTenantId: owned.entity.ownerTenantId ?? null,
+      }, 'Orphan legal office ownership denied')
+      return reply.status(403).send({
+        status: 'failed',
+        error: {
+          code: 'ENTITY_ACCESS_DENIED',
+          message: 'You do not own this office.',
+        },
+      })
     }
 
     const businessConfig = await getCaseService(app).buildOfficeBusinessConfig(
