@@ -353,3 +353,76 @@ test('internal ownership collision inventory returns safe fields and classificat
     await harness.close()
   }
 })
+
+test('internal ownership collision inventory supports all=true totals and top orphan offices', { concurrency: false }, async () => {
+  const harness = await createTestApp()
+
+  try {
+    await seedNativeAuthOwner(harness.app, {
+      userId: 4,
+      tenantId: 4,
+      role: 'owner',
+      createdAt: '2026-06-13T18:10:01.911Z',
+    })
+    await seedEntity(harness.app, {
+      id: 'office-valid-owner',
+      ownerUserId: 4,
+      ownerTenantId: 4,
+      createdAt: '2026-06-14T10:00:00.000Z',
+    })
+    await seedEntity(harness.app, {
+      id: 'office-orphan-owner-a',
+      ownerUserId: 5,
+      ownerTenantId: 5,
+      createdAt: '2026-06-14T11:00:00.000Z',
+    })
+    await seedEntity(harness.app, {
+      id: 'office-orphan-owner-b',
+      ownerUserId: 6,
+      ownerTenantId: 6,
+      createdAt: '2026-06-14T12:00:00.000Z',
+    })
+
+    const response = await harness.app.inject({
+      method: 'GET',
+      url: '/internal/admin/ownership/collision-inventory?all=true&includeNativeAuth=true&includeLegacyAuth=true',
+      headers: {
+        'x-internal-admin-token': harness.internalAdminToken,
+      },
+    })
+
+    assert.equal(response.statusCode, 200)
+    const body = response.json() as {
+      all: boolean
+      ownerIds: number[]
+      totalEntities: number
+      validOwners: number
+      orphanOwners: number
+      temporalImpossibleOwners: number
+      topOrphanOffices: Array<{
+        officeId: string
+        ownerUserId: number | null
+        ownerTenantId: number | null
+        createdAt: string | null
+        classification: string
+      }>
+    }
+
+    assert.equal(body.all, true)
+    assert.equal(body.totalEntities, 3)
+    assert.equal(body.validOwners, 1)
+    assert.equal(body.orphanOwners, 2)
+    assert.equal(body.temporalImpossibleOwners, 0)
+    assert.deepEqual(body.ownerIds, [4, 5, 6])
+    assert.deepEqual(
+      body.topOrphanOffices.map((office) => office.officeId),
+      ['office-orphan-owner-a', 'office-orphan-owner-b'],
+    )
+    assert.equal(
+      body.topOrphanOffices.every((office) => office.classification === 'ORPHAN_OWNER'),
+      true,
+    )
+  } finally {
+    await harness.close()
+  }
+})

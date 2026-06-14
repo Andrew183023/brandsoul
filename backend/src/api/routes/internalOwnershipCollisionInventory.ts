@@ -112,6 +112,20 @@ function parseOwnerIds(value: string | undefined) {
   return [...unique]
 }
 
+function uniquePositiveOwnerIdsFromEntities(rows: EntityProfileRow[]) {
+  const unique = new Set<number>()
+  for (const row of rows) {
+    if (Number.isInteger(row.owner_user_id) && Number(row.owner_user_id) > 0) {
+      unique.add(Number(row.owner_user_id))
+    }
+    if (Number.isInteger(row.owner_tenant_id) && Number(row.owner_tenant_id) > 0) {
+      unique.add(Number(row.owner_tenant_id))
+    }
+  }
+
+  return [...unique].sort((left, right) => left - right)
+}
+
 function sqlInPlaceholders(count: number) {
   return Array.from({ length: count }, () => '?').join(', ')
 }
@@ -234,6 +248,22 @@ async function queryEntityProfileRows(db: BackendDatabase, ownerIds: number[]) {
     `,
     ...ownerIds,
     ...ownerIds,
+  )
+}
+
+async function queryAllEntityProfileRows(db: BackendDatabase) {
+  return db.all<EntityProfileRow[]>(
+    `
+      SELECT
+        id,
+        owner_id,
+        owner_user_id,
+        owner_tenant_id,
+        created_at,
+        updated_at
+      FROM entity_profile
+      ORDER BY created_at ASC
+    `,
   )
 }
 
@@ -366,12 +396,14 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
       ownerIds?: string
       includeNativeAuth?: string
       includeLegacyAuth?: string
+      all?: string
     }
   }>('/internal/admin/ownership/collision-inventory', async (request: FastifyRequest, reply: FastifyReply) => {
     const query = request.query as {
       ownerIds?: string
       includeNativeAuth?: string
       includeLegacyAuth?: string
+      all?: string
     }
 
     if (!internalAdminToken) {
@@ -396,13 +428,14 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
       })
     }
 
-    const ownerIds = parseOwnerIds(query.ownerIds)
-    if (ownerIds === null || ownerIds.length === 0) {
+    const all = toBooleanFlag(query.all, false)
+    const parsedOwnerIds = parseOwnerIds(query.ownerIds)
+    if (!all && (parsedOwnerIds === null || parsedOwnerIds.length === 0)) {
       return reply.status(400).send({
         status: 'failed',
         error: {
           code: 'INVALID_OWNER_IDS',
-          message: 'ownerIds must be a comma-separated list of positive integers.',
+          message: 'ownerIds must be a comma-separated list of positive integers when all=true is not provided.',
         },
       })
     }
@@ -420,7 +453,7 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
       hasLegacyTenants,
       hasLegacyMemberships,
     ] = await Promise.all([
-      queryEntityProfileRows(db, ownerIds),
+      all ? queryAllEntityProfileRows(db) : queryEntityProfileRows(db, parsedOwnerIds!),
       tableExists(db, 'flow_auth_user'),
       tableExists(db, 'flow_auth_tenant'),
       tableExists(db, 'flow_auth_membership'),
@@ -429,16 +462,18 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
       tableExists(db, 'memberships'),
     ])
 
+    const ownerIds = all ? uniquePositiveOwnerIdsFromEntities(entityProfileRows) : parsedOwnerIds!
+
     const canReadNative = hasFlowAuthUser && hasFlowAuthTenant && hasFlowAuthMembership
     const canReadLegacy = hasLegacyUsers && hasLegacyTenants && hasLegacyMemberships
 
     const [nativeUsers, nativeTenants, nativeMemberships, legacyUsers, legacyTenants, legacyMemberships] = await Promise.all([
-      canReadNative ? queryNativeUsers(db, ownerIds) : Promise.resolve([]),
-      canReadNative ? queryNativeTenants(db, ownerIds) : Promise.resolve([]),
-      canReadNative ? queryNativeMemberships(db, ownerIds) : Promise.resolve([]),
-      canReadLegacy ? queryLegacyUsers(db, ownerIds) : Promise.resolve([]),
-      canReadLegacy ? queryLegacyTenants(db, ownerIds) : Promise.resolve([]),
-      canReadLegacy ? queryLegacyMemberships(db, ownerIds) : Promise.resolve([]),
+      canReadNative && ownerIds.length > 0 ? queryNativeUsers(db, ownerIds) : Promise.resolve([]),
+      canReadNative && ownerIds.length > 0 ? queryNativeTenants(db, ownerIds) : Promise.resolve([]),
+      canReadNative && ownerIds.length > 0 ? queryNativeMemberships(db, ownerIds) : Promise.resolve([]),
+      canReadLegacy && ownerIds.length > 0 ? queryLegacyUsers(db, ownerIds) : Promise.resolve([]),
+      canReadLegacy && ownerIds.length > 0 ? queryLegacyTenants(db, ownerIds) : Promise.resolve([]),
+      canReadLegacy && ownerIds.length > 0 ? queryLegacyMemberships(db, ownerIds) : Promise.resolve([]),
     ])
 
     const nativeUserMap = new Map(nativeUsers.map((row) => [row.id, row]))
@@ -476,6 +511,8 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
         accumulator.recycledIdCollisionRows += 1
       } else if (row.classification === 'ORPHAN_OWNER') {
         accumulator.orphanOwnerRows += 1
+      } else if (row.classification === 'VALID_OWNER') {
+        accumulator.validOwnerRows += 1
       } else if (row.classification === 'MANUAL_REVIEW_REQUIRED') {
         accumulator.manualReviewRows += 1
       }
@@ -485,12 +522,30 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
       temporalImpossibleRows: 0,
       recycledIdCollisionRows: 0,
       orphanOwnerRows: 0,
+      validOwnerRows: 0,
       manualReviewRows: 0,
     })
 
+    const topOrphanOffices = classifiedRows
+      .filter((row) => row.classification === 'ORPHAN_OWNER')
+      .slice(0, 100)
+      .map((row) => ({
+        officeId: row.id,
+        ownerUserId: row.ownerUserId,
+        ownerTenantId: row.ownerTenantId,
+        createdAt: row.createdAt,
+        classification: row.classification,
+      }))
+
     return reply.status(200).send({
       status: 'ready',
+      all,
       ownerIds,
+      totalEntities: classifiedRows.length,
+      validOwners: summary.validOwnerRows,
+      orphanOwners: summary.orphanOwnerRows,
+      temporalImpossibleOwners: summary.temporalImpossibleRows,
+      topOrphanOffices,
       entityProfileRows: classifiedRows,
       nativeAuth: {
         users: includeNativeAuth && canReadNative
