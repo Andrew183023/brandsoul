@@ -248,6 +248,72 @@ async function seedEntity(app: AppWithContext, args: {
   )
 }
 
+async function seedCase(app: AppWithContext, args: {
+  id: string
+  entityId: string
+  tenantId: number
+  createdAt: string
+}) {
+  const db = app.backendContext.connection
+  await db.run(
+    `
+      INSERT INTO cases (
+        id,
+        tenant_id,
+        case_number,
+        entity_id,
+        created_by_user_id,
+        title,
+        description,
+        status,
+        priority,
+        practice_area,
+        source,
+        opened_at,
+        centelha_context,
+        metadata,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    args.id,
+    args.tenantId,
+    `CASE-${args.id}`,
+    args.entityId,
+    null,
+    'Archived orphan critical case',
+    'critical linked record',
+    'open',
+    'normal',
+    'civil',
+    'admin-test',
+    args.createdAt,
+    '{}',
+    '{}',
+    args.createdAt,
+    args.createdAt,
+  )
+}
+
+async function getStoredEntityProfile(app: AppWithContext, entityId: string) {
+  const row = await app.backendContext.connection.get<{ entity_profile: string; updated_at: string }>(
+    `
+      SELECT entity_profile, updated_at
+      FROM entity_profile
+      WHERE id = ?
+    `,
+    entityId,
+  )
+
+  return row
+    ? {
+      updatedAt: row.updated_at,
+      entityProfile: JSON.parse(row.entity_profile) as { metadata?: { lifecycle?: Record<string, unknown> } },
+    }
+    : null
+}
+
 test('internal ownership collision inventory rejects missing token', { concurrency: false }, async () => {
   const harness = await createTestApp()
 
@@ -422,6 +488,212 @@ test('internal ownership collision inventory supports all=true totals and top or
       body.topOrphanOffices.every((office) => office.classification === 'ORPHAN_OWNER'),
       true,
     )
+  } finally {
+    await harness.close()
+  }
+})
+
+test('internal orphan archive action rejects missing token', { concurrency: false }, async () => {
+  const harness = await createTestApp()
+
+  try {
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/internal/admin/ownership/archive-orphans',
+      payload: {
+        entityIds: ['office-orphan'],
+      },
+    })
+
+    assert.equal(response.statusCode, 401)
+    assert.equal(response.json().error.code, 'INTERNAL_ADMIN_UNAUTHORIZED')
+  } finally {
+    await harness.close()
+  }
+})
+
+test('internal orphan archive action dryRun does not alter entity payload', { concurrency: false }, async () => {
+  const harness = await createTestApp()
+
+  try {
+    await seedEntity(harness.app, {
+      id: 'office-orphan-dry-run',
+      ownerUserId: 5,
+      ownerTenantId: 5,
+      createdAt: '2026-06-14T11:00:00.000Z',
+    })
+
+    const before = await getStoredEntityProfile(harness.app, 'office-orphan-dry-run')
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/internal/admin/ownership/archive-orphans',
+      headers: {
+        'x-internal-admin-token': harness.internalAdminToken,
+      },
+      payload: {
+        entityIds: ['office-orphan-dry-run'],
+        reason: 'archive local orphan test/smoke data',
+      },
+    })
+
+    assert.equal(response.statusCode, 200)
+    const body = response.json() as {
+      dryRun: boolean
+      archivable: number
+      archived: number
+      archivedEntityIds: string[]
+    }
+    assert.equal(body.dryRun, true)
+    assert.equal(body.archivable, 1)
+    assert.equal(body.archived, 0)
+    assert.deepEqual(body.archivedEntityIds, [])
+
+    const after = await getStoredEntityProfile(harness.app, 'office-orphan-dry-run')
+    assert.deepEqual(after, before)
+  } finally {
+    await harness.close()
+  }
+})
+
+test('internal orphan archive action archives orphan owner without critical links', { concurrency: false }, async () => {
+  const harness = await createTestApp()
+
+  try {
+    await seedEntity(harness.app, {
+      id: 'office-orphan-archivable',
+      ownerUserId: 5,
+      ownerTenantId: 5,
+      createdAt: '2026-06-14T11:00:00.000Z',
+    })
+
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/internal/admin/ownership/archive-orphans',
+      headers: {
+        'x-internal-admin-token': harness.internalAdminToken,
+      },
+      payload: {
+        entityIds: ['office-orphan-archivable'],
+        reason: 'archive local orphan test/smoke data',
+        dryRun: false,
+        confirm: 'ARCHIVE_ORPHAN_OWNERS',
+      },
+    })
+
+    assert.equal(response.statusCode, 200)
+    const body = response.json() as {
+      dryRun: boolean
+      archivable: number
+      archived: number
+      archivedEntityIds: string[]
+    }
+    assert.equal(body.dryRun, false)
+    assert.equal(body.archivable, 1)
+    assert.equal(body.archived, 1)
+    assert.deepEqual(body.archivedEntityIds, ['office-orphan-archivable'])
+
+    const stored = await getStoredEntityProfile(harness.app, 'office-orphan-archivable')
+    assert.equal(stored?.entityProfile.metadata?.lifecycle?.status, 'archived')
+    assert.equal(stored?.entityProfile.metadata?.lifecycle?.archiveReason, 'archive local orphan test/smoke data')
+    assert.equal(typeof stored?.entityProfile.metadata?.lifecycle?.archivedAt, 'string')
+  } finally {
+    await harness.close()
+  }
+})
+
+test('internal orphan archive action skips orphan owner with critical links', { concurrency: false }, async () => {
+  const harness = await createTestApp()
+
+  try {
+    await seedEntity(harness.app, {
+      id: 'office-orphan-critical',
+      ownerUserId: 5,
+      ownerTenantId: 5,
+      createdAt: '2026-06-14T11:00:00.000Z',
+    })
+    await seedCase(harness.app, {
+      id: 'case-orphan-critical',
+      entityId: 'office-orphan-critical',
+      tenantId: 5,
+      createdAt: '2026-06-14T11:05:00.000Z',
+    })
+
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/internal/admin/ownership/archive-orphans',
+      headers: {
+        'x-internal-admin-token': harness.internalAdminToken,
+      },
+      payload: {
+        entityIds: ['office-orphan-critical'],
+        reason: 'archive local orphan test/smoke data',
+        dryRun: false,
+        confirm: 'ARCHIVE_ORPHAN_OWNERS',
+      },
+    })
+
+    assert.equal(response.statusCode, 200)
+    const body = response.json() as {
+      archivable: number
+      archived: number
+      skipped: Array<{ entityId: string; reason: string }>
+    }
+    assert.equal(body.archivable, 0)
+    assert.equal(body.archived, 0)
+    assert.deepEqual(body.skipped, [{
+      entityId: 'office-orphan-critical',
+      reason: 'requires_manual_review_critical_links',
+    }])
+
+    const stored = await getStoredEntityProfile(harness.app, 'office-orphan-critical')
+    assert.equal(stored?.entityProfile.metadata?.lifecycle?.status, undefined)
+  } finally {
+    await harness.close()
+  }
+})
+
+test('internal orphan archive action skips valid owner entity', { concurrency: false }, async () => {
+  const harness = await createTestApp()
+
+  try {
+    await seedNativeAuthOwner(harness.app, {
+      userId: 4,
+      tenantId: 4,
+      role: 'owner',
+      createdAt: '2026-06-13T18:10:01.911Z',
+    })
+    await seedEntity(harness.app, {
+      id: 'office-valid-owner-archive-skip',
+      ownerUserId: 4,
+      ownerTenantId: 4,
+      createdAt: '2026-06-14T11:00:00.000Z',
+    })
+
+    const response = await harness.app.inject({
+      method: 'POST',
+      url: '/internal/admin/ownership/archive-orphans',
+      headers: {
+        'x-internal-admin-token': harness.internalAdminToken,
+      },
+      payload: {
+        entityIds: ['office-valid-owner-archive-skip'],
+        dryRun: false,
+        confirm: 'ARCHIVE_ORPHAN_OWNERS',
+      },
+    })
+
+    assert.equal(response.statusCode, 200)
+    const body = response.json() as {
+      archivable: number
+      archived: number
+      skipped: Array<{ entityId: string; reason: string }>
+    }
+    assert.equal(body.archivable, 0)
+    assert.equal(body.archived, 0)
+    assert.deepEqual(body.skipped, [{
+      entityId: 'office-valid-owner-archive-skip',
+      reason: 'not_orphan_owner',
+    }])
   } finally {
     await harness.close()
   }

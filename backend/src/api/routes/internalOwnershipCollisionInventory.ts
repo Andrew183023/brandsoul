@@ -72,6 +72,21 @@ type OwnershipClassification =
   | 'TEMPORAL_IMPOSSIBLE_OWNERSHIP'
   | 'MANUAL_REVIEW_REQUIRED'
 
+type ArchiveOrphansBody = {
+  entityIds?: string[]
+  reason?: string
+  dryRun?: boolean
+  confirm?: string
+}
+
+type CriticalLinkSummary = {
+  cases: number
+  caseMessages: number
+  professionals: number
+  professionalProfiles: number
+  entityExports: number
+}
+
 type BackendContext = {
   backendContext: {
     connection: BackendDatabase
@@ -181,6 +196,14 @@ function safeEqualToken(expected: string, received: string | undefined) {
   return timingSafeEqual(expectedBuffer, receivedBuffer)
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isWildcardEntitySelection(entityIds: string[]) {
+  return entityIds.length === 1 && entityIds[0] === '*'
+}
+
 function classifyEntityOwnership(args: {
   entity: EntityProfileRow
   nativeUsers: Map<number, NativeUserRow>
@@ -264,6 +287,26 @@ async function queryAllEntityProfileRows(db: BackendDatabase) {
       FROM entity_profile
       ORDER BY created_at ASC
     `,
+  )
+}
+
+async function queryEntityProfileRowsByIds(db: BackendDatabase, entityIds: string[]) {
+  const placeholders = sqlInPlaceholders(entityIds.length)
+  return db.all<Array<EntityProfileRow & { entity_profile: string }>>(
+    `
+      SELECT
+        id,
+        owner_id,
+        owner_user_id,
+        owner_tenant_id,
+        created_at,
+        updated_at,
+        entity_profile
+      FROM entity_profile
+      WHERE id IN (${placeholders})
+      ORDER BY created_at ASC
+    `,
+    ...entityIds,
   )
 }
 
@@ -383,6 +426,135 @@ async function queryLegacyMemberships(db: BackendDatabase, ownerIds: number[]) {
   )
 }
 
+async function queryCriticalLinkSummary(db: BackendDatabase, entityId: string): Promise<CriticalLinkSummary> {
+  const professionalRows = await db.all<Array<{ id: string }>>(
+    `
+      SELECT id
+      FROM professionals
+      WHERE metadata LIKE ?
+         OR external_ref LIKE ?
+    `,
+    `%${entityId}%`,
+    `%${entityId}%`,
+  )
+
+  const professionalIds = professionalRows.map((row) => row.id)
+  const professionalProfiles = professionalIds.length === 0
+    ? 0
+    : Number((await db.get<{ total: number }>(
+      `
+        SELECT COUNT(*) AS total
+        FROM professional_profiles
+        WHERE professional_id IN (${sqlInPlaceholders(professionalIds.length)})
+      `,
+      ...professionalIds,
+    ))?.total ?? 0)
+
+  const [cases, caseMessages, entityExports] = await Promise.all([
+    db.get<{ total: number }>(
+      `
+        SELECT COUNT(*) AS total
+        FROM cases
+        WHERE entity_id = ?
+      `,
+      entityId,
+    ),
+    db.get<{ total: number }>(
+      `
+        SELECT COUNT(*) AS total
+        FROM case_messages
+        WHERE case_id IN (
+          SELECT id
+          FROM cases
+          WHERE entity_id = ?
+        )
+      `,
+      entityId,
+    ),
+    db.get<{ total: number }>(
+      `
+        SELECT COUNT(*) AS total
+        FROM entity_exports
+        WHERE entity_id = ?
+      `,
+      entityId,
+    ),
+  ])
+
+  return {
+    cases: Number(cases?.total ?? 0),
+    caseMessages: Number(caseMessages?.total ?? 0),
+    professionals: professionalIds.length,
+    professionalProfiles,
+    entityExports: Number(entityExports?.total ?? 0),
+  }
+}
+
+function hasCriticalLinks(summary: CriticalLinkSummary) {
+  return summary.cases > 0
+    || summary.caseMessages > 0
+    || summary.professionals > 0
+    || summary.professionalProfiles > 0
+    || summary.entityExports > 0
+}
+
+function archiveEntityProfilePayload(payload: unknown, archivedAt: string, archiveReason: string) {
+  const root = isRecord(payload) ? { ...payload } : {}
+  const metadata = isRecord(root.metadata) ? { ...root.metadata } : {}
+  const lifecycle = isRecord(metadata.lifecycle) ? { ...metadata.lifecycle } : {}
+  lifecycle.status = 'archived'
+  lifecycle.archivedAt = archivedAt
+  lifecycle.archiveReason = archiveReason
+  metadata.lifecycle = lifecycle
+  root.metadata = metadata
+  return root
+}
+
+function extractOwnerIds(rows: EntityProfileRow[]) {
+  return uniquePositiveOwnerIdsFromEntities(rows)
+}
+
+async function loadAuthOwnershipMaps(db: BackendDatabase, rows: EntityProfileRow[]) {
+  const ownerIds = extractOwnerIds(rows)
+  const [hasFlowAuthUser, hasFlowAuthTenant, hasFlowAuthMembership, hasLegacyUsers, hasLegacyTenants, hasLegacyMemberships] = await Promise.all([
+    tableExists(db, 'flow_auth_user'),
+    tableExists(db, 'flow_auth_tenant'),
+    tableExists(db, 'flow_auth_membership'),
+    tableExists(db, 'users'),
+    tableExists(db, 'tenants'),
+    tableExists(db, 'memberships'),
+  ])
+
+  const canReadNative = hasFlowAuthUser && hasFlowAuthTenant && hasFlowAuthMembership
+  const canReadLegacy = hasLegacyUsers && hasLegacyTenants && hasLegacyMemberships
+
+  const [nativeUsers, nativeTenants, nativeMemberships, legacyUsers, legacyTenants, legacyMemberships] = await Promise.all([
+    canReadNative && ownerIds.length > 0 ? queryNativeUsers(db, ownerIds) : Promise.resolve([]),
+    canReadNative && ownerIds.length > 0 ? queryNativeTenants(db, ownerIds) : Promise.resolve([]),
+    canReadNative && ownerIds.length > 0 ? queryNativeMemberships(db, ownerIds) : Promise.resolve([]),
+    canReadLegacy && ownerIds.length > 0 ? queryLegacyUsers(db, ownerIds) : Promise.resolve([]),
+    canReadLegacy && ownerIds.length > 0 ? queryLegacyTenants(db, ownerIds) : Promise.resolve([]),
+    canReadLegacy && ownerIds.length > 0 ? queryLegacyMemberships(db, ownerIds) : Promise.resolve([]),
+  ])
+
+  return {
+    canReadNative,
+    canReadLegacy,
+    nativeUsers,
+    nativeTenants,
+    nativeMemberships,
+    legacyUsers,
+    legacyTenants,
+    legacyMemberships,
+    nativeUserMap: new Map(nativeUsers.map((row) => [row.id, row])),
+    nativeTenantMap: new Map(nativeTenants.map((row) => [row.id, row])),
+    nativeMembershipMap: new Map(nativeMemberships.map((row) => [`${row.user_id}:${row.tenant_id}`, row])),
+    legacyUserMap: new Map(legacyUsers.map((row) => [row.id, row])),
+    legacyTenantMap: new Map(legacyTenants.map((row) => [row.id, row])),
+    legacyMembershipMap: new Map(legacyMemberships.map((row) => [`${row.user_id}:${row.tenant_id}`, row])),
+  }
+}
+
 export async function registerInternalOwnershipCollisionInventoryRoutes(app: FastifyInstance) {
   const internalAdminToken = process.env.INTERNAL_ADMIN_TOKEN
   const runtimeIsNonPublic = process.env.NODE_ENV !== 'production' || process.env.RENDER_DEPLOY_MODE !== 'production'
@@ -443,45 +615,25 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
     const includeNativeAuth = toBooleanFlag(query.includeNativeAuth, true)
     const includeLegacyAuth = toBooleanFlag(query.includeLegacyAuth, true)
     const db = getConnection(app)
-
-    const [
-      entityProfileRows,
-      hasFlowAuthUser,
-      hasFlowAuthTenant,
-      hasFlowAuthMembership,
-      hasLegacyUsers,
-      hasLegacyTenants,
-      hasLegacyMemberships,
-    ] = await Promise.all([
-      all ? queryAllEntityProfileRows(db) : queryEntityProfileRows(db, parsedOwnerIds!),
-      tableExists(db, 'flow_auth_user'),
-      tableExists(db, 'flow_auth_tenant'),
-      tableExists(db, 'flow_auth_membership'),
-      tableExists(db, 'users'),
-      tableExists(db, 'tenants'),
-      tableExists(db, 'memberships'),
-    ])
+    const entityProfileRows = all ? await queryAllEntityProfileRows(db) : await queryEntityProfileRows(db, parsedOwnerIds!)
 
     const ownerIds = all ? uniquePositiveOwnerIdsFromEntities(entityProfileRows) : parsedOwnerIds!
-
-    const canReadNative = hasFlowAuthUser && hasFlowAuthTenant && hasFlowAuthMembership
-    const canReadLegacy = hasLegacyUsers && hasLegacyTenants && hasLegacyMemberships
-
-    const [nativeUsers, nativeTenants, nativeMemberships, legacyUsers, legacyTenants, legacyMemberships] = await Promise.all([
-      canReadNative && ownerIds.length > 0 ? queryNativeUsers(db, ownerIds) : Promise.resolve([]),
-      canReadNative && ownerIds.length > 0 ? queryNativeTenants(db, ownerIds) : Promise.resolve([]),
-      canReadNative && ownerIds.length > 0 ? queryNativeMemberships(db, ownerIds) : Promise.resolve([]),
-      canReadLegacy && ownerIds.length > 0 ? queryLegacyUsers(db, ownerIds) : Promise.resolve([]),
-      canReadLegacy && ownerIds.length > 0 ? queryLegacyTenants(db, ownerIds) : Promise.resolve([]),
-      canReadLegacy && ownerIds.length > 0 ? queryLegacyMemberships(db, ownerIds) : Promise.resolve([]),
-    ])
-
-    const nativeUserMap = new Map(nativeUsers.map((row) => [row.id, row]))
-    const nativeTenantMap = new Map(nativeTenants.map((row) => [row.id, row]))
-    const nativeMembershipMap = new Map(nativeMemberships.map((row) => [`${row.user_id}:${row.tenant_id}`, row]))
-    const legacyUserMap = new Map(legacyUsers.map((row) => [row.id, row]))
-    const legacyTenantMap = new Map(legacyTenants.map((row) => [row.id, row]))
-    const legacyMembershipMap = new Map(legacyMemberships.map((row) => [`${row.user_id}:${row.tenant_id}`, row]))
+    const {
+      canReadNative,
+      canReadLegacy,
+      nativeUsers,
+      nativeTenants,
+      nativeMemberships,
+      legacyUsers,
+      legacyTenants,
+      legacyMemberships,
+      nativeUserMap,
+      nativeTenantMap,
+      nativeMembershipMap,
+      legacyUserMap,
+      legacyTenantMap,
+      legacyMembershipMap,
+    } = await loadAuthOwnershipMaps(db, entityProfileRows)
 
     const classifiedRows = entityProfileRows.map((row) => {
       const classification = classifyEntityOwnership({
@@ -611,6 +763,159 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
           : [],
       },
       summary,
+    })
+  })
+
+  app.post<{
+    Body: ArchiveOrphansBody
+  }>('/internal/admin/ownership/archive-orphans', async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!internalAdminToken) {
+      return reply.status(503).send({
+        status: 'failed',
+        error: {
+          code: 'INTERNAL_ADMIN_TOKEN_NOT_CONFIGURED',
+          message: 'Internal admin token is not configured.',
+        },
+      })
+    }
+
+    const receivedToken = request.headers['x-internal-admin-token']
+    const tokenValue = Array.isArray(receivedToken) ? receivedToken[0] : receivedToken
+    if (!safeEqualToken(internalAdminToken, tokenValue)) {
+      return reply.status(401).send({
+        status: 'failed',
+        error: {
+          code: 'INTERNAL_ADMIN_UNAUTHORIZED',
+          message: 'Internal admin token is required.',
+        },
+      })
+    }
+
+    const body = (request.body ?? {}) as ArchiveOrphansBody
+    const entityIds = Array.isArray(body.entityIds)
+      ? body.entityIds
+        .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+        .map((value) => value.trim())
+      : []
+    const dryRun = body.dryRun !== false
+    const confirm = typeof body.confirm === 'string' ? body.confirm : ''
+    const archiveReason = typeof body.reason === 'string' && body.reason.trim().length > 0
+      ? body.reason.trim()
+      : 'archive orphan ownership entity'
+
+    if (entityIds.length === 0) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_ENTITY_IDS',
+          message: 'entityIds must contain at least one entity id.',
+        },
+      })
+    }
+
+    if (isWildcardEntitySelection(entityIds) && !dryRun) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'UNSAFE_WILDCARD_ARCHIVE',
+          message: 'Wildcard archive requires dryRun=true.',
+        },
+      })
+    }
+
+    if (!dryRun && confirm !== 'ARCHIVE_ORPHAN_OWNERS') {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'ARCHIVE_CONFIRMATION_REQUIRED',
+          message: 'confirm must equal ARCHIVE_ORPHAN_OWNERS when dryRun=false.',
+        },
+      })
+    }
+
+    const db = getConnection(app)
+    const selectedRows = isWildcardEntitySelection(entityIds)
+      ? await queryAllEntityProfileRows(db)
+      : await queryEntityProfileRowsByIds(db, entityIds)
+    const authMaps = await loadAuthOwnershipMaps(db, selectedRows)
+    const archivedEntityIds: string[] = []
+    const skipped: Array<{ entityId: string; reason: string }> = []
+    let archivable = 0
+
+    for (const row of selectedRows) {
+      const classification = classifyEntityOwnership({
+        entity: row,
+        nativeUsers: authMaps.nativeUserMap,
+        nativeTenants: authMaps.nativeTenantMap,
+        nativeMemberships: authMaps.nativeMembershipMap,
+        legacyUsers: authMaps.legacyUserMap,
+        legacyTenants: authMaps.legacyTenantMap,
+        legacyMemberships: authMaps.legacyMembershipMap,
+      })
+
+      if (classification !== 'ORPHAN_OWNER') {
+        skipped.push({
+          entityId: row.id,
+          reason: 'not_orphan_owner',
+        })
+        continue
+      }
+
+      const criticalLinks = await queryCriticalLinkSummary(db, row.id)
+      if (hasCriticalLinks(criticalLinks)) {
+        skipped.push({
+          entityId: row.id,
+          reason: 'requires_manual_review_critical_links',
+        })
+        continue
+      }
+
+      archivable += 1
+
+      if (dryRun) {
+        continue
+      }
+
+      const archivedAt = new Date().toISOString()
+      const nextPayload = archiveEntityProfilePayload(
+        JSON.parse((row as EntityProfileRow & { entity_profile: string }).entity_profile),
+        archivedAt,
+        archiveReason,
+      )
+
+      await db.run(
+        `
+          UPDATE entity_profile
+          SET entity_profile = ?, updated_at = ?
+          WHERE id = ?
+        `,
+        JSON.stringify(nextPayload),
+        archivedAt,
+        row.id,
+      )
+
+      archivedEntityIds.push(row.id)
+    }
+
+    request.log.info({
+      event: 'internal.ownership.archive-orphans',
+      dryRun,
+      requested: entityIds.length,
+      selectedRows: selectedRows.length,
+      archivable,
+      archived: archivedEntityIds.length,
+      skipped,
+      archivedEntityIds,
+    }, 'Internal orphan ownership archive action executed')
+
+    return reply.status(200).send({
+      status: 'ready',
+      dryRun,
+      requested: entityIds.length,
+      archivable,
+      archived: archivedEntityIds.length,
+      skipped,
+      archivedEntityIds,
     })
   })
 }
