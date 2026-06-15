@@ -719,12 +719,22 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
         legacyMemberships: legacyMembershipMap,
       })
 
-      const classification = isArchivedEntityProfilePayload(parsedPayload) && baseClassification === 'ORPHAN_OWNER'
+      const isArchived = isArchivedEntityProfilePayload(parsedPayload)
+      const lifecycleStatus = isRecord(parsedPayload)
+        && isRecord(parsedPayload.metadata)
+        && isRecord(parsedPayload.metadata.lifecycle)
+        && typeof parsedPayload.metadata.lifecycle.status === 'string'
+          ? parsedPayload.metadata.lifecycle.status
+          : null
+
+      const classification = isArchived && baseClassification === 'ORPHAN_OWNER'
         ? 'ARCHIVED_ORPHAN_OWNER' as const
         : baseClassification
 
       return {
         id: row.id,
+        isArchived,
+        lifecycleStatus,
         ownerId: row.owner_id,
         ownerUserId: row.owner_user_id,
         ownerTenantId: row.owner_tenant_id,
