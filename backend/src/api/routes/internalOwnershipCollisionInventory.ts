@@ -428,12 +428,19 @@ async function queryLegacyMemberships(db: BackendDatabase, ownerIds: number[]) {
 
 async function queryCriticalLinkSummary(db: BackendDatabase, entityId: string): Promise<CriticalLinkSummary> {
   const professionalRows = await db.all<Array<{ id: string }>>(
-    `
-      SELECT id
-      FROM professionals
-      WHERE metadata LIKE ?
-         OR external_ref LIKE ?
-    `,
+    db.dialect === 'postgres'
+      ? `
+        SELECT id
+        FROM professionals
+        WHERE metadata::text LIKE ?
+           OR external_ref LIKE ?
+      `
+      : `
+        SELECT id
+        FROM professionals
+        WHERE metadata LIKE ?
+           OR external_ref LIKE ?
+      `,
     `%${entityId}%`,
     `%${entityId}%`,
   )
