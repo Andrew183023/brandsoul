@@ -661,13 +661,15 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
       classification: OwnershipClassification
     }> = []
     const activeEntityProfileRows = entityProfileRows.filter((row) => {
-      const maybePayload = (row as EntityProfileRow & { entity_profile?: string }).entity_profile
-      if (typeof maybePayload !== 'string') {
+      const maybePayload = (row as EntityProfileRow & { entity_profile?: string | Record<string, unknown> }).entity_profile
+      if (typeof maybePayload !== 'string' && !isRecord(maybePayload)) {
         return true
       }
 
       try {
-        const parsedPayload = JSON.parse(maybePayload)
+        const parsedPayload = typeof maybePayload === 'string'
+          ? JSON.parse(maybePayload)
+          : maybePayload
         if (!isArchivedEntityProfilePayload(parsedPayload)) {
           return true
         }
