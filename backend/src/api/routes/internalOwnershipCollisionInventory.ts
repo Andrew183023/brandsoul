@@ -861,6 +861,104 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
   })
 
 
+
+  app.get<{
+    Params: { id: string }
+  }>('/internal/admin/ownership/entity-dependencies/:id', async (request, reply) => {
+    if (!internalAdminToken) {
+      return reply.status(503).send({
+        status: 'failed',
+        error: {
+          code: 'INTERNAL_ADMIN_TOKEN_NOT_CONFIGURED',
+          message: 'Internal admin token is not configured.',
+        },
+      })
+    }
+
+    const receivedToken = request.headers['x-internal-admin-token']
+    const tokenValue = Array.isArray(receivedToken) ? receivedToken[0] : receivedToken
+    if (!safeEqualToken(internalAdminToken, tokenValue)) {
+      return reply.status(401).send({
+        status: 'failed',
+        error: {
+          code: 'INTERNAL_ADMIN_UNAUTHORIZED',
+          message: 'Internal admin token is required.',
+        },
+      })
+    }
+
+    const db = getConnection(app)
+    const entityId = request.params.id
+
+    const [
+      cases,
+      caseMessages,
+      entityExports,
+      professionalsByMetadata,
+    ] = await Promise.all([
+      db.get<{ total: number }>(
+        `
+          SELECT COUNT(*) AS total
+          FROM cases
+          WHERE entity_id = ?
+        `,
+        entityId,
+      ),
+      db.get<{ total: number }>(
+        `
+          SELECT COUNT(*) AS total
+          FROM case_messages
+          WHERE case_id IN (
+            SELECT id FROM cases WHERE entity_id = ?
+          )
+        `,
+        entityId,
+      ),
+      db.get<{ total: number }>(
+        `
+          SELECT COUNT(*) AS total
+          FROM entity_exports
+          WHERE entity_id = ?
+        `,
+        entityId,
+      ),
+      db.get<{ total: number }>(
+        db.dialect === 'postgres'
+          ? `
+            SELECT COUNT(*) AS total
+            FROM professionals
+            WHERE metadata::text LIKE ?
+               OR external_ref LIKE ?
+          `
+          : `
+            SELECT COUNT(*) AS total
+            FROM professionals
+            WHERE metadata LIKE ?
+               OR external_ref LIKE ?
+          `,
+        `%${entityId}%`,
+        `%${entityId}%`,
+      ),
+    ])
+
+    const criticalLinks = Number(cases?.total ?? 0) > 0
+      || Number(caseMessages?.total ?? 0) > 0
+      || Number(entityExports?.total ?? 0) > 0
+      || Number(professionalsByMetadata?.total ?? 0) > 0
+
+    return reply.status(200).send({
+      status: 'ready',
+      entityId,
+      dependencies: {
+        cases: Number(cases?.total ?? 0),
+        caseMessages: Number(caseMessages?.total ?? 0),
+        entityExports: Number(entityExports?.total ?? 0),
+        professionalsByMetadata: Number(professionalsByMetadata?.total ?? 0),
+      },
+      criticalLinks,
+    })
+  })
+
   app.get<{
     Params: { id: string }
   }>('/internal/admin/ownership/entity-profile/:id', async (request, reply) => {
