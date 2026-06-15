@@ -263,7 +263,8 @@ async function queryEntityProfileRows(db: BackendDatabase, ownerIds: number[]) {
         owner_user_id,
         owner_tenant_id,
         created_at,
-        updated_at
+        updated_at,
+        entity_profile
       FROM entity_profile
       WHERE owner_user_id IN (${placeholders})
          OR owner_tenant_id IN (${placeholders})
@@ -283,7 +284,8 @@ async function queryAllEntityProfileRows(db: BackendDatabase) {
         owner_user_id,
         owner_tenant_id,
         created_at,
-        updated_at
+        updated_at,
+        entity_profile
       FROM entity_profile
       ORDER BY created_at ASC
     `,
