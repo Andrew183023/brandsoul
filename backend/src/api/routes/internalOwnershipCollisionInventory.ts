@@ -836,6 +836,97 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
     })
   })
 
+
+  app.get<{
+    Params: { id: string }
+  }>('/internal/admin/ownership/entity-profile/:id', async (request, reply) => {
+    if (!internalAdminToken) {
+      return reply.status(503).send({
+        status: 'failed',
+        error: {
+          code: 'INTERNAL_ADMIN_TOKEN_NOT_CONFIGURED',
+          message: 'Internal admin token is not configured.',
+        },
+      })
+    }
+
+    const receivedToken = request.headers['x-internal-admin-token']
+    const tokenValue = Array.isArray(receivedToken) ? receivedToken[0] : receivedToken
+    if (!safeEqualToken(internalAdminToken, tokenValue)) {
+      return reply.status(401).send({
+        status: 'failed',
+        error: {
+          code: 'INTERNAL_ADMIN_UNAUTHORIZED',
+          message: 'Internal admin token is required.',
+        },
+      })
+    }
+
+    const db = getConnection(app)
+    const row = await db.get<{
+      id: string
+      owner_id: string | null
+      owner_user_id: number | null
+      owner_tenant_id: number | null
+      created_at: string | null
+      updated_at: string | null
+      entity_profile: unknown
+    }>(
+      `
+        SELECT
+          id,
+          owner_id,
+          owner_user_id,
+          owner_tenant_id,
+          created_at,
+          updated_at,
+          entity_profile
+        FROM entity_profile
+        WHERE id = ?
+      `,
+      request.params.id,
+    )
+
+    if (!row) {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'ENTITY_PROFILE_NOT_FOUND',
+          message: 'Entity profile was not found.',
+        },
+      })
+    }
+
+    const raw = row.entity_profile
+    const parsed = typeof raw === 'string'
+      ? JSON.parse(raw)
+      : raw
+
+    const root = isRecord(parsed) ? parsed : {}
+    const metadata = isRecord(root.metadata) ? root.metadata : null
+    const lifecycle = metadata && isRecord(metadata.lifecycle) ? metadata.lifecycle : null
+    const nestedEntityProfile = isRecord(root.entity_profile) ? root.entity_profile : null
+    const nestedMetadata = nestedEntityProfile && isRecord(nestedEntityProfile.metadata) ? nestedEntityProfile.metadata : null
+    const nestedLifecycle = nestedMetadata && isRecord(nestedMetadata.lifecycle) ? nestedMetadata.lifecycle : null
+
+    return reply.status(200).send({
+      status: 'ready',
+      id: row.id,
+      ownerId: row.owner_id,
+      ownerUserId: row.owner_user_id,
+      ownerTenantId: row.owner_tenant_id,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      entityProfileType: typeof raw,
+      entityProfileKeys: Object.keys(root),
+      metadata,
+      lifecycle,
+      nestedMetadata,
+      nestedLifecycle,
+      rawEntityProfilePreview: JSON.stringify(parsed).slice(0, 2000),
+    })
+  })
+
   app.post<{
     Body: ArchiveOrphansBody
   }>('/internal/admin/ownership/archive-orphans', async (request: FastifyRequest, reply: FastifyReply) => {
