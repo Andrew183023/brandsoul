@@ -510,9 +510,16 @@ function isArchivedEntityProfilePayload(payload: unknown) {
     return false
   }
 
-  const metadata = isRecord(payload.metadata) ? payload.metadata : {}
-  const lifecycle = isRecord(metadata.lifecycle) ? metadata.lifecycle : {}
-  return lifecycle.status === 'archived'
+  const directMetadata = isRecord(payload.metadata) ? payload.metadata : {}
+  const directLifecycle = isRecord(directMetadata.lifecycle) ? directMetadata.lifecycle : {}
+  if (directLifecycle.status === 'archived') {
+    return true
+  }
+
+  const nestedProfile = isRecord(payload.entity_profile) ? payload.entity_profile : {}
+  const nestedMetadata = isRecord(nestedProfile.metadata) ? nestedProfile.metadata : {}
+  const nestedLifecycle = isRecord(nestedMetadata.lifecycle) ? nestedMetadata.lifecycle : {}
+  return nestedLifecycle.status === 'archived'
 }
 
 function archiveEntityProfilePayload(payload: unknown, archivedAt: string, archiveReason: string) {
