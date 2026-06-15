@@ -703,8 +703,13 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
       }
     })
 
-    const classifiedRows = activeEntityProfileRows.map((row) => {
-      const classification = classifyEntityOwnership({
+    const classifiedRows = entityProfileRows.map((row) => {
+      const maybePayload = (row as EntityProfileRow & { entity_profile?: string | Record<string, unknown> }).entity_profile
+      const parsedPayload = typeof maybePayload === 'string'
+        ? JSON.parse(maybePayload)
+        : maybePayload
+
+      const baseClassification = classifyEntityOwnership({
         entity: row,
         nativeUsers: nativeUserMap,
         nativeTenants: nativeTenantMap,
@@ -713,6 +718,10 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
         legacyTenants: legacyTenantMap,
         legacyMemberships: legacyMembershipMap,
       })
+
+      const classification = isArchivedEntityProfilePayload(parsedPayload) && baseClassification === 'ORPHAN_OWNER'
+        ? 'ARCHIVED_ORPHAN_OWNER' as const
+        : baseClassification
 
       return {
         id: row.id,
@@ -731,6 +740,8 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
         accumulator.recycledIdCollisionRows += 1
       } else if (row.classification === 'ORPHAN_OWNER') {
         accumulator.orphanOwnerRows += 1
+      } else if (row.classification === 'ARCHIVED_ORPHAN_OWNER') {
+        accumulator.archivedOrphanOwnerRows += 1
       } else if (row.classification === 'VALID_OWNER') {
         accumulator.validOwnerRows += 1
       } else if (row.classification === 'MANUAL_REVIEW_REQUIRED') {
@@ -742,6 +753,7 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
       temporalImpossibleRows: 0,
       recycledIdCollisionRows: 0,
       orphanOwnerRows: 0,
+      archivedOrphanOwnerRows: 0,
       validOwnerRows: 0,
       manualReviewRows: 0,
     })
@@ -764,10 +776,10 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
       totalEntities: classifiedRows.length,
       validOwners: summary.validOwnerRows,
       orphanOwners: summary.orphanOwnerRows,
-      archivedOrphanOwners: archivedEntityRows.filter((row) => row.classification === 'ORPHAN_OWNER').length,
+      archivedOrphanOwners: summary.archivedOrphanOwnerRows,
       temporalImpossibleOwners: summary.temporalImpossibleRows,
       topOrphanOffices,
-      archivedEntityProfileRows: archivedEntityRows,
+      archivedEntityProfileRows: classifiedRows.filter((row) => row.classification === 'ARCHIVED_ORPHAN_OWNER'),
       entityProfileRows: classifiedRows,
       nativeAuth: {
         users: includeNativeAuth && canReadNative
