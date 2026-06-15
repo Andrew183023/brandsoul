@@ -505,6 +505,16 @@ function hasCriticalLinks(summary: CriticalLinkSummary) {
     || summary.entityExports > 0
 }
 
+function isArchivedEntityProfilePayload(payload: unknown) {
+  if (!isRecord(payload)) {
+    return false
+  }
+
+  const metadata = isRecord(payload.metadata) ? payload.metadata : {}
+  const lifecycle = isRecord(metadata.lifecycle) ? metadata.lifecycle : {}
+  return lifecycle.status === 'archived'
+}
+
 function archiveEntityProfilePayload(payload: unknown, archivedAt: string, archiveReason: string) {
   const root = isRecord(payload) ? { ...payload } : {}
   const metadata = isRecord(root.metadata) ? { ...root.metadata } : {}
@@ -642,7 +652,49 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
       legacyMembershipMap,
     } = await loadAuthOwnershipMaps(db, entityProfileRows)
 
-    const classifiedRows = entityProfileRows.map((row) => {
+    const archivedEntityRows: Array<{
+      id: string
+      ownerUserId: number | null
+      ownerTenantId: number | null
+      createdAt: string | null
+      updatedAt: string | null
+      classification: OwnershipClassification
+    }> = []
+    const activeEntityProfileRows = entityProfileRows.filter((row) => {
+      const maybePayload = (row as EntityProfileRow & { entity_profile?: string }).entity_profile
+      if (typeof maybePayload !== 'string') {
+        return true
+      }
+
+      try {
+        const parsedPayload = JSON.parse(maybePayload)
+        if (!isArchivedEntityProfilePayload(parsedPayload)) {
+          return true
+        }
+
+        archivedEntityRows.push({
+          id: row.id,
+          ownerUserId: row.owner_user_id,
+          ownerTenantId: row.owner_tenant_id,
+          createdAt: row.created_at,
+          updatedAt: row.updated_at,
+          classification: classifyEntityOwnership({
+            entity: row,
+            nativeUsers: nativeUserMap,
+            nativeTenants: nativeTenantMap,
+            nativeMemberships: nativeMembershipMap,
+            legacyUsers: legacyUserMap,
+            legacyTenants: legacyTenantMap,
+            legacyMemberships: legacyMembershipMap,
+          }),
+        })
+        return false
+      } catch {
+        return true
+      }
+    })
+
+    const classifiedRows = activeEntityProfileRows.map((row) => {
       const classification = classifyEntityOwnership({
         entity: row,
         nativeUsers: nativeUserMap,
@@ -703,8 +755,10 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
       totalEntities: classifiedRows.length,
       validOwners: summary.validOwnerRows,
       orphanOwners: summary.orphanOwnerRows,
+      archivedOrphanOwners: archivedEntityRows.filter((row) => row.classification === 'ORPHAN_OWNER').length,
       temporalImpossibleOwners: summary.temporalImpossibleRows,
       topOrphanOffices,
+      archivedEntityProfileRows: archivedEntityRows,
       entityProfileRows: classifiedRows,
       nativeAuth: {
         users: includeNativeAuth && canReadNative
