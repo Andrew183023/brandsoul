@@ -63,23 +63,23 @@ function deepMerge<T extends Record<string, unknown>>(base: T, updates: Record<s
 }
 
 function readLifecycleStatus(profile: EntityProfileDocument) {
-  const metadata = isPlainObject(profile.metadata) ? profile.metadata : {}
-  const lifecycle = isPlainObject(metadata.lifecycle) ? metadata.lifecycle : {}
+  const metadata: Record<string, unknown> = isPlainObject(profile.metadata) ? profile.metadata : {}
+  const lifecycle: Record<string, unknown> = isPlainObject(metadata.lifecycle) ? metadata.lifecycle : {}
   const status = lifecycle.status
 
   return typeof status === 'string' ? status : undefined
 }
 
 function preserveArchivedLifecycle<T extends EntityProfileDocument>(existingProfile: T, nextProfile: T): T {
-  const existingMetadata = isPlainObject(existingProfile.metadata) ? existingProfile.metadata : {}
-  const existingLifecycle = isPlainObject(existingMetadata.lifecycle) ? existingMetadata.lifecycle : {}
+  const existingMetadata: Record<string, unknown> = isPlainObject(existingProfile.metadata) ? existingProfile.metadata : {}
+  const existingLifecycle: Record<string, unknown> = isPlainObject(existingMetadata.lifecycle) ? existingMetadata.lifecycle : {}
 
   if (existingLifecycle.status !== 'archived') {
     return nextProfile
   }
 
-  const nextMetadata = isPlainObject(nextProfile.metadata) ? nextProfile.metadata : {}
-  const nextLifecycle = isPlainObject(nextMetadata.lifecycle) ? nextMetadata.lifecycle : {}
+  const nextMetadata: Record<string, unknown> = isPlainObject(nextProfile.metadata) ? nextProfile.metadata : {}
+  const nextLifecycle: Record<string, unknown> = isPlainObject(nextMetadata.lifecycle) ? nextMetadata.lifecycle : {}
 
   if (nextLifecycle.status === 'archived') {
     return nextProfile
