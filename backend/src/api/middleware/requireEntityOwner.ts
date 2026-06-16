@@ -49,6 +49,37 @@ function resolveCanonicalOwnership(entity: StoredEntityProfile) {
   }
 }
 
+
+function readEntityLifecycleStatus(entity: StoredEntityProfile) {
+  const profile = entity.entityProfile
+
+  if (!profile || typeof profile !== 'object') {
+    return undefined
+  }
+
+  const metadata = (profile as { metadata?: unknown }).metadata
+
+  if (!metadata || typeof metadata !== 'object') {
+    return undefined
+  }
+
+  const lifecycle = (metadata as { lifecycle?: unknown }).lifecycle
+
+  if (!lifecycle || typeof lifecycle !== 'object') {
+    return undefined
+  }
+
+  const status = (lifecycle as { status?: unknown }).status
+
+  return typeof status === 'string' ? status : undefined
+}
+
+function allowsLegacyOwnershipBackfill(entity: StoredEntityProfile) {
+  const lifecycleStatus = readEntityLifecycleStatus(entity)
+
+  return !['archived', 'deleted', 'invalid'].includes(lifecycleStatus ?? '')
+}
+
 export function validateEntityOwnership(entity: StoredEntityProfile, userId: number, tenantId: number): EntityOwnershipValidation | null {
   const canonicalOwnership = resolveCanonicalOwnership(entity)
   if (canonicalOwnership) {
@@ -65,7 +96,7 @@ export function validateEntityOwnership(entity: StoredEntityProfile, userId: num
   }
 
   const expectedLegacyOwnerId = buildLegacyOwnerId(userId, tenantId)
-  if (entity.ownerId === expectedLegacyOwnerId) {
+  if (entity.ownerId === expectedLegacyOwnerId && allowsLegacyOwnershipBackfill(entity)) {
     return {
       source: 'legacy-backfilled',
       ownerId: entity.ownerId,
