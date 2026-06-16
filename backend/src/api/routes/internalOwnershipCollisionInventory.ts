@@ -513,8 +513,7 @@ function isWeakProfessionalOnlyDependency(summary: CriticalLinkSummary) {
   return summary.cases === 0
     && summary.caseMessages === 0
     && summary.entityExports === 0
-    && summary.professionalProfiles === 0
-    && summary.professionals > 0
+    && (summary.professionals > 0 || summary.professionalProfiles > 0)
 }
 
 function isArchivedEntityProfilePayload(payload: unknown) {
