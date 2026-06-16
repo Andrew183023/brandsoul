@@ -1073,6 +1073,9 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
     const nestedEntityProfile = isRecord(root.entity_profile) ? root.entity_profile : null
     const nestedMetadata = nestedEntityProfile && isRecord(nestedEntityProfile.metadata) ? nestedEntityProfile.metadata : null
     const nestedLifecycle = nestedMetadata && isRecord(nestedMetadata.lifecycle) ? nestedMetadata.lifecycle : null
+    const canonicalIdentity = isRecord(root.canonicalIdentity) ? root.canonicalIdentity : null
+    const canonicalRuntime = canonicalIdentity && isRecord(canonicalIdentity.runtime) ? canonicalIdentity.runtime : null
+    const canonicalIdentityRecord = canonicalIdentity && isRecord(canonicalIdentity.identity) ? canonicalIdentity.identity : null
 
     return reply.status(200).send({
       status: 'ready',
@@ -1088,6 +1091,8 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
       lifecycle,
       nestedMetadata,
       nestedLifecycle,
+      canonicalIdentity: canonicalIdentityRecord,
+      runtimeProfile: canonicalRuntime,
       rawEntityProfilePreview: JSON.stringify(parsed).slice(0, 2000),
     })
   })
