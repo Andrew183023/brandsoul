@@ -62,6 +62,39 @@ function deepMerge<T extends Record<string, unknown>>(base: T, updates: Record<s
   return next as T
 }
 
+function readLifecycleStatus(profile: EntityProfileDocument) {
+  const metadata = isPlainObject(profile.metadata) ? profile.metadata : {}
+  const lifecycle = isPlainObject(metadata.lifecycle) ? metadata.lifecycle : {}
+  const status = lifecycle.status
+
+  return typeof status === 'string' ? status : undefined
+}
+
+function preserveArchivedLifecycle<T extends EntityProfileDocument>(existingProfile: T, nextProfile: T): T {
+  const existingMetadata = isPlainObject(existingProfile.metadata) ? existingProfile.metadata : {}
+  const existingLifecycle = isPlainObject(existingMetadata.lifecycle) ? existingMetadata.lifecycle : {}
+
+  if (existingLifecycle.status !== 'archived') {
+    return nextProfile
+  }
+
+  const nextMetadata = isPlainObject(nextProfile.metadata) ? nextProfile.metadata : {}
+  const nextLifecycle = isPlainObject(nextMetadata.lifecycle) ? nextMetadata.lifecycle : {}
+
+  if (nextLifecycle.status === 'archived') {
+    return nextProfile
+  }
+
+  return {
+    ...nextProfile,
+    metadata: {
+      ...nextMetadata,
+      lifecycle: existingLifecycle,
+    },
+  } as T
+}
+
+
 function mapRowToStoredEntityProfile<T extends EntityProfileDocument>(row?: {
   id: string
   owner_id: string | null
@@ -281,7 +314,7 @@ export class EntityRepository {
       existing.ownerUserId ?? null,
       existing.ownerTenantId ?? null,
       updatedAt,
-      JSON.stringify(input.entityProfile),
+      JSON.stringify(preserveArchivedLifecycle(existing.entityProfile, input.entityProfile)),
       input.id,
     )
 
