@@ -73,10 +73,12 @@ type OwnershipClassification =
   | 'MANUAL_REVIEW_REQUIRED'
 
 type ArchiveOrphansBody = {
-  entityIds?: string[]
-  reason?: string
-  dryRun?: boolean
-  confirm?: string
+  entityIds?: unknown
+  reason?: unknown
+  dryRun?: unknown
+  confirm?: unknown
+  overrideCriticalLinks?: unknown
+  overrideReason?: unknown
 }
 
 type CriticalLinkSummary = {
@@ -507,6 +509,14 @@ function hasCriticalLinks(summary: CriticalLinkSummary) {
     || summary.entityExports > 0
 }
 
+function isWeakProfessionalOnlyDependency(summary: CriticalLinkSummary) {
+  return summary.cases === 0
+    && summary.caseMessages === 0
+    && summary.entityExports === 0
+    && summary.professionalProfiles === 0
+    && summary.professionals > 0
+}
+
 function isArchivedEntityProfilePayload(payload: unknown) {
   if (!isRecord(payload)) {
     return false
@@ -524,13 +534,21 @@ function isArchivedEntityProfilePayload(payload: unknown) {
   return nestedLifecycle.status === 'archived'
 }
 
-function archiveEntityProfilePayload(payload: unknown, archivedAt: string, archiveReason: string) {
+function archiveEntityProfilePayload(
+  payload: unknown,
+  archivedAt: string,
+  archiveReason: string,
+  archiveOverride?: Record<string, unknown>,
+) {
   const root = isRecord(payload) ? { ...payload } : {}
   const metadata = isRecord(root.metadata) ? { ...root.metadata } : {}
   const lifecycle = isRecord(metadata.lifecycle) ? { ...metadata.lifecycle } : {}
   lifecycle.status = 'archived'
   lifecycle.archivedAt = archivedAt
   lifecycle.archiveReason = archiveReason
+  if (archiveOverride) {
+    lifecycle.archiveOverride = archiveOverride
+  }
   metadata.lifecycle = lifecycle
   root.metadata = metadata
   return root
@@ -1111,6 +1129,8 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
     const archiveReason = typeof body.reason === 'string' && body.reason.trim().length > 0
       ? body.reason.trim()
       : 'archive orphan ownership entity'
+    const overrideCriticalLinks = body.overrideCriticalLinks === true
+    const overrideReason = typeof body.overrideReason === 'string' ? body.overrideReason.trim() : ''
 
     if (entityIds.length === 0) {
       return reply.status(400).send({
@@ -1148,7 +1168,7 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
       : await queryEntityProfileRowsByIds(db, entityIds)
     const authMaps = await loadAuthOwnershipMaps(db, selectedRows)
     const archivedEntityIds: string[] = []
-    const skipped: Array<{ entityId: string; reason: string }> = []
+    const skipped: Array<{ entityId: string; reason: string; overrideEligible?: boolean }> = []
     let archivable = 0
 
     for (const row of selectedRows) {
@@ -1171,10 +1191,20 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
       }
 
       const criticalLinks = await queryCriticalLinkSummary(db, row.id)
-      if (hasCriticalLinks(criticalLinks)) {
+      const weakProfessionalOnlyDependency = isWeakProfessionalOnlyDependency(criticalLinks)
+      const overrideEligible = weakProfessionalOnlyDependency
+      const overrideApplied = hasCriticalLinks(criticalLinks)
+        && overrideEligible
+        && overrideCriticalLinks
+        && overrideReason.length > 0
+        && !dryRun
+        && confirm === 'ARCHIVE_ORPHAN_OWNERS'
+
+      if (hasCriticalLinks(criticalLinks) && !overrideApplied) {
         skipped.push({
           entityId: row.id,
           reason: 'requires_manual_review_critical_links',
+          overrideEligible,
         })
         continue
       }
@@ -1190,6 +1220,13 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
         JSON.parse((row as EntityProfileRow & { entity_profile: string }).entity_profile),
         archivedAt,
         archiveReason,
+        hasCriticalLinks(criticalLinks)
+          ? {
+            type: 'weak_professional_only_dependency',
+            reason: overrideReason,
+            dependencySummary: criticalLinks,
+          }
+          : undefined,
       )
 
       await db.run(
