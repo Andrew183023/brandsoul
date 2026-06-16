@@ -895,6 +895,7 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
       caseMessages,
       entityExports,
       professionalsByMetadata,
+      professionalRows,
     ] = await Promise.all([
       db.get<{ total: number }>(
         `
@@ -939,6 +940,25 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
         `%${entityId}%`,
         `%${entityId}%`,
       ),
+      db.all<Array<{ id: string; external_ref: string | null; metadata: unknown }>>(
+        db.dialect === 'postgres'
+          ? `
+            SELECT id, external_ref, metadata
+            FROM professionals
+            WHERE metadata::text LIKE ?
+               OR external_ref LIKE ?
+            LIMIT 20
+          `
+          : `
+            SELECT id, external_ref, metadata
+            FROM professionals
+            WHERE metadata LIKE ?
+               OR external_ref LIKE ?
+            LIMIT 20
+          `,
+        `%${entityId}%`,
+        `%${entityId}%`,
+      ),
     ])
 
     const criticalLinks = Number(cases?.total ?? 0) > 0
@@ -955,6 +975,11 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
         entityExports: Number(entityExports?.total ?? 0),
         professionalsByMetadata: Number(professionalsByMetadata?.total ?? 0),
       },
+      professionalLinks: professionalRows.map((row) => ({
+        id: row.id,
+        externalRef: row.external_ref,
+        metadataPreview: JSON.stringify(row.metadata).slice(0, 800),
+      })),
       criticalLinks,
     })
   })
