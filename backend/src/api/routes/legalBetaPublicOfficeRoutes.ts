@@ -499,6 +499,19 @@ const publicActionRateLimit = createRateLimit({
   key: 'ip',
 })
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function isArchivedEntityProfile(entityProfile: unknown) {
+  if (!isRecord(entityProfile)) return false
+
+  const metadata = isRecord(entityProfile.metadata) ? entityProfile.metadata : {}
+  const lifecycle = isRecord(metadata.lifecycle) ? metadata.lifecycle : {}
+
+  return lifecycle.status === 'archived'
+}
+
 const privateWriteRateLimit = createRateLimit({
   namespace: 'legal-beta-private-write',
   max: 60,
@@ -512,6 +525,18 @@ export async function registerLegalBetaPublicOfficeRoutes(app: FastifyInstance) 
     const entities = await getRepository(app).getEntitiesByOwnerUserId<EntityProfile>(auth.userId, auth.tenantId)
     const activeOwnerEntities = []
     for (const entity of entities) {
+      if (isArchivedEntityProfile(entity.entityProfile)) {
+        request.log.warn({
+          event: 'legal.office.archived-filtered',
+          authUserId: auth.userId,
+          authTenantId: auth.tenantId,
+          officeId: entity.id,
+          ownerUserId: entity.ownerUserId ?? null,
+          ownerTenantId: entity.ownerTenantId ?? null,
+        }, 'Archived legal office filtered')
+        continue
+      }
+
       if (await isActiveNativeOwner(app, entity)) {
         activeOwnerEntities.push(entity)
         continue
