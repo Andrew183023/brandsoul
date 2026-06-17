@@ -349,7 +349,7 @@ function buildCreateEntityPayload(input: CreateAdminEntityInput) {
 }
 
 export async function listAdminEntities(baseUrl = getBackendBaseUrl()): Promise<AdminEntityListResponse> {
-  const response = await fetch(`${baseUrl}/me/entities`, {
+  const response = await fetch(`${baseUrl}/me/escritorios`, {
     headers: await buildRequiredBackendAuthHeaders(),
   })
 

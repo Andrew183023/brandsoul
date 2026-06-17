@@ -126,7 +126,7 @@ export function createHttpPersonaEngineApi(baseUrl = getBackendBaseUrl()): Perso
       }
 
       inflightMyEntitiesRequest = (async () => {
-        const response = await fetch(`${baseUrl}/me/entities`, {
+        const response = await fetch(`${baseUrl}/me/escritorios`, {
           headers: await buildBackendAuthHeaders(),
         })
         if (response.status === 401) {
