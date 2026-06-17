@@ -357,7 +357,24 @@ export async function listAdminEntities(baseUrl = getBackendBaseUrl()): Promise<
     throw new Error(`Failed to load entities (${response.status}).`)
   }
 
-  return response.json() as Promise<AdminEntityListResponse>
+  const payload = await response.json() as AdminOfficeListResponse
+
+  return {
+    status: payload.status,
+    userId: payload.userId,
+    tenantId: payload.tenantId,
+    entities: payload.offices.map((office) => ({
+      entityId: office.officeId,
+      status: office.status,
+      entity: {
+        id: office.officeId,
+        name: office.officeName,
+        status: office.status,
+        createdAt: office.createdAt,
+        updatedAt: office.updatedAt,
+      },
+    })),
+  }
 }
 
 export async function createAdminEntity(
