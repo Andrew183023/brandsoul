@@ -1,9 +1,10 @@
 import type { OfficeBusinessConfig } from './adminApi'
+import { readBackendBridgeBaseUrl } from '../../lib/api'
 
 export type PublicOfficeBusinessConfig = OfficeBusinessConfig
 
 function getBackendBaseUrl() {
-  return (globalThis as { __BRANDSOUL_BACKEND_URL__?: string }).__BRANDSOUL_BACKEND_URL__ ?? 'http://127.0.0.1:3001'
+  return readBackendBridgeBaseUrl()
 }
 
 export async function getOfficeBusinessConfig(

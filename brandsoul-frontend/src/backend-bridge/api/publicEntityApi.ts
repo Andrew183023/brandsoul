@@ -1,4 +1,5 @@
 import { buildRequiredBackendAuthHeaders } from './authHeaders'
+import { readBackendBridgeBaseUrl } from '../../lib/api'
 import type {
   AdminLegalCase,
   AdminLegalCaseMessage,
@@ -159,7 +160,7 @@ export class PublicOfficePresenceApiError extends Error {
 }
 
 function getBackendBaseUrl() {
-  return (globalThis as { __BRANDSOUL_BACKEND_URL__?: string }).__BRANDSOUL_BACKEND_URL__ ?? 'http://127.0.0.1:3001'
+  return readBackendBridgeBaseUrl()
 }
 
 async function readApiErrorMessage(response: Response, fallback: string) {
