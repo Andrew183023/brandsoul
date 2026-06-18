@@ -170,18 +170,10 @@ export function createHybridPersonaEngineApi(baseUrl = getBackendBaseUrl()): Per
       }
     },
     async getMyEntities() {
-      try {
-        return await httpApi.getMyEntities()
-      } catch {
-        return mockApi.getMyEntities()
-      }
+      return httpApi.getMyEntities()
     },
     async getEntitiesByOwnerId(ownerId) {
-      try {
-        return await httpApi.getEntitiesByOwnerId(ownerId)
-      } catch {
-        return mockApi.getEntitiesByOwnerId(ownerId)
-      }
+      return httpApi.getEntitiesByOwnerId(ownerId)
     },
   }
 }
