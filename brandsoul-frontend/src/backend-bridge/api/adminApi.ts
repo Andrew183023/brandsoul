@@ -1,5 +1,6 @@
 import { buildRequiredBackendAuthHeaders } from './authHeaders'
 import { readBackendBridgeBaseUrl } from '../../lib/api'
+import { clearSession } from '../../lib/session'
 
 type JsonRecord = Record<string, unknown>
 
@@ -296,6 +297,12 @@ export type AdminLawyerReputationResponse = {
   reputation: AdminLawyerReputation
 }
 
+function handleUnauthorizedAdminResponse() {
+  clearSession()
+  window.location.replace('/login')
+  throw new Error('Sessão expirada. Faça login novamente.')
+}
+
 function getBackendBaseUrl() {
   return readBackendBridgeBaseUrl()
 }
@@ -352,6 +359,10 @@ export async function listAdminEntities(baseUrl = getBackendBaseUrl()): Promise<
   const response = await fetch(`${baseUrl}/me/escritorios`, {
     headers: await buildRequiredBackendAuthHeaders(),
   })
+
+  if (response.status === 401) {
+    handleUnauthorizedAdminResponse()
+  }
 
   if (!response.ok) {
     throw new Error(`Failed to load entities (${response.status}).`)
@@ -411,6 +422,10 @@ export async function listAdminOffices(baseUrl = getBackendBaseUrl()): Promise<A
   const response = await fetch(`${baseUrl}/me/escritorios`, {
     headers: await buildRequiredBackendAuthHeaders(),
   })
+
+  if (response.status === 401) {
+    handleUnauthorizedAdminResponse()
+  }
 
   if (!response.ok) {
     throw new Error(`Failed to load offices (${response.status}).`)
