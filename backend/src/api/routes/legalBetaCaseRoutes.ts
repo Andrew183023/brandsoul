@@ -355,7 +355,7 @@ export async function registerLegalBetaCaseRoutes(app: FastifyInstance) {
     }
 
     let professionalId = request.body?.lawyerId?.trim()
-    if (!professionalId) {
+    if (!professionalId || professionalId === 'self') {
       const professional = await getCaseRepository(app).getProfessionalRecordByUserId(auth.tenantId, auth.userId)
       if (!professional) {
         return reply.status(409).send({
