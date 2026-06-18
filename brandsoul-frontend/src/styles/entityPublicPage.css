@@ -1624,3 +1624,15 @@
     min-height: 280px;
   }
 }
+
+.entity-public-shell {
+  width: min(1180px, calc(100vw - 1.5rem));
+  margin: 0 auto;
+  display: grid;
+  gap: 1rem;
+}
+
+.entity-public-hero {
+  position: relative;
+  overflow: hidden;
+}
