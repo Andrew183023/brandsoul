@@ -1,24 +1,25 @@
-.entity-console-shell {
+.admin-office-shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
-  background: var(--bg);
+  grid-template-columns: 220px minmax(0, 1fr);
+  background: linear-gradient(180deg, #f8f3ec 0%, #f2e9dd 100%);
   color: var(--text-primary);
 }
 
-.entity-console-shell__sidebar {
+.admin-office-shell__sidebar {
   position: sticky;
   top: 0;
   height: 100vh;
-  padding: 1.5rem 1.1rem;
+  padding: 1.8rem 1rem 1.5rem;
   display: grid;
   align-content: start;
-  gap: 1.4rem;
-  background: var(--bg-soft);
-  border-right: 1px solid var(--card-border);
+  gap: 1.35rem;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.52), rgba(250, 244, 236, 0.24));
+  border-right: 1px solid color-mix(in srgb, var(--card-border) 38%, transparent 62%);
+  overflow-y: auto;
 }
 
-.entity-console-shell__brand {
+.admin-office-shell__brand {
   display: inline-flex;
   align-items: center;
   gap: 0.85rem;
@@ -26,242 +27,316 @@
   text-decoration: none;
 }
 
-.entity-console-shell__brand-mark {
+.admin-office-shell__brand-mark {
   width: 2.35rem;
   height: 2.35rem;
   display: grid;
   place-items: center;
   border-radius: 10px;
-  background: var(--bg);
-  border: 1px solid var(--card-border);
-  color: #fff9f3;
-  box-shadow: none;
+  background: linear-gradient(145deg, #1d2a40, #2a3b57);
+  border: 0;
+  color: #f3deca;
+  box-shadow: 0 10px 18px rgba(29, 42, 64, 0.22);
 }
 
-.entity-console-shell__brand-copy {
+.admin-office-shell__brand-copy {
   display: grid;
   gap: 0.08rem;
 }
 
-.entity-console-shell__brand-copy strong {
+.admin-office-shell__brand-copy strong {
   font-size: 1rem;
   letter-spacing: -0.02em;
 }
 
-.entity-console-shell__brand-copy span {
+.admin-office-shell__brand-copy span {
   font-size: 0.8rem;
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.12em;
 }
 
-.entity-console-shell__entity-meta {
+.admin-office-shell__office-meta {
   display: grid;
-  gap: 0.35rem;
-  padding: 0.95rem 1rem;
-  border-radius: 12px;
-  background: var(--card);
-  border: 1px solid var(--card-border);
+  gap: 0.4rem;
+  padding: 0.25rem 0 1.15rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--card-border) 52%, transparent 48%);
 }
 
-.entity-console-shell__entity-kicker,
-.entity-console-shell__kicker {
+.admin-office-shell__office-kicker,
+.admin-office-shell__workspace-kicker {
   margin: 0;
   color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: 0.14em;
   font-size: 0.76rem;
 }
 
-.entity-console-shell__entity-meta strong {
-  font-size: 1rem;
+.admin-office-shell__office-meta strong {
+  font-size: 0.96rem;
+  letter-spacing: -0.02em;
 }
 
-.entity-console-shell__entity-meta span:last-child {
+.admin-office-shell__office-meta span:last-child {
   color: var(--text-secondary);
-  font-size: 0.82rem;
+  font-size: 0.78rem;
   word-break: break-word;
 }
 
-.entity-console-shell__nav {
+.admin-office-shell__nav {
   display: grid;
-  gap: 0.5rem;
+  gap: 0.25rem;
 }
 
-.entity-console-shell__nav-link {
+.admin-office-shell__nav-link {
+  position: relative;
   display: block;
-  padding: 0.85rem 0.95rem;
-  border-radius: 10px;
+  padding: 0.82rem 0.2rem 0.82rem 1rem;
   text-decoration: none;
   color: var(--text-secondary);
-  background: transparent;
-  border: 1px solid var(--card-border);
-  font-weight: 600;
+  border-left: 2px solid transparent;
+  font-weight: 550;
+  letter-spacing: -0.01em;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease,
+    transform 160ms ease;
 }
 
-.entity-console-shell__nav-link:hover {
+.admin-office-shell__nav-link span {
+  display: block;
+  margin: 0;
+  font-size: 0.94rem;
+  line-height: 1.35;
+}
+
+.admin-office-shell__nav-link:hover {
   color: var(--text-primary);
-  background: var(--card);
+  background: color-mix(in srgb, var(--accent) 3%, transparent 97%);
+  border-left-color: color-mix(in srgb, var(--accent) 24%, transparent 76%);
 }
 
-.entity-console-shell__nav-link--active {
+.admin-office-shell__nav-link--active {
   color: var(--text-primary);
-  background: var(--card);
-  border-color: rgba(249, 115, 22, 0.36);
-  box-shadow: inset 0 0 0 1px rgba(249, 115, 22, 0.12);
+  background: linear-gradient(90deg, rgba(154, 92, 51, 0.06), rgba(154, 92, 51, 0.015) 62%, transparent);
+  border-left-color: var(--accent);
 }
 
-.entity-console-shell__main {
+.admin-office-shell__nav-link--active span {
+  color: inherit;
+}
+
+.admin-office-shell__main {
   min-width: 0;
-  padding: clamp(24px, 4vw, 32px);
+  padding: clamp(24px, 4vw, 42px) clamp(24px, 4vw, 40px);
   display: grid;
-  gap: 1.5rem;
+  gap: 1.45rem;
 }
 
-.entity-console-shell__header {
+.admin-office-shell__header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 1rem;
   width: min(var(--page-max-width), 100%);
   margin: 0 auto;
-  padding: 1.5rem;
-  border-radius: 12px;
-  background: var(--bg-soft);
-  border: 1px solid var(--card-border);
+  padding: 0.35rem 0 1.35rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--card-border) 52%, transparent 48%);
 }
 
-.entity-console-shell__header h1 {
+.admin-office-shell__header h1 {
   margin: 0.35rem 0 0;
-  font-size: clamp(2rem, 4vw, 3rem);
-  letter-spacing: -0.04em;
+  font-size: clamp(2.2rem, 4.6vw, 3.4rem);
+  letter-spacing: -0.02em;
+  font-family: var(--font-display);
 }
 
-.entity-console-shell__subtitle {
-  margin: 0.7rem 0 0;
-  max-width: 54rem;
+.admin-office-shell__kicker {
+  margin: 0;
   color: var(--text-secondary);
-  line-height: 1.55;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 0.74rem;
 }
 
-.entity-console-shell__header-actions {
+.admin-office-shell__subtitle {
+  margin: 0.85rem 0 0;
+  max-width: 40rem;
+  color: var(--text-secondary);
+  line-height: 1.62;
+}
+
+.admin-office-shell__header-actions {
   display: flex;
-  gap: 0.75rem;
+  gap: 0.9rem;
   flex-wrap: wrap;
 }
 
-.entity-console-shell__button {
-  min-height: 2.9rem;
+.admin-office-shell__button {
+  min-height: 3rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   padding: 0 1rem;
-  border-radius: 8px;
+  border-radius: 11px;
   text-decoration: none;
-  font-weight: 600;
+  font-weight: 550;
   color: #fff;
-  background: var(--accent);
-  box-shadow: none;
+  background: linear-gradient(145deg, var(--accent), var(--accent-strong));
+  box-shadow: 0 7px 16px rgba(154, 92, 51, 0.14);
 }
 
-.entity-console-shell__button--ghost {
+.admin-office-shell__button--ghost {
   color: var(--text-primary);
-  background: transparent;
-  border: 1px solid var(--card-border);
+  background: #ffffff;
+  border: 0;
   box-shadow: none;
 }
 
-.entity-console-shell__content {
+.admin-office-shell__content {
   display: grid;
   width: min(var(--page-max-width), 100%);
   margin: 0 auto;
-  gap: 1.5rem;
+  gap: 1.6rem;
 }
 
-.entity-console-shell .admin-card {
-  background: var(--card);
-  border-color: var(--card-border);
-  box-shadow: none;
+.admin-office-shell .admin-card {
+  background: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 8px 18px rgba(23, 34, 53, 0.04);
   color: var(--text-primary);
 }
 
-.entity-console-shell .admin-card-header span,
-.entity-console-shell .admin-field span,
-.entity-console-shell .admin-entity-main span,
-.entity-console-shell .admin-entity-meta span,
-.entity-console-shell .admin-diagnosis-meta,
-.entity-console-shell .admin-diagnosis-copy,
-.entity-console-shell .admin-domain-card p,
-.entity-console-shell .admin-domain-card span,
-.entity-console-shell .admin-case-message p,
-.entity-console-shell .admin-case-message__meta span,
-.entity-console-shell .admin-feedback {
+.admin-office-shell .admin-card-header span,
+.admin-office-shell .admin-field span,
+.admin-office-shell .admin-office-main span,
+.admin-office-shell .admin-office-meta span,
+.admin-office-shell .admin-diagnosis-meta,
+.admin-office-shell .admin-diagnosis-copy,
+.admin-office-shell .admin-domain-card p,
+.admin-office-shell .admin-domain-card span,
+.admin-office-shell .admin-case-message p,
+.admin-office-shell .admin-case-message__meta span,
+.admin-office-shell .admin-feedback {
   color: var(--text-secondary);
 }
 
-.entity-console-shell .admin-feedback {
-  background: var(--bg-soft);
+.admin-office-shell .admin-feedback {
+  background: color-mix(in srgb, var(--bg-soft) 84%, #ffffff 16%);
 }
 
-.entity-console-shell .admin-feedback--error {
-  background: rgba(185, 64, 39, 0.16);
-  color: #ffd5c8;
+.admin-office-shell .admin-feedback--error {
+  background: color-mix(in srgb, #f7d8d2 62%, #ffffff 38%);
+  color: #8b3a2b;
 }
 
-.entity-console-shell .admin-domain-card,
-.entity-console-shell .admin-entity-item,
-.entity-console-shell .admin-case-message,
-.entity-console-shell .admin-case-timeline-item {
-  background: var(--bg-soft);
-  border-color: var(--card-border);
+.admin-office-shell .admin-domain-card,
+.admin-office-shell .admin-office-item,
+.admin-office-shell .admin-case-message,
+.admin-office-shell .admin-case-timeline-item {
+  background: color-mix(in srgb, var(--bg-soft) 84%, #ffffff 16%);
+  border-color: transparent;
 }
 
-.entity-console-shell .admin-case-message--lawyer {
-  background: #161b24;
+.admin-office-shell .admin-case-message--lawyer {
+  background: color-mix(in srgb, #e7f0ff 68%, #ffffff 32%);
 }
 
-.entity-console-shell .admin-case-message--system {
-  background: #12161c;
+.admin-office-shell .admin-case-message--system {
+  background: color-mix(in srgb, #eef3f9 72%, #ffffff 28%);
 }
 
-.entity-console-shell .admin-button {
+.admin-office-shell .admin-button {
   background: var(--accent);
   color: #fff;
 }
 
-.entity-console-shell .admin-button--ghost {
-  background: transparent;
+.admin-office-shell .admin-button--ghost {
+  background: #ffffff;
   color: var(--text-primary);
-  border-color: var(--card-border);
+  border-color: transparent;
 }
 
-.entity-console-shell .admin-field input,
-.entity-console-shell .admin-field select,
-.entity-console-shell .admin-field textarea {
-  background: #0f1115;
-  border-color: #2a2f3a;
+.admin-office-shell .admin-field input,
+.admin-office-shell .admin-field select,
+.admin-office-shell .admin-field textarea {
+  background: #ffffff;
+  border-color: color-mix(in srgb, var(--card-border) 74%, #ffffff 26%);
   color: var(--text-primary);
 }
 
-.entity-console-shell .admin-inline-link {
+.admin-office-shell .admin-inline-link {
   color: var(--accent);
 }
 
 @media (max-width: 980px) {
-  .entity-console-shell {
+  .admin-office-shell {
     grid-template-columns: 1fr;
   }
 
-  .entity-console-shell__sidebar {
+  .admin-office-shell__sidebar {
     position: static;
     height: auto;
+    padding: 1rem 0.8rem 0.75rem;
+    gap: 0.85rem;
+    border-right: 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--card-border) 70%, #ffffff 30%);
+    overflow: visible;
   }
 
-  .entity-console-shell__main {
+  .admin-office-shell__main {
     padding-top: 0;
+    padding-inline: 0.8rem;
+    gap: 1rem;
   }
 
-  .entity-console-shell__header {
+  .admin-office-shell__header {
     flex-direction: column;
+    padding: 0.15rem 0 0.95rem;
+    gap: 0.85rem;
+  }
+
+  .admin-office-shell__nav {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.12rem 0.45rem;
+  }
+
+  .admin-office-shell__nav-link {
+    min-height: 52px;
+    align-content: center;
+    padding: 0.72rem 0.15rem 0.72rem 0.85rem;
+  }
+
+  .admin-office-shell__header-actions {
+    width: 100%;
+  }
+
+  .admin-office-shell__header-actions > * {
+    flex: 1 1 100%;
+  }
+
+  .admin-office-shell__button {
+    width: 100%;
+    min-height: 50px;
+  }
+
+  .admin-office-shell__content,
+  .admin-office-shell__content {
+    gap: 1rem;
+  }
+}
+
+@media (max-width: 620px) {
+  .admin-office-shell__brand-copy span {
+    font-size: 0.74rem;
+  }
+
+  .admin-office-shell__office-meta,
+  .admin-office-shell__header {
+    border-radius: 16px;
+  }
+
+  .admin-office-shell__nav {
+    grid-template-columns: 1fr;
   }
 }

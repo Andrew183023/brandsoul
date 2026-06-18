@@ -1,20 +1,20 @@
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Sora:wght@400;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Source+Sans+3:wght@400;500;600;700&display=swap');
 
 :root {
-  --bg: #0b0d10;
-  --bg-soft: #111318;
-  --bg-deep: #090b0d;
-  --panel: #15181f;
-  --card: #15181f;
-  --card-border: #242833;
-  --text-main: #e6eaf0;
-  --text-primary: #e6eaf0;
-  --text-soft: #9aa4b2;
-  --text-secondary: #9aa4b2;
-  --accent: #f97316;
-  --accent-strong: #fb923c;
-  --font-body: 'Space Grotesk', 'Segoe UI', sans-serif;
-  --font-display: 'Sora', 'Segoe UI', sans-serif;
+  --bg: #f6f1ea;
+  --bg-soft: #f7f3ed;
+  --bg-deep: #ede4d8;
+  --panel: #ffffff;
+  --card: #ffffff;
+  --card-border: #ddd1c2;
+  --text-main: #172235;
+  --text-primary: #172235;
+  --text-soft: #68778d;
+  --text-secondary: #4b5a70;
+  --accent: #9a5c33;
+  --accent-strong: #874f2b;
+  --font-body: 'Source Sans 3', 'Segoe UI', sans-serif;
+  --font-display: 'Cormorant Garamond', 'Times New Roman', serif;
   font-family: var(--font-body);
   line-height: 1.5;
   font-weight: 400;
@@ -32,12 +32,18 @@
 
 html {
   min-height: 100%;
+  text-size-adjust: 100%;
+  scroll-behavior: smooth;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
-  background: linear-gradient(180deg, var(--bg), var(--bg-deep));
+  background: linear-gradient(180deg, var(--bg), #f3ece2);
+  font-family: var(--font-body);
+  line-height: 1.55;
+  letter-spacing: 0.005em;
+  overflow-wrap: anywhere;
 }
 
 body::before,
@@ -49,18 +55,24 @@ body::after {
 }
 
 body::before {
-  background-image: linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
-  background-size: 48px 48px;
-  mask-image: radial-gradient(circle at center, black, transparent 88%);
+  background-image: linear-gradient(rgba(154, 92, 51, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(154, 92, 51, 0.04) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(circle at center, black, transparent 84%);
 }
 
 body::after {
-  background: radial-gradient(circle at center, transparent 52%, rgba(0, 0, 0, 0.36) 100%);
+  background: radial-gradient(circle at 16% 10%, rgba(255, 255, 255, 0.66) 0%, rgba(255, 255, 255, 0) 42%),
+    radial-gradient(circle at 82% 6%, rgba(29, 42, 64, 0.07) 0%, rgba(29, 42, 64, 0) 36%);
 }
 
 button,
 input {
+  font: inherit;
+}
+
+textarea,
+select {
   font: inherit;
 }
 
@@ -70,9 +82,29 @@ input {
 
 a {
   color: inherit;
+  text-underline-offset: 2px;
 }
 
 p,
 h1 {
   margin: 0;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  text-wrap: balance;
+}
+
+p,
+li,
+span {
+  text-wrap: pretty;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 32%, white 68%);
+  color: #172235;
 }
