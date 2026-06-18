@@ -1,4 +1,4 @@
-import { createHmac, randomBytes } from 'node:crypto'
+import { createHmac, randomBytes, randomUUID } from 'node:crypto'
 
 import type { EntityBusinessConfig } from '../../domain/entityBusinessConfig.js'
 import type { EntityProfile } from '../../brain/domain/entity/contracts/EntityProfile.js'
@@ -307,7 +307,7 @@ export async function issueCasePortalAccessToken(args: {
   const expiresAt = new Date(Date.now() + (1000 * 60 * 60 * 24 * 30)).toISOString()
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const tokenId = randomBytes(12).toString('hex')
+    const tokenId = randomUUID()
     const rawToken = randomBytes(24).toString('base64url')
     const tokenHash = hashCasePortalAccessToken(rawToken)
 
