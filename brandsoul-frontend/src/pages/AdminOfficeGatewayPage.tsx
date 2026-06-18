@@ -6,6 +6,15 @@ import FeedbackBanner from '../components/FeedbackBanner'
 import SurfaceCard from '../components/SurfaceCard'
 import { navigateTo } from '../lib/navigation'
 
+function readOfficeName(office: AdminOfficeListItem) {
+  const record = office.office as Record<string, unknown>
+  return typeof record.officeName === 'string'
+    ? record.officeName
+    : typeof record.name === 'string'
+      ? record.name
+      : office.officeId
+}
+
 export default function AdminOfficeGatewayPage() {
   const [offices, setOffices] = useState<AdminOfficeListItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -93,7 +102,7 @@ export default function AdminOfficeGatewayPage() {
             {offices.map((office) => (
               <SurfaceCard key={office.officeId} tone="admin">
                 <div className="admin-card-header">
-                  <h2>{office.officeName}</h2>
+                  <h2>{readOfficeName(office)}</h2>
                   <span>{office.status}</span>
                 </div>
                 <p>{office.officeId}</p>

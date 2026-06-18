@@ -1,6 +1,6 @@
 import { buildRequiredBackendAuthHeaders } from './authHeaders'
 import { readBackendBridgeBaseUrl } from '../../lib/api'
-import { clearSession } from '../../lib/session'
+import type { FrontendTruthContract } from '../../truth/truthContract'
 
 type JsonRecord = Record<string, unknown>
 
@@ -12,6 +12,14 @@ export type AdminEntityListItem = {
   entity: JsonRecord
 }
 
+export type AdminOfficeListItem = {
+  officeId: string
+  status: string
+  createdAt?: string
+  updatedAt?: string
+  office: JsonRecord
+}
+
 export type AdminEntityListResponse = {
   status: 'ready'
   userId: number
@@ -19,19 +27,26 @@ export type AdminEntityListResponse = {
   entities: AdminEntityListItem[]
 }
 
-export type AdminOfficeListItem = {
-  officeId: string
-  officeName: string
-  status: 'ready' | 'draft'
-  createdAt?: string
-  updatedAt?: string
-}
-
 export type AdminOfficeListResponse = {
   status: 'ready'
   userId: number
   tenantId: number
   offices: AdminOfficeListItem[]
+}
+
+export type CreateAdminOfficeInput = {
+  name: string
+  category: string
+  primaryColor: string
+}
+
+export type CreateAdminOfficeResponse = {
+  status: string
+  officeId: string
+  office: JsonRecord
+  createdAt?: string
+  updatedAt?: string
+  requestId?: string
 }
 
 export type CreateAdminEntityInput = {
@@ -49,25 +64,93 @@ export type CreateAdminEntityResponse = {
   requestId?: string
 }
 
-export type CreateAdminOfficeInput = {
-  name: string
-  category: string
-  primaryColor: string
-}
-
 export type DiagnosisArtifactStatus = 'draft' | 'approved' | 'rejected'
 
-export type EntityBusinessType = 'restaurant' | 'store' | 'legal' | 'services'
+export type EntityBusinessType = 'legal'
+export type OfficeBusinessType = EntityBusinessType
+
+export type EntityLegalProfessional = {
+  id: string
+  name: string
+  role?: string
+  oabCredential?: string
+  credentials?: string[]
+  photoUrl?: string
+  specialties?: string[]
+  yearsOfExperience?: number
+  shortBio?: string
+  email?: string
+  phone?: string
+  status?: 'active' | 'inactive' | 'suspended'
+  isResponsible?: boolean
+  isPublic?: boolean
+}
+
+export type OfficeLegalProfessional = EntityLegalProfessional
+
+export type EntityResponsibleProfessional = {
+  photoUrl?: string
+  fullName?: string
+  oabCredential?: string
+  specialties?: string[]
+  yearsOfExperience?: number
+  shortBio?: string
+}
+
+export type OfficeResponsibleProfessional = EntityResponsibleProfessional
+
+export type EntityOfficeMediaItem = {
+  id: string
+  url: string
+  isCover?: boolean
+}
+
+export type OfficeMediaItem = EntityOfficeMediaItem
+
+export type EntityInstitutionalVideo = {
+  mode: 'external' | 'uploaded'
+  provider?: 'youtube' | 'vimeo' | 'upload'
+  url: string
+  title?: string
+  intro?: string
+}
+
+export type OfficeInstitutionalVideo = EntityInstitutionalVideo
+
+export type EntityTrustEvidenceConfig = {
+  enabled?: boolean
+  approvedCaseIds?: string[]
+}
+
+export type OfficeTrustEvidenceConfig = EntityTrustEvidenceConfig
+
+export type EntityPublicMessages = {
+  heroMessage?: string
+  intakeMessage?: string
+  availabilityMessage?: string
+}
+
+export type OfficePublicMessages = EntityPublicMessages
+
+export type EntityTriagePolicies = {
+  intakeCriteria?: string
+  priorityRules?: string
+  disqualificationRules?: string
+}
+
+export type OfficeTriagePolicies = EntityTriagePolicies
 
 export type EntityBusinessConfig = {
   businessType: EntityBusinessType
-  description?: string
   officeName?: string
+  description?: string
   institutionalDescription?: string
   legalAreas?: string[]
   servedCities?: string[]
-  attendanceModel?: 'sales' | 'support' | 'guidance' | 'mixed' | 'online' | 'in_person' | 'hybrid'
+  attendanceModel?: 'online' | 'in_person' | 'hybrid'
   operatingHours?: string
+  maxCapacity?: number
+  avgResponseMinutes?: number
   toneProfile?: {
     voice?: string
     style?: string
@@ -81,64 +164,22 @@ export type EntityBusinessConfig = {
     website?: string
     other?: string
   }
+  team?: EntityLegalProfessional[]
+  responsibleProfessional?: EntityResponsibleProfessional
+  officeGallery?: EntityOfficeMediaItem[]
+  institutionalVideo?: EntityInstitutionalVideo | null
+  trustEvidence?: EntityTrustEvidenceConfig
+  publicMessages?: EntityPublicMessages
+  triagePolicies?: EntityTriagePolicies
   serviceRules?: {
     attendanceMode?: 'sales' | 'support' | 'guidance' | 'mixed'
     responseWindowLabel?: string
     bookingEnabled?: boolean
     catalogEnabled?: boolean
   }
-  maxCapacity?: number
-  avgResponseMinutes?: number
-  publicMessages?: {
-    heroMessage?: string
-    intakeMessage?: string
-    availabilityMessage?: string
-  }
-  triagePolicies?: {
-    intakeCriteria?: string
-    priorityRules?: string
-    disqualificationRules?: string
-  }
-  trustEvidence?: {
-    enabled?: boolean
-    approvedCaseIds?: string[]
-  }
-  team?: Array<{
-    id: string
-    name: string
-    role?: string
-    oabCredential?: string
-    photoUrl?: string
-    specialties?: string[]
-    yearsOfExperience?: number
-    shortBio?: string
-    email?: string
-    phone?: string
-    status?: 'active' | 'inactive' | 'suspended'
-    isResponsible?: boolean
-    isPublic?: boolean
-  }>
-  responsibleProfessional?: {
-    photoUrl?: string
-    fullName: string
-    oabCredential?: string
-    specialties: string[]
-    yearsOfExperience?: number
-    shortBio?: string
-  }
-  officeGallery?: Array<{
-    id: string
-    url: string
-    isCover?: boolean
-  }>
-  institutionalVideo?: {
-    mode: 'external' | 'uploaded'
-    provider?: 'youtube' | 'vimeo' | 'upload'
-    url: string
-    title?: string
-    intro?: string
-  }
 }
+
+export type OfficeBusinessConfig = EntityBusinessConfig
 
 export type DiagnosisArtifact = {
   id: string
@@ -165,20 +206,30 @@ export type EntityBusinessConfigResponse = {
   updatedAt?: string
 }
 
-export type OfficeBusinessConfig = EntityBusinessConfig
+export type OfficeBusinessConfigResponse = {
+  status: 'ready'
+  officeId: string
+  businessConfig: OfficeBusinessConfig | null
+  updatedAt?: string
+}
 
 export type OfficeProfessional = {
   id: string
+  tenantId: number
+  userId?: number
   displayName: string
   email?: string
   phone?: string
+  status: 'active' | 'inactive' | 'suspended'
+  officeId?: string
   photoUrl?: string
   oabCredential?: string
   specialties: string[]
   bio?: string
   isResponsible: boolean
   isPublic: boolean
-  status: 'active' | 'inactive' | 'suspended'
+  createdAt: string
+  updatedAt: string
 }
 
 export type OfficeProfessionalPayload = {
@@ -194,10 +245,19 @@ export type OfficeProfessionalPayload = {
   status?: 'active' | 'inactive' | 'suspended'
 }
 
-export type OfficeMediaItem = {
-  id: string
-  url: string
-  isCover?: boolean
+export type UploadOfficeMediaResponse = {
+  status: 'ready'
+  officeId: string
+  media: OfficeMediaItem
+}
+
+export type UploadOfficeVideoResponse = {
+  status: 'ready'
+  officeId: string
+  video: {
+    url: string
+    provider: 'upload'
+  }
 }
 
 export type AdminLegalCaseStatus = 'open' | 'pending' | 'dispatched' | 'accepted' | 'in_progress' | 'closed'
@@ -220,6 +280,7 @@ export type AdminLegalCaseTimelineEntry = {
   type: 'case_opened' | 'message_added' | 'status_changed' | 'case_closed'
   createdAt: string
   summary: string
+  truthContract?: FrontendTruthContract
 }
 
 export type AdminLegalCaseOutcome = {
@@ -227,6 +288,8 @@ export type AdminLegalCaseOutcome = {
   feedback?: string
   closedBy: string
   closedAt: string
+  verifiedClientFeedback?: boolean
+  firstName?: string
 }
 
 export type AdminLegalCaseMonetization = {
@@ -297,12 +360,6 @@ export type AdminLawyerReputationResponse = {
   reputation: AdminLawyerReputation
 }
 
-function handleUnauthorizedAdminResponse() {
-  clearSession()
-  window.location.replace('/login')
-  throw new Error('Sessão expirada. Faça login novamente.')
-}
-
 function getBackendBaseUrl() {
   return readBackendBridgeBaseUrl()
 }
@@ -318,6 +375,37 @@ async function readApiErrorMessage(response: Response, fallback: string) {
   }
 
   return fallback
+}
+
+async function logCaseActionConflictInDev(args: {
+  response: Response
+  endpoint: string
+  caseId: string
+}) {
+  if (!import.meta.env.DEV || args.response.status !== 409) {
+    return
+  }
+
+  try {
+    const payload = await args.response.clone().json() as {
+      error?: { code?: string; message?: string }
+      status?: string
+    }
+    console.warn('[adminApi] case action conflict', {
+      endpoint: args.endpoint,
+      caseId: args.caseId,
+      status: args.response.status,
+      errorCode: payload.error?.code,
+      errorMessage: payload.error?.message,
+      responseStatus: payload.status,
+    })
+  } catch {
+    console.warn('[adminApi] case action conflict', {
+      endpoint: args.endpoint,
+      caseId: args.caseId,
+      status: args.response.status,
+    })
+  }
 }
 
 function buildCreateEntityPayload(input: CreateAdminEntityInput) {
@@ -356,43 +444,46 @@ function buildCreateEntityPayload(input: CreateAdminEntityInput) {
 }
 
 export async function listAdminEntities(baseUrl = getBackendBaseUrl()): Promise<AdminEntityListResponse> {
-  const response = await fetch(`${baseUrl}/me/escritorios`, {
+  const response = await fetch(`${baseUrl}/me/entities`, {
     headers: await buildRequiredBackendAuthHeaders(),
   })
-
-  if (response.status === 401) {
-    handleUnauthorizedAdminResponse()
-  }
 
   if (!response.ok) {
     throw new Error(`Failed to load entities (${response.status}).`)
   }
 
-  const payload = await response.json() as AdminOfficeListResponse
+  return response.json() as Promise<AdminEntityListResponse>
+}
 
-  return {
-    status: payload.status,
-    userId: payload.userId,
-    tenantId: payload.tenantId,
-    entities: payload.offices.map((office) => ({
-      entityId: office.officeId,
-      status: office.status,
-      entity: {
-        id: office.officeId,
-        name: office.officeName,
-        status: office.status,
-        createdAt: office.createdAt,
-        updatedAt: office.updatedAt,
-      },
-    })),
+export async function listAdminOffices(baseUrl = getBackendBaseUrl()): Promise<AdminOfficeListResponse> {
+  const response = await fetch(`${baseUrl}/me/escritorios`, {
+    headers: await buildRequiredBackendAuthHeaders(),
+  })
+
+  if (!response.ok) {
+    throw new Error(`Failed to load offices (${response.status}).`)
   }
+
+  return response.json() as Promise<AdminOfficeListResponse>
 }
 
 export async function createAdminEntity(
   input: CreateAdminEntityInput,
   baseUrl = getBackendBaseUrl(),
 ): Promise<CreateAdminEntityResponse> {
-  const response = await fetch(`${baseUrl}/entity/create`, {
+  const officeResponse = await createAdminOffice(input, baseUrl)
+  return {
+    ...officeResponse,
+    entityId: officeResponse.officeId,
+    entity: officeResponse.office,
+  }
+}
+
+export async function createAdminOffice(
+  input: CreateAdminOfficeInput,
+  baseUrl = getBackendBaseUrl(),
+): Promise<CreateAdminOfficeResponse> {
+  const response = await fetch(`${baseUrl}/escritorios/criar`, {
     method: 'POST',
     headers: await buildRequiredBackendAuthHeaders({
       'Content-Type': 'application/json',
@@ -415,23 +506,15 @@ export async function createAdminEntity(
     throw new Error(message)
   }
 
-  return response.json() as Promise<CreateAdminEntityResponse>
-}
-
-export async function listAdminOffices(baseUrl = getBackendBaseUrl()): Promise<AdminOfficeListResponse> {
-  const response = await fetch(`${baseUrl}/me/escritorios`, {
-    headers: await buildRequiredBackendAuthHeaders(),
-  })
-
-  if (response.status === 401) {
-    handleUnauthorizedAdminResponse()
+  const payload = await response.json() as CreateAdminEntityResponse
+  return {
+    status: payload.status,
+    officeId: payload.entityId,
+    office: payload.entity,
+    createdAt: payload.createdAt,
+    updatedAt: payload.updatedAt,
+    requestId: payload.requestId,
   }
-
-  if (!response.ok) {
-    throw new Error(`Failed to load offices (${response.status}).`)
-  }
-
-  return response.json() as Promise<AdminOfficeListResponse>
 }
 
 export async function getDiagnosis(
@@ -515,67 +598,16 @@ export async function getEntityBusinessConfig(
 export async function getOfficeBusinessConfig(
   officeId: string,
   baseUrl = getBackendBaseUrl(),
-): Promise<{ status: 'ready'; officeId: string; businessConfig: OfficeBusinessConfig | null; updatedAt?: string }> {
+): Promise<OfficeBusinessConfigResponse> {
   const response = await fetch(`${baseUrl}/escritorios/${encodeURIComponent(officeId)}/configuracao`, {
     headers: await buildRequiredBackendAuthHeaders(),
   })
 
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, `Failed to load office configuration (${response.status}).`))
+    throw new Error(`Failed to load office configuration (${response.status}).`)
   }
 
-  return response.json() as Promise<{ status: 'ready'; officeId: string; businessConfig: OfficeBusinessConfig | null; updatedAt?: string }>
-}
-
-export async function saveOfficeBusinessConfig(
-  officeId: string,
-  businessConfig: OfficeBusinessConfig,
-  baseUrl = getBackendBaseUrl(),
-): Promise<{ status: 'ready'; officeId: string; businessConfig: OfficeBusinessConfig | null; updatedAt?: string }> {
-  const response = await fetch(`${baseUrl}/escritorios/${encodeURIComponent(officeId)}/configuracao`, {
-    method: 'POST',
-    headers: await buildRequiredBackendAuthHeaders({
-      'Content-Type': 'application/json',
-    }),
-    body: JSON.stringify({ businessConfig }),
-  })
-
-  if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, `Failed to save office configuration (${response.status}).`))
-  }
-
-  return response.json() as Promise<{ status: 'ready'; officeId: string; businessConfig: OfficeBusinessConfig | null; updatedAt?: string }>
-}
-
-export async function createAdminOffice(
-  input: CreateAdminOfficeInput,
-  baseUrl = getBackendBaseUrl(),
-): Promise<{ officeId: string }> {
-  const response = await fetch(`${baseUrl}/escritorios/criar`, {
-    method: 'POST',
-    headers: await buildRequiredBackendAuthHeaders({
-      'Content-Type': 'application/json',
-    }),
-    body: JSON.stringify(input),
-  })
-
-  if (!response.ok) {
-    let message = `Failed to create office (${response.status}).`
-
-    try {
-      const payload = await response.json() as { error?: { message?: string } }
-      if (payload.error?.message) {
-        message = payload.error.message
-      }
-    } catch {
-      // Keep the default message if the response body is not JSON.
-    }
-
-    throw new Error(message)
-  }
-
-  const payload = await response.json() as { officeId: string }
-  return { officeId: payload.officeId }
+  return response.json() as Promise<OfficeBusinessConfigResponse>
 }
 
 export async function listOfficeProfessionals(
@@ -587,7 +619,7 @@ export async function listOfficeProfessionals(
   })
 
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, `Failed to list office professionals (${response.status}).`))
+    throw new Error(await readApiErrorMessage(response, `Failed to load office professionals (${response.status}).`))
   }
 
   return response.json() as Promise<{ status: 'ready'; officeId: string; professionals: OfficeProfessional[] }>
@@ -607,7 +639,7 @@ export async function createOfficeProfessional(
   })
 
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, `Failed to create office professional (${response.status}).`))
+    throw new Error(await readApiErrorMessage(response, `Failed to create professional (${response.status}).`))
   }
 
   return response.json() as Promise<{ status: 'ready'; officeId: string; professional: OfficeProfessional | null }>
@@ -628,10 +660,27 @@ export async function updateOfficeProfessional(
   })
 
   if (!response.ok) {
-    throw new Error(await readApiErrorMessage(response, `Failed to update office professional (${response.status}).`))
+    throw new Error(await readApiErrorMessage(response, `Failed to update professional (${response.status}).`))
   }
 
   return response.json() as Promise<{ status: 'ready'; officeId: string; professional: OfficeProfessional | null }>
+}
+
+export async function deactivateOfficeProfessional(
+  officeId: string,
+  professionalId: string,
+  baseUrl = getBackendBaseUrl(),
+): Promise<{ status: 'ready'; officeId: string; professionalId: string }> {
+  const response = await fetch(`${baseUrl}/escritorios/${encodeURIComponent(officeId)}/profissionais/${encodeURIComponent(professionalId)}/desativar`, {
+    method: 'POST',
+    headers: await buildRequiredBackendAuthHeaders(),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, `Failed to deactivate professional (${response.status}).`))
+  }
+
+  return response.json() as Promise<{ status: 'ready'; officeId: string; professionalId: string }>
 }
 
 export async function saveEntityBusinessConfig(
@@ -665,6 +714,79 @@ export async function saveEntityBusinessConfig(
   }
 
   return response.json() as Promise<EntityBusinessConfigResponse>
+}
+
+export async function saveOfficeBusinessConfig(
+  officeId: string,
+  businessConfig: OfficeBusinessConfig,
+  baseUrl = getBackendBaseUrl(),
+): Promise<OfficeBusinessConfigResponse> {
+  const response = await fetch(`${baseUrl}/escritorios/${encodeURIComponent(officeId)}/configuracao`, {
+    method: 'POST',
+    headers: await buildRequiredBackendAuthHeaders({
+      'Content-Type': 'application/json',
+    }),
+    body: JSON.stringify({
+      businessConfig,
+    }),
+  })
+
+  if (!response.ok) {
+    let message = `Failed to save office configuration (${response.status}).`
+
+    try {
+      const payload = await response.json() as { error?: { message?: string } }
+      if (payload.error?.message) {
+        message = payload.error.message
+      }
+    } catch {
+      // Keep fallback message.
+    }
+
+    throw new Error(message)
+  }
+
+  return response.json() as Promise<OfficeBusinessConfigResponse>
+}
+
+export async function uploadOfficeMedia(
+  officeId: string,
+  input: { fileName: string; dataUrl: string },
+  baseUrl = getBackendBaseUrl(),
+): Promise<UploadOfficeMediaResponse> {
+  const response = await fetch(`${baseUrl}/escritorios/${encodeURIComponent(officeId)}/midia`, {
+    method: 'POST',
+    headers: await buildRequiredBackendAuthHeaders({
+      'Content-Type': 'application/json',
+    }),
+    body: JSON.stringify(input),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, `Failed to upload office media (${response.status}).`))
+  }
+
+  return response.json() as Promise<UploadOfficeMediaResponse>
+}
+
+export async function uploadOfficeInstitutionalVideo(
+  officeId: string,
+  input: { fileName: string; dataUrl: string },
+  baseUrl = getBackendBaseUrl(),
+): Promise<UploadOfficeVideoResponse> {
+  const response = await fetch(`${baseUrl}/escritorios/${encodeURIComponent(officeId)}/video-institucional`, {
+    method: 'POST',
+    headers: await buildRequiredBackendAuthHeaders({
+      'Content-Type': 'application/json',
+    }),
+    body: JSON.stringify(input),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, `Failed to upload institutional video (${response.status}).`))
+  }
+
+  return response.json() as Promise<UploadOfficeVideoResponse>
 }
 
 export async function listEntityCases(
@@ -721,7 +843,7 @@ export async function getCaseMessages(
 
 export async function assignCase(
   caseId: string,
-  lawyerId = 'self',
+  lawyerId?: string,
   baseUrl = getBackendBaseUrl(),
 ): Promise<AdminLegalCaseResponse> {
   const response = await fetch(`${baseUrl}/cases/${encodeURIComponent(caseId)}/assign`, {
@@ -735,6 +857,11 @@ export async function assignCase(
   })
 
   if (!response.ok) {
+    await logCaseActionConflictInDev({
+      response,
+      endpoint: '/cases/:caseId/assign',
+      caseId,
+    })
     throw new Error(await readApiErrorMessage(response, `Failed to assign case (${response.status}).`))
   }
 
@@ -758,6 +885,11 @@ export async function respondToCase(
   })
 
   if (!response.ok) {
+    await logCaseActionConflictInDev({
+      response,
+      endpoint: '/cases/:caseId/messages',
+      caseId,
+    })
     throw new Error(await readApiErrorMessage(response, `Failed to respond to case (${response.status}).`))
   }
 
