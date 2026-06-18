@@ -1,6 +1,6 @@
 import AdminOfficeGatewayPage from '../pages/AdminOfficeGatewayPage'
 import AdminOfficeCasesPage from '../pages/AdminOfficeCasesPage'
-import AdminOfficeOverviewPage from '../pages/AdminOfficeOverviewPage'
+import AdminOfficeCabinPage from '../pages/AdminOfficeCabinPage'
 
 function decodeRouteSegment(value?: string | null) {
   return value ? decodeURIComponent(value) : null
@@ -54,5 +54,5 @@ export default function LegalAdminApp() {
     return <AdminOfficeCasesPage officeId={officeId} />
   }
 
-  return <AdminOfficeOverviewPage officeId={officeId} section={section} />
+  return <AdminOfficeCabinPage officeId={officeId} section={section} />
 }
