@@ -1,14 +1,15 @@
 import React, { type ReactNode } from 'react'
+import { LEGAL_ROUTES } from '../routes/legalRoutes'
 
 void React
 
 import '../styles/adminShell.css'
 
-type AdminShellSection = 'identity' | 'operation' | 'interaction' | 'intelligence' | 'runtime' | 'cases'
+type AdminShellSection = 'visao-geral' | 'casos' | 'triagem' | 'equipe' | 'cobertura' | 'disponibilidade' | 'perfil-publico' | 'publicacao' | 'configuracoes'
 
 type AdminShellProps = {
-  entityId: string
-  entityName?: string
+  officeId: string
+  officeName?: string
   section: AdminShellSection
   title: string
   subtitle: string
@@ -16,82 +17,87 @@ type AdminShellProps = {
 }
 
 type NavItem = {
-  id: AdminShellSection
+  id: 'visao-geral' | 'casos' | 'triagem' | 'equipe' | 'cobertura' | 'disponibilidade' | 'perfil-publico' | 'publicacao' | 'configuracoes'
+  routeSection: 'visao-geral' | 'casos' | 'triagem' | 'equipe' | 'cobertura' | 'disponibilidade' | 'perfil-publico' | 'publicacao' | 'configuracoes'
   label: string
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'identity', label: 'Identity' },
-  { id: 'operation', label: 'Operation' },
-  { id: 'interaction', label: 'Interaction' },
-  { id: 'intelligence', label: 'Intelligence' },
-  { id: 'runtime', label: 'Runtime' },
-  { id: 'cases', label: 'Cases' },
+  { id: 'visao-geral', routeSection: 'visao-geral', label: 'Visão Geral' },
+  { id: 'casos', routeSection: 'casos', label: 'Casos' },
+  { id: 'triagem', routeSection: 'triagem', label: 'Triagem' },
+  { id: 'equipe', routeSection: 'equipe', label: 'Equipe' },
+  { id: 'cobertura', routeSection: 'cobertura', label: 'Cobertura' },
+  { id: 'disponibilidade', routeSection: 'disponibilidade', label: 'Disponibilidade' },
+  { id: 'perfil-publico', routeSection: 'perfil-publico', label: 'Perfil Público' },
+  { id: 'publicacao', routeSection: 'publicacao', label: 'Publicação' },
+  { id: 'configuracoes', routeSection: 'configuracoes', label: 'Configurações' },
 ]
 
 export default function AdminShell({
-  entityId,
-  entityName,
+  officeId,
+  officeName,
   section,
   title,
   subtitle,
   children,
 }: AdminShellProps) {
-  const resolvedEntityLabel = entityName?.trim() || entityId
+  const resolvedOfficeLabel = officeName?.trim() || officeId
+  const activeSection = section
 
   return (
-    <main className="entity-console-shell">
-      <aside className="entity-console-shell__sidebar">
-        <a href="/admin" className="entity-console-shell__brand" aria-label="BrandSoul admin">
-          <span className="entity-console-shell__brand-mark" aria-hidden="true">◌</span>
-          <span className="entity-console-shell__brand-copy">
+    <main className="admin-office-shell">
+      <aside className="admin-office-shell__sidebar">
+        <a href="/admin" className="admin-office-shell__brand" aria-label="BrandSoul admin">
+          <span className="admin-office-shell__brand-mark" aria-hidden="true">◌</span>
+          <span className="admin-office-shell__brand-copy">
             <strong>BrandSoul</strong>
-            <span>entity console</span>
+            <span>cabine do escritório</span>
           </span>
         </a>
 
-        <div className="entity-console-shell__entity-meta">
-          <span className="entity-console-shell__entity-kicker">entidade</span>
-          <strong>{resolvedEntityLabel}</strong>
-          <span>{entityId}</span>
+        <div className="admin-office-shell__office-meta">
+          <span className="admin-office-shell__office-kicker">escritório</span>
+          <strong>{resolvedOfficeLabel}</strong>
+          <span>{officeId}</span>
         </div>
 
-        <nav className="entity-console-shell__nav" aria-label="Admin entity sections">
+        <nav className="admin-office-shell__nav" aria-label="Seções da cabine do escritório">
           {NAV_ITEMS.map((item) => {
-            const isActive = item.id === section
+            const isActive = item.id === activeSection
 
             return (
               <a
                 key={item.id}
-                href={`/admin/entity/${entityId}/${item.id}`}
-                className={`entity-console-shell__nav-link ${isActive ? 'entity-console-shell__nav-link--active' : ''}`}
+                href={LEGAL_ROUTES.admin.escritorio(officeId, item.routeSection)}
+                className={`admin-office-shell__nav-link ${isActive ? 'admin-office-shell__nav-link--active' : ''}`}
               >
-                {item.label}
+                <span>{item.label}</span>
               </a>
             )
           })}
         </nav>
       </aside>
 
-      <div className="entity-console-shell__main">
-        <header className="entity-console-shell__header">
+      <div className="admin-office-shell__main">
+        <header className="admin-office-shell__header">
           <div>
-            <p className="entity-console-shell__kicker">console de direcao</p>
+            <p className="admin-office-shell__kicker">comando da operação</p>
             <h1>{title}</h1>
-            <p className="entity-console-shell__subtitle">{subtitle}</p>
+            <p className="admin-office-shell__subtitle">{subtitle}</p>
           </div>
 
-          <div className="entity-console-shell__header-actions">
-            <a href="/admin" className="entity-console-shell__button entity-console-shell__button--ghost">
+          <div className="admin-office-shell__header-actions">
+            <a href="/admin" className="admin-office-shell__button admin-office-shell__button--ghost">
               Voltar ao admin
             </a>
-            <a href={`/entity/${entityId}`} className="entity-console-shell__button">
-              Ver publico
+            <a href={LEGAL_ROUTES.public.escritorioPerfil(officeId)} className="admin-office-shell__button">
+              Ver público
             </a>
           </div>
         </header>
 
-        <section className="entity-console-shell__content">
+        <section className="admin-office-shell__content">
           {children}
         </section>
       </div>
