@@ -70,6 +70,7 @@ type OwnershipClassification =
   | 'ORPHAN_OWNER'
   | 'RECYCLED_ID_COLLISION'
   | 'TEMPORAL_IMPOSSIBLE_OWNERSHIP'
+  | 'ARCHIVED_TEMPORAL_IMPOSSIBLE_OWNER'
   | 'MANUAL_REVIEW_REQUIRED'
 
 type ArchiveOrphansBody = {
@@ -748,7 +749,9 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
 
       const classification = isArchived && baseClassification === 'ORPHAN_OWNER'
         ? 'ARCHIVED_ORPHAN_OWNER' as const
-        : baseClassification
+        : isArchived && baseClassification === 'TEMPORAL_IMPOSSIBLE_OWNERSHIP'
+          ? 'ARCHIVED_TEMPORAL_IMPOSSIBLE_OWNER' as const
+          : baseClassification
 
       return {
         id: row.id,
@@ -767,6 +770,8 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
       if (row.classification === 'TEMPORAL_IMPOSSIBLE_OWNERSHIP') {
         accumulator.temporalImpossibleRows += 1
         accumulator.recycledIdCollisionRows += 1
+      } else if (row.classification === 'ARCHIVED_TEMPORAL_IMPOSSIBLE_OWNER') {
+        accumulator.archivedTemporalImpossibleRows += 1
       } else if (row.classification === 'ORPHAN_OWNER') {
         accumulator.orphanOwnerRows += 1
       } else if (row.classification === 'ARCHIVED_ORPHAN_OWNER') {
@@ -783,6 +788,7 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
       recycledIdCollisionRows: 0,
       orphanOwnerRows: 0,
       archivedOrphanOwnerRows: 0,
+      archivedTemporalImpossibleRows: 0,
       validOwnerRows: 0,
       manualReviewRows: 0,
     })
@@ -806,6 +812,7 @@ export async function registerInternalOwnershipCollisionInventoryRoutes(app: Fas
       validOwners: summary.validOwnerRows,
       orphanOwners: summary.orphanOwnerRows,
       archivedOrphanOwners: summary.archivedOrphanOwnerRows,
+      archivedTemporalImpossibleOwners: summary.archivedTemporalImpossibleRows,
       temporalImpossibleOwners: summary.temporalImpossibleRows,
       topOrphanOffices,
       archivedEntityProfileRows: classifiedRows.filter((row) => row.classification === 'ARCHIVED_ORPHAN_OWNER'),
