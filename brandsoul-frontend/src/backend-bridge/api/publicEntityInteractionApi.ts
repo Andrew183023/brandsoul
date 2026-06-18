@@ -106,8 +106,48 @@ export async function requestPublicOfficeInteraction(args: {
   officeId: string
   request: PublicEntityInteractionRequest
 }, baseUrl = getBackendBaseUrl()): Promise<PublicEntityDecisionResponse> {
-  return requestPublicEntityInteraction({
-    entityId: args.officeId,
-    request: args.request,
-  }, baseUrl)
+  const response = await fetch(`${baseUrl}/public/escritorios/${encodeURIComponent(args.officeId)}/triagem`, {
+    method: 'POST',
+    headers: await buildOptionalBackendAuthHeaders({
+      'Content-Type': 'application/json',
+    }),
+    body: JSON.stringify(args.request),
+  })
+
+  if (!response.ok) {
+    let code: string | undefined
+    let reason: string | undefined
+    let message = `Public office triage failed with status ${response.status}.`
+
+    try {
+      const payload = await response.json() as {
+        error?: {
+          code?: string
+          reason?: string
+          message?: string
+        }
+      }
+      code = payload.error?.code
+      reason = payload.error?.reason
+      message = payload.error?.message ?? message
+    } catch {
+      // noop
+    }
+
+    throw new PublicEntityInteractionApiError(message, {
+      status: response.status,
+      code,
+      reason,
+    })
+  }
+
+  const payload = await response.json() as unknown
+  if (!isDecisionResponseCandidate(payload)) {
+    throw new PublicEntityInteractionApiError('Invalid public office triage response.', {
+      status: 502,
+      code: 'INVALID_PUBLIC_OFFICE_TRIAGE_RESPONSE',
+    })
+  }
+
+  return payload
 }
