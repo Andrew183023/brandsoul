@@ -23,6 +23,27 @@ export type PublicEntitySocialState = {
 
 export type PublicOfficeSocialState = PublicEntitySocialState
 
+function buildEmptySocialState(entityId: string): PublicEntitySocialState {
+  return {
+    entityId,
+    aggregate: {
+      counts: {
+        viewed: 0,
+        interacted: 0,
+        exported: 0,
+        shared: 0,
+        followed: 0,
+      },
+      totalSignals: 0,
+      engagementScore: 0,
+      entityScore: 0,
+    },
+    viewerState: {
+      followed: false,
+    },
+  }
+}
+
 export async function getEntitySocialState(entityId: string, baseUrl = getBackendBaseUrl()): Promise<PublicEntitySocialState | undefined> {
   try {
     const response = await fetch(`${baseUrl}/entity/${entityId}/signals`, {
@@ -78,22 +99,16 @@ export async function registerEntitySignal(args: {
   }
 }
 
-export async function getOfficeSocialState(officeId: string, baseUrl = getBackendBaseUrl()) {
-  return getEntitySocialState(officeId, baseUrl)
+export async function getOfficeSocialState(officeId: string) {
+  return buildEmptySocialState(officeId)
 }
 
-export async function registerOfficeSignal(args: {
+export async function registerOfficeSignal(_args: {
   officeId: string
   type: PublicEntitySignalType
   source?: string
   weight?: number
   metadata?: Record<string, string | number | boolean | null | undefined>
-}, baseUrl = getBackendBaseUrl()) {
-  return registerEntitySignal({
-    entityId: args.officeId,
-    type: args.type,
-    source: args.source,
-    weight: args.weight,
-    metadata: args.metadata,
-  }, baseUrl)
+}) {
+  return
 }
