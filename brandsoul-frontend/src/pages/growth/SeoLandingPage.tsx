@@ -45,6 +45,10 @@ export default function SeoLandingPage({ city, specialty }: SeoLandingPageProps)
     const registry = readAttributionRegistry()
 
     if (!registry[attributionKey]) {
+      const pendingAttributionId = `pending-${Date.now()}`
+      registry[attributionKey] = pendingAttributionId
+      saveAttributionRegistry(registry)
+
       const searchParams = new URLSearchParams(window.location.search)
 
       void trackLandingVisit({
@@ -55,9 +59,16 @@ export default function SeoLandingPage({ city, specialty }: SeoLandingPageProps)
         utmTerm: searchParams.get('utm_term') ?? undefined,
         referrer: document.referrer || undefined,
       }).then((payload) => {
-        registry[attributionKey] = payload.attribution.id
-        saveAttributionRegistry(registry)
+        const nextRegistry = readAttributionRegistry()
+        nextRegistry[attributionKey] = payload.attribution.id
+        saveAttributionRegistry(nextRegistry)
       }).catch((error) => {
+        const nextRegistry = readAttributionRegistry()
+        if (nextRegistry[attributionKey] === pendingAttributionId) {
+          delete nextRegistry[attributionKey]
+          saveAttributionRegistry(nextRegistry)
+        }
+
         console.warn('[SeoLandingPage] attribution tracking failed', error)
       })
     }
