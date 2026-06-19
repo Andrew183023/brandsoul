@@ -366,6 +366,83 @@ const sqliteSchema = `
     CHECK (status IN ('pending', 'committed', 'rolled_back', 'failed'))
   );
 
+  CREATE TABLE IF NOT EXISTS regional_campaigns (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    campaign_name TEXT NOT NULL,
+    states_json TEXT NOT NULL DEFAULT '[]',
+    cities_json TEXT NOT NULL DEFAULT '[]',
+    radius_km INTEGER NOT NULL DEFAULT 30,
+    specialties_json TEXT NOT NULL DEFAULT '[]',
+    objective TEXT NOT NULL DEFAULT 'visibility',
+    budget_daily REAL,
+    budget_monthly REAL,
+    status TEXT NOT NULL DEFAULT 'draft',
+    clicks INTEGER NOT NULL DEFAULT 0,
+    impressions INTEGER NOT NULL DEFAULT 0,
+    leads_received INTEGER NOT NULL DEFAULT 0,
+    avg_cpc REAL,
+    conversions INTEGER NOT NULL DEFAULT 0,
+    seo_pages_generated INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (objective IN ('visibility', 'lead_capture', 'emergency_24h', 'institutional')),
+    CHECK (status IN ('draft', 'active', 'paused', 'archived'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_regional_campaigns_tenant ON regional_campaigns(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_regional_campaigns_entity ON regional_campaigns(entity_id);
+  CREATE INDEX IF NOT EXISTS idx_regional_campaigns_status ON regional_campaigns(status);
+
+  CREATE TABLE IF NOT EXISTS regional_signals (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    entity_id TEXT,
+    region TEXT NOT NULL,
+    city TEXT,
+    state TEXT,
+    specialty TEXT NOT NULL,
+    demand_score REAL NOT NULL DEFAULT 0,
+    competition_score REAL NOT NULL DEFAULT 0,
+    opportunity_score REAL NOT NULL DEFAULT 0,
+    trend TEXT NOT NULL DEFAULT 'stable',
+    source TEXT NOT NULL DEFAULT 'internal',
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    last_updated TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (trend IN ('growing', 'stable', 'declining')),
+    CHECK (source IN ('internal', 'google_trends', 'searchapi', 'manual'))
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_regional_signals_unique ON regional_signals(tenant_id, region, specialty, source);
+  CREATE INDEX IF NOT EXISTS idx_regional_signals_tenant_score ON regional_signals(tenant_id, opportunity_score);
+  CREATE INDEX IF NOT EXISTS idx_regional_signals_entity ON regional_signals(entity_id);
+
+  CREATE TABLE IF NOT EXISTS seo_landing_pages (
+    id TEXT PRIMARY KEY,
+    campaign_id TEXT NOT NULL,
+    tenant_id TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    slug TEXT NOT NULL UNIQUE,
+    city TEXT NOT NULL,
+    specialty TEXT NOT NULL,
+    title TEXT NOT NULL,
+    meta_desc TEXT,
+    content_html TEXT,
+    published INTEGER NOT NULL DEFAULT 0,
+    leads_received INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (campaign_id) REFERENCES regional_campaigns(id) ON DELETE CASCADE
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_seo_pages_tenant ON seo_landing_pages(tenant_id);
+  CREATE INDEX IF NOT EXISTS idx_seo_pages_entity ON seo_landing_pages(entity_id);
+  CREATE INDEX IF NOT EXISTS idx_seo_pages_slug ON seo_landing_pages(slug);
+  CREATE INDEX IF NOT EXISTS idx_seo_pages_campaign ON seo_landing_pages(campaign_id);
+
   CREATE TABLE IF NOT EXISTS flowmind_opportunities (
     id TEXT PRIMARY KEY,
     market_signal_id TEXT NOT NULL,
