@@ -47,11 +47,12 @@ export class SeoGeneratorService {
 
         await this.db.run(
           `
-            INSERT OR IGNORE INTO seo_landing_pages (
+            INSERT INTO seo_landing_pages (
               id, campaign_id, tenant_id, entity_id, slug, city, specialty,
               title, meta_desc, content_html, published, leads_received,
               created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
+            ON CONFLICT (slug) DO NOTHING
           `,
           randomUUID(),
           campaign.id,
