@@ -50,3 +50,27 @@ export async function activateRegionalCampaign(id: string) {
 
   return response.json()
 }
+
+export async function createRegionalCampaign(input: {
+  entityId: string
+  campaignName: string
+  states?: string[]
+  cities?: string[]
+  specialties?: string[]
+  objective?: 'visibility' | 'lead_capture' | 'emergency_24h' | 'institutional'
+}) {
+  const baseUrl = readBackendBridgeBaseUrl()
+  const response = await fetch(`${baseUrl}/growth/campaigns`, {
+    method: 'POST',
+    headers: await buildRequiredBackendAuthHeaders({
+      'Content-Type': 'application/json',
+    }),
+    body: JSON.stringify(input),
+  })
+
+  if (!response.ok) {
+    throw new Error(`Falha ao criar campanha regional (${response.status}).`)
+  }
+
+  return response.json()
+}

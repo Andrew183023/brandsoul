@@ -5,6 +5,7 @@ import SurfaceCard from '../components/SurfaceCard'
 import FeedbackBanner from '../components/FeedbackBanner'
 import {
   activateRegionalCampaign,
+  createRegionalCampaign,
   listRegionalCampaigns,
   type RegionalCampaign,
 } from '../backend-bridge/api/regionalGrowthApi'
@@ -13,6 +14,14 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
   const [campaigns, setCampaigns] = useState<RegionalCampaign[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [draft, setDraft] = useState({
+    campaignName: '',
+    city: '',
+    state: '',
+    specialty: '',
+    objective: 'lead_capture' as const,
+  })
+  const [isCreating, setIsCreating] = useState(false)
 
   async function loadCampaigns() {
     setIsLoading(true)
@@ -43,6 +52,37 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
       { active: 0, leads: 0, conversions: 0, seoPages: 0 },
     )
   }, [campaigns])
+
+  async function handleCreateCampaign(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setActionError(null)
+    setIsCreating(true)
+
+    try {
+      await createRegionalCampaign({
+        entityId: officeId,
+        campaignName: draft.campaignName.trim(),
+        cities: draft.city.trim() ? [draft.city.trim()] : [],
+        states: draft.state.trim() ? [draft.state.trim()] : [],
+        specialties: draft.specialty.trim() ? [draft.specialty.trim()] : [],
+        objective: draft.objective,
+      })
+
+      setDraft({
+        campaignName: '',
+        city: '',
+        state: '',
+        specialty: '',
+        objective: 'lead_capture',
+      })
+
+      await loadCampaigns()
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Falha ao criar campanha.')
+    } finally {
+      setIsCreating(false)
+    }
+  }
 
   async function handleActivate(campaignId: string) {
     setActionError(null)
@@ -82,6 +122,73 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
           <span>conversões</span>
         </SurfaceCard>
       </div>
+
+      <SurfaceCard tone="admin">
+        <h2>Criar campanha regional</h2>
+        <p>Defina uma cidade, especialidade e objetivo. Ao ativar, o Growth gera a landing SEO automaticamente.</p>
+
+        <form className="admin-form-section" onSubmit={(event) => void handleCreateCampaign(event)}>
+          <label className="admin-field">
+            <span>Nome da campanha</span>
+            <input
+              value={draft.campaignName}
+              onChange={(event) => setDraft((current) => ({ ...current, campaignName: event.target.value }))}
+              placeholder="Ex.: Trabalhista em Belo Horizonte"
+              required
+            />
+          </label>
+
+          <div className="admin-diagnosis-grid">
+            <label className="admin-field">
+              <span>Cidade</span>
+              <input
+                value={draft.city}
+                onChange={(event) => setDraft((current) => ({ ...current, city: event.target.value }))}
+                placeholder="Belo Horizonte"
+                required
+              />
+            </label>
+
+            <label className="admin-field">
+              <span>Estado</span>
+              <input
+                value={draft.state}
+                onChange={(event) => setDraft((current) => ({ ...current, state: event.target.value }))}
+                placeholder="MG"
+              />
+            </label>
+
+            <label className="admin-field">
+              <span>Especialidade</span>
+              <input
+                value={draft.specialty}
+                onChange={(event) => setDraft((current) => ({ ...current, specialty: event.target.value }))}
+                placeholder="trabalhista"
+                required
+              />
+            </label>
+
+            <label className="admin-field">
+              <span>Objetivo</span>
+              <select
+                value={draft.objective}
+                onChange={(event) => setDraft((current) => ({ ...current, objective: event.target.value as typeof draft.objective }))}
+              >
+                <option value="lead_capture">Captura de leads</option>
+                <option value="visibility">Visibilidade</option>
+                <option value="emergency_24h">Emergência 24h</option>
+                <option value="institutional">Institucional</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="admin-actions">
+            <button type="submit" className="admin-button" disabled={isCreating}>
+              {isCreating ? 'Criando...' : 'Criar campanha'}
+            </button>
+          </div>
+        </form>
+      </SurfaceCard>
 
       {isLoading ? (
         <FeedbackBanner>Carregando motor regional...</FeedbackBanner>
