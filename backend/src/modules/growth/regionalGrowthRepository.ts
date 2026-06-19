@@ -178,6 +178,19 @@ export class RegionalGrowthRepository {
     return row ? mapCampaignRow(row) : null
   }
 
+  async listPublishedSeoLandingPages() {
+    const rows = await this.db.all<SeoLandingPageRow[]>(
+      `
+        SELECT *
+        FROM seo_landing_pages
+        WHERE published = 1
+        ORDER BY updated_at DESC, created_at DESC
+      `,
+    )
+
+    return rows.map(mapSeoLandingPageRow)
+  }
+
   async getSeoLandingPageBySlug(slug: string) {
     const normalizedSlug = slug.startsWith('/') ? slug : `/${slug}`
 

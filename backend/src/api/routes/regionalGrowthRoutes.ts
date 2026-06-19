@@ -51,6 +51,31 @@ function isStringArray(value: unknown): value is string[] {
 }
 
 export async function registerRegionalGrowthRoutes(app: FastifyInstance) {
+  app.get('/sitemap.xml', async (_, reply) => {
+    const pages = await getRegionalGrowthRepository(app).listPublishedSeoLandingPages()
+    const baseUrl = (process.env.PUBLIC_SITE_URL ?? 'https://brandsoul-legal-platform.onrender.com').replace(/\/+$/, '')
+
+    const urls = pages.map((page) => {
+      const updatedAt = page.updatedAt.slice(0, 10)
+      return `  <url>
+    <loc>${baseUrl}${page.slug}</loc>
+    <lastmod>${updatedAt}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.7</priority>
+  </url>`
+    }).join('\n')
+
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls}
+</urlset>
+`
+
+    return reply
+      .header('Content-Type', 'application/xml; charset=utf-8')
+      .send(xml)
+  })
+
   app.get<{ Params: { city: string; specialty: string } }>('/p/:city/:specialty', { preHandler: [privateReadRateLimit] }, async (request, reply) => {
     const slug = `/p/${request.params.city}/${request.params.specialty}`
     const page = await getRegionalGrowthRepository(app).getSeoLandingPageBySlug(slug)
