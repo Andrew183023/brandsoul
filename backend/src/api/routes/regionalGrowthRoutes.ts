@@ -4,6 +4,7 @@ import type { BackendDatabase } from '../../db/index.js'
 import { createRateLimit } from '../middleware/rateLimit.js'
 import { getRequestAuth, requireAuth } from '../middleware/requireAuth.js'
 import { createRegionalGrowthRepository } from '../../modules/growth/regionalGrowthRepository.js'
+import { createSeoGeneratorService } from '../../modules/growth/seoGeneratorService.js'
 
 type BackendContext = {
   backendContext: {
@@ -50,6 +51,26 @@ function isStringArray(value: unknown): value is string[] {
 }
 
 export async function registerRegionalGrowthRoutes(app: FastifyInstance) {
+  app.get<{ Params: { city: string; specialty: string } }>('/p/:city/:specialty', { preHandler: [privateReadRateLimit] }, async (request, reply) => {
+    const slug = `/p/${request.params.city}/${request.params.specialty}`
+    const page = await getRegionalGrowthRepository(app).getSeoLandingPageBySlug(slug)
+
+    if (!page) {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'SEO_LANDING_PAGE_NOT_FOUND',
+          message: `Landing page "${slug}" was not found.`,
+        },
+      })
+    }
+
+    return {
+      status: 'ready' as const,
+      page,
+    }
+  })
+
   app.get('/growth/campaigns', { preHandler: [requireAuth, privateReadRateLimit] }, async (request) => {
     const auth = getRequestAuth(request)!
     const campaigns = await getRegionalGrowthRepository(app).listCampaignsByTenant(String(auth.tenantId))
@@ -141,9 +162,14 @@ export async function registerRegionalGrowthRoutes(app: FastifyInstance) {
       })
     }
 
+    const pages = await createSeoGeneratorService(getConnection(app)).generatePagesForCampaign(campaign)
+
+    const refreshedCampaign = await getRegionalGrowthRepository(app).getCampaignById(String(auth.tenantId), request.params.id)
+
     return {
       status: 'ready' as const,
-      campaign,
+      campaign: refreshedCampaign ?? campaign,
+      seoPages: pages,
     }
   })
 }

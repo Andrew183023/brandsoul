@@ -178,6 +178,22 @@ export class RegionalGrowthRepository {
     return row ? mapCampaignRow(row) : null
   }
 
+  async getSeoLandingPageBySlug(slug: string) {
+    const normalizedSlug = slug.startsWith('/') ? slug : `/${slug}`
+
+    const row = await this.db.get<SeoLandingPageRow>(
+      `
+        SELECT *
+        FROM seo_landing_pages
+        WHERE slug = ?
+          AND published = 1
+      `,
+      normalizedSlug,
+    )
+
+    return row ? mapSeoLandingPageRow(row) : null
+  }
+
   async activateCampaign(tenantId: string, campaignId: string) {
     const now = new Date().toISOString()
 
@@ -200,4 +216,57 @@ export class RegionalGrowthRepository {
 
 export function createRegionalGrowthRepository(db: BackendDatabase) {
   return new RegionalGrowthRepository(db)
+}
+
+export type SeoLandingPageRecord = {
+  id: string
+  campaignId: string
+  tenantId: string
+  entityId: string
+  slug: string
+  city: string
+  specialty: string
+  title: string
+  metaDesc?: string
+  contentHtml?: string
+  published: boolean
+  leadsReceived: number
+  createdAt: string
+  updatedAt: string
+}
+
+type SeoLandingPageRow = {
+  id: string
+  campaign_id: string
+  tenant_id: string
+  entity_id: string
+  slug: string
+  city: string
+  specialty: string
+  title: string
+  meta_desc: string | null
+  content_html: string | null
+  published: number
+  leads_received: number
+  created_at: string
+  updated_at: string
+}
+
+export function mapSeoLandingPageRow(row: SeoLandingPageRow): SeoLandingPageRecord {
+  return {
+    id: row.id,
+    campaignId: row.campaign_id,
+    tenantId: row.tenant_id,
+    entityId: row.entity_id,
+    slug: row.slug,
+    city: row.city,
+    specialty: row.specialty,
+    title: row.title,
+    metaDesc: row.meta_desc ?? undefined,
+    contentHtml: row.content_html ?? undefined,
+    published: row.published === 1,
+    leadsReceived: row.leads_received,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
 }
