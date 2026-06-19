@@ -1,12 +1,39 @@
 import { useEffect, useState } from 'react'
 
 import { getSeoLandingPage, type SeoLandingPage } from '../../backend-bridge/api/seoLandingApi'
+import { trackLandingVisit } from '../../backend-bridge/api/leadAttributionApi'
 import PublicShell from '../../app/shells/PublicShell'
 import '../../styles/entityPublicPage.css'
+
+const ATTRIBUTION_STORAGE_KEY = 'brandsoul_growth_attribution'
+
+type AttributionRegistry = Record<string, string>
 
 type SeoLandingPageProps = {
   city: string
   specialty: string
+}
+
+function buildAttributionKey(pathname: string, search: string) {
+  return `${pathname}${search}`.toLowerCase()
+}
+
+function readAttributionRegistry() {
+  try {
+    const raw = window.localStorage.getItem(ATTRIBUTION_STORAGE_KEY)
+    if (!raw) {
+      return {}
+    }
+
+    const parsed = JSON.parse(raw) as unknown
+    return parsed && typeof parsed === 'object' ? parsed as AttributionRegistry : {}
+  } catch {
+    return {}
+  }
+}
+
+function saveAttributionRegistry(registry: AttributionRegistry) {
+  window.localStorage.setItem(ATTRIBUTION_STORAGE_KEY, JSON.stringify(registry))
 }
 
 export default function SeoLandingPage({ city, specialty }: SeoLandingPageProps) {
@@ -14,6 +41,27 @@ export default function SeoLandingPage({ city, specialty }: SeoLandingPageProps)
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
+    const attributionKey = buildAttributionKey(window.location.pathname, window.location.search)
+    const registry = readAttributionRegistry()
+
+    if (!registry[attributionKey]) {
+      const searchParams = new URLSearchParams(window.location.search)
+
+      void trackLandingVisit({
+        landingSlug: window.location.pathname,
+        utmSource: searchParams.get('utm_source') ?? undefined,
+        utmMedium: searchParams.get('utm_medium') ?? undefined,
+        utmCampaign: searchParams.get('utm_campaign') ?? undefined,
+        utmTerm: searchParams.get('utm_term') ?? undefined,
+        referrer: document.referrer || undefined,
+      }).then((payload) => {
+        registry[attributionKey] = payload.attribution.id
+        saveAttributionRegistry(registry)
+      }).catch((error) => {
+        console.warn('[SeoLandingPage] attribution tracking failed', error)
+      })
+    }
+
     let cancelled = false
 
     async function loadPage() {

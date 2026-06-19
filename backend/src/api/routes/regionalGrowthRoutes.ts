@@ -5,6 +5,7 @@ import { createRateLimit } from '../middleware/rateLimit.js'
 import { getRequestAuth, requireAuth } from '../middleware/requireAuth.js'
 import { createRegionalGrowthRepository } from '../../modules/growth/regionalGrowthRepository.js'
 import { createSeoGeneratorService } from '../../modules/growth/seoGeneratorService.js'
+import { createLeadAttributionRepository } from '../../modules/growth/leadAttributionRepository.js'
 
 type BackendContext = {
   backendContext: {
@@ -32,6 +33,10 @@ function getRegionalGrowthRepository(app: FastifyInstance) {
   return createRegionalGrowthRepository(getConnection(app))
 }
 
+function getLeadAttributionRepository(app: FastifyInstance) {
+  return createLeadAttributionRepository(getConnection(app))
+}
+
 const privateReadRateLimit = createRateLimit({
   namespace: 'growth-read',
   max: 120,
@@ -50,7 +55,49 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string')
 }
 
+
+
 export async function registerRegionalGrowthRoutes(app: FastifyInstance) {
+  app.post<{
+    Body: {
+      landingSlug?: string
+      campaignId?: string
+      landingPageId?: string
+      utmSource?: string
+      utmMedium?: string
+      utmCampaign?: string
+      utmTerm?: string
+      referrer?: string
+    }
+  }>('/growth/lead-attribution', async (request, reply) => {
+    const landingSlug = request.body?.landingSlug?.trim()
+
+    if (!landingSlug) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_LEAD_ATTRIBUTION',
+          message: 'landingSlug is required.',
+        },
+      })
+    }
+
+    const attribution = await getLeadAttributionRepository(app).createAttribution({
+      landingSlug,
+      campaignId: request.body?.campaignId,
+      landingPageId: request.body?.landingPageId,
+      utmSource: request.body?.utmSource,
+      utmMedium: request.body?.utmMedium,
+      utmCampaign: request.body?.utmCampaign,
+      utmTerm: request.body?.utmTerm,
+      referrer: request.body?.referrer,
+    })
+
+    return {
+      status: 'ready' as const,
+      attribution,
+    }
+  })
   app.get('/sitemap.xml', async (_, reply) => {
     const pages = await getRegionalGrowthRepository(app).listPublishedSeoLandingPages()
     const baseUrl = (process.env.PUBLIC_SITE_URL ?? 'https://brandsoul-legal-platform.onrender.com').replace(/\/+$/, '')

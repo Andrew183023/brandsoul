@@ -420,6 +420,26 @@ const sqliteSchema = `
   CREATE INDEX IF NOT EXISTS idx_regional_signals_tenant_score ON regional_signals(tenant_id, opportunity_score);
   CREATE INDEX IF NOT EXISTS idx_regional_signals_entity ON regional_signals(entity_id);
 
+  CREATE TABLE IF NOT EXISTS regional_lead_attribution (
+    id TEXT PRIMARY KEY,
+    lead_id TEXT,
+    campaign_id TEXT,
+    landing_page_id TEXT,
+    landing_slug TEXT NOT NULL,
+    utm_source TEXT,
+    utm_medium TEXT,
+    utm_campaign TEXT,
+    utm_term TEXT,
+    referrer TEXT,
+    first_touch_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_regional_lead_attribution_campaign ON regional_lead_attribution(campaign_id);
+  CREATE INDEX IF NOT EXISTS idx_regional_lead_attribution_landing ON regional_lead_attribution(landing_slug);
+  CREATE INDEX IF NOT EXISTS idx_regional_lead_attribution_source ON regional_lead_attribution(utm_source);
+
   CREATE TABLE IF NOT EXISTS seo_landing_pages (
     id TEXT PRIMARY KEY,
     campaign_id TEXT NOT NULL,
