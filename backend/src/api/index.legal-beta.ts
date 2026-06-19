@@ -8,6 +8,7 @@ import { registerLegalBetaHealthRoute } from './routes/legalBetaHealthRoute.js'
 import { registerLegalBetaInternalReplayAdminRoutes } from './routes/legalBetaInternalReplayAdminRoutes.js'
 import { registerInternalOwnershipCollisionInventoryRoutes } from './routes/internalOwnershipCollisionInventory.js'
 import { registerLegalBetaPublicOfficeRoutes } from './routes/legalBetaPublicOfficeRoutes.js'
+import { registerRegionalGrowthRoutes } from './routes/regionalGrowthRoutes.js'
 
 export async function registerLegalBetaApi(app: FastifyInstance) {
   await registerAuthRoutes(app)
@@ -18,4 +19,5 @@ export async function registerLegalBetaApi(app: FastifyInstance) {
   await registerLegalBetaPublicOfficeRoutes(app)
   await registerLegalBetaClientPortalRoutes(app)
   await registerLegalBetaCaseRoutes(app)
+  await registerRegionalGrowthRoutes(app)
 }
