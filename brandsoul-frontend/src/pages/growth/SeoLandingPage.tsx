@@ -6,6 +6,7 @@ import PublicShell from '../../app/shells/PublicShell'
 import '../../styles/entityPublicPage.css'
 
 const ATTRIBUTION_STORAGE_KEY = 'brandsoul_growth_attribution'
+const runtimeAttributionLocks = new Set<string>()
 
 type AttributionRegistry = Record<string, string>
 
@@ -42,37 +43,48 @@ export default function SeoLandingPage({ city, specialty }: SeoLandingPageProps)
 
   useEffect(() => {
     const attributionKey = buildAttributionKey(window.location.pathname, window.location.search)
-    const registry = readAttributionRegistry()
 
-    if (!registry[attributionKey]) {
-      const pendingAttributionId = `pending-${Date.now()}`
-      registry[attributionKey] = pendingAttributionId
-      saveAttributionRegistry(registry)
-
-      const searchParams = new URLSearchParams(window.location.search)
-
-      void trackLandingVisit({
-        landingSlug: window.location.pathname,
-        utmSource: searchParams.get('utm_source') ?? undefined,
-        utmMedium: searchParams.get('utm_medium') ?? undefined,
-        utmCampaign: searchParams.get('utm_campaign') ?? undefined,
-        utmTerm: searchParams.get('utm_term') ?? undefined,
-        referrer: document.referrer || undefined,
-      }).then((payload) => {
-        const nextRegistry = readAttributionRegistry()
-        nextRegistry[attributionKey] = payload.attribution.id
-        saveAttributionRegistry(nextRegistry)
-      }).catch((error) => {
-        const nextRegistry = readAttributionRegistry()
-        if (nextRegistry[attributionKey] === pendingAttributionId) {
-          delete nextRegistry[attributionKey]
-          saveAttributionRegistry(nextRegistry)
-        }
-
-        console.warn('[SeoLandingPage] attribution tracking failed', error)
-      })
+    if (runtimeAttributionLocks.has(attributionKey)) {
+      return
     }
 
+    const registry = readAttributionRegistry()
+    if (registry[attributionKey]) {
+      runtimeAttributionLocks.add(attributionKey)
+      return
+    }
+
+    const pendingAttributionId = `pending-${Date.now()}`
+    runtimeAttributionLocks.add(attributionKey)
+    registry[attributionKey] = pendingAttributionId
+    saveAttributionRegistry(registry)
+
+    const searchParams = new URLSearchParams(window.location.search)
+
+    void trackLandingVisit({
+      landingSlug: window.location.pathname,
+      utmSource: searchParams.get('utm_source') ?? undefined,
+      utmMedium: searchParams.get('utm_medium') ?? undefined,
+      utmCampaign: searchParams.get('utm_campaign') ?? undefined,
+      utmTerm: searchParams.get('utm_term') ?? undefined,
+      referrer: document.referrer || undefined,
+    }).then((payload) => {
+      const nextRegistry = readAttributionRegistry()
+      nextRegistry[attributionKey] = payload.attribution.id
+      saveAttributionRegistry(nextRegistry)
+    }).catch((error) => {
+      const nextRegistry = readAttributionRegistry()
+      if (nextRegistry[attributionKey] === pendingAttributionId) {
+        delete nextRegistry[attributionKey]
+        saveAttributionRegistry(nextRegistry)
+      }
+
+      runtimeAttributionLocks.delete(attributionKey)
+      console.warn('[SeoLandingPage] attribution tracking failed', error)
+    })
+  }, [])
+
+  useEffect(() => {
     let cancelled = false
 
     async function loadPage() {
