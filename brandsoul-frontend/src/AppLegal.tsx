@@ -10,12 +10,17 @@ const InstitutionalOnboardingWizardPage = lazy(() => import('./pages/Institution
 const DiscoveryPage = lazy(() => import('./pages/DiscoveryPage.tsx'))
 const HomePublicPage = lazy(() => import('./pages/HomePublicPage.tsx'))
 const OfficeProfilePage = lazy(() => import('./pages/OfficeProfilePage.tsx'))
+const SeoLandingPage = lazy(() => import('./pages/growth/SeoLandingPage.tsx'))
 const ClientPortalPage = lazy(() => import('./pages/ClientPortalPage.tsx'))
 const TransparencyPage = lazy(() => import('./pages/TransparencyPage.tsx'))
 const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage.tsx'))
 const LoginPage = lazy(() => import('./pages/LoginPage.tsx'))
 const RegisterPage = lazy(() => import('./pages/RegisterPage.tsx'))
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage.tsx'))
+
+function decodeRouteSegment(value?: string | null) {
+  return value ? decodeURIComponent(value) : null
+}
 
 function isValidPublicRouteSegment(value?: string | null) {
   return Boolean(value && !value.startsWith(':'))
@@ -72,6 +77,14 @@ function LegalRoot() {
   const showForOfficesPage = pathname === LEGAL_ROUTES.public.paraEscritorios
   const showAdminPage = pathname === '/admin'
     || pathname.startsWith('/admin/')
+
+  const seoLandingMatch = pathname.match(/^\/p\/([^/]+)\/([^/]+)\/?$/)
+  const seoLandingRoute = seoLandingMatch
+    ? {
+        city: decodeRouteSegment(seoLandingMatch[1]),
+        specialty: decodeRouteSegment(seoLandingMatch[2]),
+      }
+    : null
 
   const officeIdFromCanonicalPath = parseOfficeIdFromPublicPath(pathname)
   const clientPortalRoute = parseClientPortalFromPublicPath(pathname)
@@ -162,6 +175,18 @@ function LegalRoot() {
     }
 
     return <ClientPortalPage caseId={portalCaseId} token={portalToken} />
+  }
+
+  if (seoLandingRoute) {
+    if (!seoLandingRoute.city || !seoLandingRoute.specialty || !isValidPublicRouteSegment(seoLandingRoute.city) || !isValidPublicRouteSegment(seoLandingRoute.specialty)) {
+      return <RouteNotFoundPage />
+    }
+
+    return (
+      <Suspense fallback={<RouteLoadingPage />}>
+        <SeoLandingPage city={seoLandingRoute.city} specialty={seoLandingRoute.specialty} />
+      </Suspense>
+    )
   }
 
   if (officeIdFromCanonicalPath) {
