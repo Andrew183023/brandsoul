@@ -7,6 +7,7 @@ export type AdminOfficeSection =
   | 'disponibilidade'
   | 'perfil-publico'
   | 'publicacao'
+  | 'crescimento'
   | 'configuracoes'
 
 export const LEGAL_ROUTES = {

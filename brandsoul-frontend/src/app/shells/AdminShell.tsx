@@ -5,7 +5,7 @@ void React
 
 import '../styles/adminShell.css'
 
-type AdminShellSection = 'visao-geral' | 'casos' | 'triagem' | 'equipe' | 'cobertura' | 'disponibilidade' | 'perfil-publico' | 'publicacao' | 'configuracoes'
+type AdminShellSection = 'visao-geral' | 'casos' | 'triagem' | 'equipe' | 'cobertura' | 'disponibilidade' | 'perfil-publico' | 'publicacao' | 'crescimento' | 'configuracoes'
 
 type AdminShellProps = {
   officeId: string
@@ -17,8 +17,8 @@ type AdminShellProps = {
 }
 
 type NavItem = {
-  id: 'visao-geral' | 'casos' | 'triagem' | 'equipe' | 'cobertura' | 'disponibilidade' | 'perfil-publico' | 'publicacao' | 'configuracoes'
-  routeSection: 'visao-geral' | 'casos' | 'triagem' | 'equipe' | 'cobertura' | 'disponibilidade' | 'perfil-publico' | 'publicacao' | 'configuracoes'
+  id: 'visao-geral' | 'casos' | 'triagem' | 'equipe' | 'cobertura' | 'disponibilidade' | 'perfil-publico' | 'publicacao' | 'crescimento' | 'configuracoes'
+  routeSection: 'visao-geral' | 'casos' | 'triagem' | 'equipe' | 'cobertura' | 'disponibilidade' | 'perfil-publico' | 'publicacao' | 'crescimento' | 'configuracoes'
   label: string
 }
 
@@ -31,6 +31,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'disponibilidade', routeSection: 'disponibilidade', label: 'Disponibilidade' },
   { id: 'perfil-publico', routeSection: 'perfil-publico', label: 'Perfil Público' },
   { id: 'publicacao', routeSection: 'publicacao', label: 'Publicação' },
+  { id: 'crescimento', routeSection: 'crescimento', label: 'Crescimento' },
   { id: 'configuracoes', routeSection: 'configuracoes', label: 'Configurações' },
 ]
 

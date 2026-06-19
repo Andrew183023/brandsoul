@@ -1,6 +1,7 @@
 import AdminOfficeGatewayPage from '../pages/AdminOfficeGatewayPage'
 import AdminOfficeCasesPage from '../pages/AdminOfficeCasesPage'
 import AdminOfficeCabinPage from '../pages/AdminOfficeCabinPage'
+import AdminOfficeGrowthPage from '../pages/AdminOfficeGrowthPage'
 
 function decodeRouteSegment(value?: string | null) {
   return value ? decodeURIComponent(value) : null
@@ -15,6 +16,7 @@ type LegalAdminSection =
   | 'disponibilidade'
   | 'perfil-publico'
   | 'publicacao'
+  | 'crescimento'
   | 'configuracoes'
 
 function RouteNotFoundPage() {
@@ -30,7 +32,7 @@ function RouteNotFoundPage() {
 
 export default function LegalAdminApp() {
   const pathname = window.location.pathname
-  const officeSectionMatch = window.location.pathname.match(/^\/admin\/escritorios\/([^/]+)\/(visao-geral|casos|triagem|equipe|cobertura|disponibilidade|perfil-publico|publicacao|configuracoes)\/?$/)
+  const officeSectionMatch = window.location.pathname.match(/^\/admin\/escritorios\/([^/]+)\/(visao-geral|casos|triagem|equipe|cobertura|disponibilidade|perfil-publico|publicacao|crescimento|configuracoes)\/?$/)
   const officeId = decodeRouteSegment(officeSectionMatch?.[1])
   const section = officeSectionMatch?.[2] as LegalAdminSection | undefined
 
@@ -52,6 +54,10 @@ export default function LegalAdminApp() {
 
   if (section === 'casos') {
     return <AdminOfficeCasesPage officeId={officeId} />
+  }
+
+  if (section === 'crescimento') {
+    return <AdminOfficeGrowthPage officeId={officeId} />
   }
 
   return <AdminOfficeCabinPage officeId={officeId} section={section} />

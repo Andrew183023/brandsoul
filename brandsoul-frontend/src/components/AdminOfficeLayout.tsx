@@ -12,7 +12,7 @@ export default function AdminOfficeLayout({
   children,
 }: {
   officeId: string
-  section: 'visao-geral' | 'casos' | 'triagem' | 'equipe' | 'cobertura' | 'disponibilidade' | 'perfil-publico' | 'publicacao' | 'configuracoes'
+  section: 'visao-geral' | 'casos' | 'triagem' | 'equipe' | 'cobertura' | 'disponibilidade' | 'perfil-publico' | 'publicacao' | 'crescimento' | 'configuracoes'
   title: string
   subtitle: string
   children: ReactNode
