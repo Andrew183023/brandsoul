@@ -45,6 +45,22 @@ export type RadiusRecommendation = {
   usedFallback: boolean
 }
 
+export type RegionalSignal = {
+  id: string
+  tenantId: string
+  entityId: string
+  city: string
+  specialty: string
+  visits: number
+  leads: number
+  cases: number
+  urgentLeads: number
+  urgencyScore: number
+  signalScore: number
+  createdAt: string
+  updatedAt: string
+}
+
 async function readApiErrorMessage(response: Response, fallback: string) {
   try {
     const payload = await response.json() as { error?: { message?: string } }
@@ -180,4 +196,36 @@ export async function getRadiusRecommendation(specialty: string, populationDensi
 
   const payload = await response.json() as { recommendation: RadiusRecommendation }
   return payload.recommendation
+}
+
+export async function listRegionalSignals(entityId: string) {
+  const baseUrl = readBackendBridgeBaseUrl()
+  const response = await fetch(`${baseUrl}/growth/signals?entityId=${encodeURIComponent(entityId)}`, {
+    headers: await buildRequiredBackendAuthHeaders(),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, `Falha ao carregar oportunidades detectadas (${response.status}).`))
+  }
+
+  const payload = await response.json() as { signals?: RegionalSignal[] }
+  return payload.signals ?? []
+}
+
+export async function recalculateRegionalSignals(entityId: string) {
+  const baseUrl = readBackendBridgeBaseUrl()
+  const response = await fetch(`${baseUrl}/growth/signals/recalculate`, {
+    method: 'POST',
+    headers: await buildRequiredBackendAuthHeaders({
+      'Content-Type': 'application/json',
+    }),
+    body: JSON.stringify({ entityId }),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, `Falha ao recalcular sinais (${response.status}).`))
+  }
+
+  const payload = await response.json() as { signals?: RegionalSignal[] }
+  return payload.signals ?? []
 }

@@ -9,6 +9,7 @@ import { recommendRadiusForSpecialty, type RadiusRecommendation } from '../../mo
 import { createSeoGeneratorService } from '../../modules/growth/seoGeneratorService.js'
 import { createLeadAttributionRepository } from '../../modules/growth/leadAttributionRepository.js'
 import { createRegionalLeadRepository, type RegionalLeadUrgency } from '../../modules/growth/regionalLeadRepository.js'
+import { createRegionalSignalsRepository } from '../../modules/growth/regionalSignalsRepository.js'
 import { createEntityRepository } from '../../repositories/entityRepository.js'
 import { createCaseService } from '../../modules/legalCases/caseService.js'
 import type { CasePriority } from '../../modules/legalCases/caseTypes.js'
@@ -60,6 +61,10 @@ function getLeadAttributionRepository(app: FastifyInstance) {
 
 function getRegionalLeadRepository(app: FastifyInstance) {
   return createRegionalLeadRepository(getConnection(app))
+}
+
+function getRegionalSignalsRepository(app: FastifyInstance) {
+  return createRegionalSignalsRepository(getConnection(app))
 }
 
 function getEntityRepository(app: FastifyInstance) {
@@ -472,6 +477,102 @@ export async function registerRegionalGrowthRoutes(app: FastifyInstance) {
       status: 'ready' as const,
       entityId,
       leads,
+    }
+  })
+
+  app.get<{
+    Querystring: {
+      entityId?: string
+    }
+  }>('/growth/signals', { preHandler: [requireAuth, privateReadRateLimit] }, async (request, reply) => {
+    const auth = getRequestAuth(request)!
+    const entityId = readRequiredString(request.query?.entityId)
+
+    if (!entityId) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'ENTITY_ID_REQUIRED',
+          message: 'entityId is required.',
+        },
+      })
+    }
+
+    const entity = await getEntityRepository(app).getEntityById<EntityProfile>(entityId)
+    if (!entity) {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'ENTITY_NOT_FOUND',
+          message: `Entity "${entityId}" was not found.`,
+        },
+      })
+    }
+
+    if (!isOwnedByAuth(entity, auth.userId, auth.tenantId)) {
+      return reply.status(403).send({
+        status: 'failed',
+        error: {
+          code: 'ENTITY_ACCESS_DENIED',
+          message: 'You do not own this office.',
+        },
+      })
+    }
+
+    const signals = await getRegionalSignalsRepository(app).listSignalsByEntity(String(auth.tenantId), entityId)
+
+    return {
+      status: 'ready' as const,
+      entityId,
+      signals,
+    }
+  })
+
+  app.post<{
+    Body: {
+      entityId?: string
+    }
+  }>('/growth/signals/recalculate', { preHandler: [requireAuth, privateWriteRateLimit] }, async (request, reply) => {
+    const auth = getRequestAuth(request)!
+    const entityId = readRequiredString(request.body?.entityId)
+
+    if (!entityId) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'ENTITY_ID_REQUIRED',
+          message: 'entityId is required.',
+        },
+      })
+    }
+
+    const entity = await getEntityRepository(app).getEntityById<EntityProfile>(entityId)
+    if (!entity) {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'ENTITY_NOT_FOUND',
+          message: `Entity "${entityId}" was not found.`,
+        },
+      })
+    }
+
+    if (!isOwnedByAuth(entity, auth.userId, auth.tenantId)) {
+      return reply.status(403).send({
+        status: 'failed',
+        error: {
+          code: 'ENTITY_ACCESS_DENIED',
+          message: 'You do not own this office.',
+        },
+      })
+    }
+
+    const signals = await getRegionalSignalsRepository(app).recalculateSignalsForEntity(String(auth.tenantId), entityId)
+
+    return {
+      status: 'ready' as const,
+      entityId,
+      signals,
     }
   })
 

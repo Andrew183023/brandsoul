@@ -9,11 +9,14 @@ import {
   createRegionalCampaign,
   deleteCampaignTarget,
   getRadiusRecommendation,
+  listRegionalSignals,
   listRegionalCampaigns,
   listCampaignTargets,
   type PopulationDensity,
   type RegionalCampaign,
   type RegionalCampaignTarget,
+  type RegionalSignal,
+  recalculateRegionalSignals,
 } from '../backend-bridge/api/regionalGrowthApi'
 import {
   convertRegionalLeadToCase,
@@ -46,6 +49,7 @@ function createEmptyTargetDraft(): CampaignTargetDraft {
 export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }) {
   const [campaigns, setCampaigns] = useState<RegionalCampaign[]>([])
   const [leads, setLeads] = useState<RegionalLead[]>([])
+  const [signals, setSignals] = useState<RegionalSignal[]>([])
   const [targetsByCampaign, setTargetsByCampaign] = useState<Record<string, RegionalCampaignTarget[]>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -61,6 +65,7 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
   const [creatingTargetCampaignId, setCreatingTargetCampaignId] = useState<string | null>(null)
   const [deletingTargetId, setDeletingTargetId] = useState<string | null>(null)
   const [suggestingRadiusCampaignId, setSuggestingRadiusCampaignId] = useState<string | null>(null)
+  const [isRecalculatingSignals, setIsRecalculatingSignals] = useState(false)
   const [targetDrafts, setTargetDrafts] = useState<Record<string, CampaignTargetDraft>>({})
 
   async function loadGrowthData() {
@@ -68,9 +73,10 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
     setActionError(null)
 
     try {
-      const [campaignPayload, leadPayload] = await Promise.all([
+      const [campaignPayload, leadPayload, signalPayload] = await Promise.all([
         listRegionalCampaigns(),
         listRegionalLeadsByEntity(officeId),
+        listRegionalSignals(officeId),
       ])
       const officeCampaigns = campaignPayload.filter((campaign) => campaign.entityId === officeId)
       const targetEntries = await Promise.all(
@@ -79,6 +85,7 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
 
       setCampaigns(officeCampaigns)
       setLeads(leadPayload)
+      setSignals(signalPayload)
       setTargetsByCampaign(Object.fromEntries(targetEntries))
       setTargetDrafts((current) => {
         const next: Record<string, CampaignTargetDraft> = {}
@@ -91,6 +98,20 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
       setActionError(error instanceof Error ? error.message : 'Falha ao carregar dados de crescimento.')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  async function handleRecalculateSignals() {
+    setActionError(null)
+    setIsRecalculatingSignals(true)
+
+    try {
+      const nextSignals = await recalculateRegionalSignals(officeId)
+      setSignals(nextSignals)
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Falha ao recalcular sinais.')
+    } finally {
+      setIsRecalculatingSignals(false)
     }
   }
 
@@ -385,6 +406,44 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
                 </div>
               </SurfaceCard>
             ))}
+          </div>
+        )}
+      </SurfaceCard>
+
+      <SurfaceCard tone="admin">
+        <div className="admin-card-header">
+          <h2>Oportunidades Detectadas</h2>
+          <button
+            type="button"
+            className="admin-button"
+            disabled={isRecalculatingSignals}
+            onClick={() => void handleRecalculateSignals()}
+          >
+            {isRecalculatingSignals ? 'Recalculando sinais...' : 'Recalcular sinais'}
+          </button>
+        </div>
+
+        {signals.length === 0 ? (
+          <p>Nenhuma oportunidade detectada ainda.</p>
+        ) : (
+          <div className="admin-grid">
+            {signals
+              .slice()
+              .sort((left, right) => right.signalScore - left.signalScore)
+              .map((signal) => (
+                <SurfaceCard key={signal.id} tone="admin">
+                  <div className="admin-card-header">
+                    <h2>{signal.city}</h2>
+                    <span>score {signal.signalScore}</span>
+                  </div>
+                  <p><strong>Especialidade:</strong> {signal.specialty}</p>
+                  <p><strong>Visitas:</strong> {signal.visits}</p>
+                  <p><strong>Leads:</strong> {signal.leads}</p>
+                  <p><strong>Casos:</strong> {signal.cases}</p>
+                  <p><strong>Leads urgentes:</strong> {signal.urgentLeads}</p>
+                  <p><strong>Urgency score:</strong> {signal.urgencyScore}</p>
+                </SurfaceCard>
+              ))}
           </div>
         )}
       </SurfaceCard>
