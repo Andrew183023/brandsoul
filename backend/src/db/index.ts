@@ -473,7 +473,6 @@ const sqliteSchema = `
   CREATE INDEX IF NOT EXISTS idx_regional_leads_entity ON regional_leads(entity_id);
   CREATE INDEX IF NOT EXISTS idx_regional_leads_urgency ON regional_leads(urgency);
   CREATE INDEX IF NOT EXISTS idx_regional_leads_status ON regional_leads(status);
-  CREATE INDEX IF NOT EXISTS idx_regional_leads_converted_case_id ON regional_leads(converted_case_id);
 
   CREATE TABLE IF NOT EXISTS seo_landing_pages (
     id TEXT PRIMARY KEY,
