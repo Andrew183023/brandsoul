@@ -106,6 +106,16 @@ export type GrowthRecommendation = {
   reason: string
 }
 
+export type GrowthEconomicSummary = {
+  totalAttributedRevenue: number
+  averageConversionRate: number
+  totalEconomicMemories: number
+  totalOpportunities: number
+  topRevenueCategory?: string
+  topRevenueSignal?: string
+  averageOpportunityScore: number
+}
+
 async function readApiErrorMessage(response: Response, fallback: string) {
   try {
     const payload = await response.json() as { error?: { message?: string } }
@@ -323,4 +333,18 @@ export async function executeGrowthRecommendation(entityId: string, signalId: st
     campaign: RegionalCampaign
     target: RegionalCampaignTarget
   }>
+}
+
+export async function getGrowthEconomicSummary(entityId: string) {
+  const baseUrl = readBackendBridgeBaseUrl()
+  const response = await fetch(`${baseUrl}/growth/economic-summary?entityId=${encodeURIComponent(entityId)}`, {
+    headers: await buildRequiredBackendAuthHeaders(),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, `Falha ao carregar resumo econômico (${response.status}).`))
+  }
+
+  const payload = await response.json() as { economicSummary?: GrowthEconomicSummary }
+  return payload.economicSummary ?? null
 }

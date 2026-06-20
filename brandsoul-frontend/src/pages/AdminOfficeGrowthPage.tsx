@@ -9,12 +9,14 @@ import {
   createRegionalCampaign,
   deleteCampaignTarget,
   executeGrowthRecommendation,
+  getGrowthEconomicSummary,
   getGrowthInsights,
   getRadiusRecommendation,
   listGrowthRecommendations,
   listRegionalSignals,
   listRegionalCampaigns,
   listCampaignTargets,
+  type GrowthEconomicSummary,
   type GrowthInsightRankItem,
   type GrowthInsights,
   type GrowthRecommendation,
@@ -57,6 +59,7 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
   const [leads, setLeads] = useState<RegionalLead[]>([])
   const [signals, setSignals] = useState<RegionalSignal[]>([])
   const [insights, setInsights] = useState<GrowthInsights | null>(null)
+  const [economicSummary, setEconomicSummary] = useState<GrowthEconomicSummary | null>(null)
   const [recommendations, setRecommendations] = useState<GrowthRecommendation[]>([])
   const [targetsByCampaign, setTargetsByCampaign] = useState<Record<string, RegionalCampaignTarget[]>>({})
   const [isLoading, setIsLoading] = useState(true)
@@ -83,11 +86,12 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
     setActionError(null)
 
     try {
-      const [campaignPayload, leadPayload, signalPayload, insightsPayload, recommendationPayload] = await Promise.all([
+      const [campaignPayload, leadPayload, signalPayload, insightsPayload, economicSummaryPayload, recommendationPayload] = await Promise.all([
         listRegionalCampaigns(),
         listRegionalLeadsByEntity(officeId),
         listRegionalSignals(officeId),
         getGrowthInsights(officeId),
+        getGrowthEconomicSummary(officeId),
         listGrowthRecommendations(officeId),
       ])
       const officeCampaigns = campaignPayload.filter((campaign) => campaign.entityId === officeId)
@@ -99,6 +103,7 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
       setLeads(leadPayload)
       setSignals(signalPayload)
       setInsights(insightsPayload)
+      setEconomicSummary(economicSummaryPayload)
       setRecommendations(recommendationPayload)
       setTargetsByCampaign(Object.fromEntries(targetEntries))
       setTargetDrafts((current) => {
@@ -123,9 +128,11 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
     try {
       const nextSignals = await recalculateRegionalSignals(officeId)
       const nextInsights = await getGrowthInsights(officeId)
+      const nextEconomicSummary = await getGrowthEconomicSummary(officeId)
       const nextRecommendations = await listGrowthRecommendations(officeId)
       setSignals(nextSignals)
       setInsights(nextInsights)
+      setEconomicSummary(nextEconomicSummary)
       setRecommendations(nextRecommendations)
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Falha ao recalcular sinais.')
@@ -516,6 +523,51 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
               {renderInsightRank('Top search intents', insights.topSearchIntents)}
             </div>
           </>
+        )}
+      </SurfaceCard>
+
+      <SurfaceCard tone="admin">
+        <div className="admin-card-header">
+          <h2>Economic Intelligence</h2>
+        </div>
+
+        {!economicSummary || (
+          economicSummary.totalAttributedRevenue === 0
+          && economicSummary.totalEconomicMemories === 0
+          && economicSummary.totalOpportunities === 0
+        ) ? (
+          <p>Sem memória econômica suficiente ainda.</p>
+        ) : (
+          <div className="admin-diagnosis-grid">
+            <SurfaceCard tone="admin">
+              <strong>R$ {economicSummary.totalAttributedRevenue.toFixed(2)}</strong>
+              <span>receita atribuída</span>
+            </SurfaceCard>
+            <SurfaceCard tone="admin">
+              <strong>{(economicSummary.averageConversionRate * 100).toFixed(1)}%</strong>
+              <span>conversão média</span>
+            </SurfaceCard>
+            <SurfaceCard tone="admin">
+              <strong>{economicSummary.totalEconomicMemories}</strong>
+              <span>memórias econômicas</span>
+            </SurfaceCard>
+            <SurfaceCard tone="admin">
+              <strong>{economicSummary.totalOpportunities}</strong>
+              <span>oportunidades econômicas</span>
+            </SurfaceCard>
+            <SurfaceCard tone="admin">
+              <strong>{economicSummary.averageOpportunityScore.toFixed(1)}</strong>
+              <span>score médio de oportunidade</span>
+            </SurfaceCard>
+            <SurfaceCard tone="admin">
+              <strong>{economicSummary.topRevenueCategory ?? 'n/a'}</strong>
+              <span>top categoria econômica</span>
+            </SurfaceCard>
+            <SurfaceCard tone="admin">
+              <strong>{economicSummary.topRevenueSignal ?? 'n/a'}</strong>
+              <span>top sinal econômico</span>
+            </SurfaceCard>
+          </div>
         )}
       </SurfaceCard>
 

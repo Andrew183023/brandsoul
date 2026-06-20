@@ -13,6 +13,7 @@ import { createRegionalSignalsRepository } from '../../modules/growth/regionalSi
 import { buildGrowthInsights } from '../../modules/growth/regionalGrowthInsightsService.js'
 import { buildGrowthRecommendations } from '../../modules/growth/regionalGrowthRecommendationService.js'
 import { executeGrowthRecommendation, GrowthRecommendationExecutionError } from '../../modules/growth/regionalGrowthExecutionService.js'
+import { buildGrowthEconomicSummary } from '../../modules/growth/regionalGrowthEconomicService.js'
 import { createEntityRepository } from '../../repositories/entityRepository.js'
 import { createCaseService } from '../../modules/legalCases/caseService.js'
 import type { CasePriority } from '../../modules/legalCases/caseTypes.js'
@@ -625,6 +626,57 @@ export async function registerRegionalGrowthRoutes(app: FastifyInstance) {
       status: 'ready' as const,
       entityId,
       insights,
+    }
+  })
+
+  app.get<{
+    Querystring: {
+      entityId?: string
+    }
+  }>('/growth/economic-summary', { preHandler: [requireAuth, privateReadRateLimit] }, async (request, reply) => {
+    const auth = getRequestAuth(request)!
+    const entityId = readRequiredString(request.query?.entityId)
+
+    if (!entityId) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'ENTITY_ID_REQUIRED',
+          message: 'entityId is required.',
+        },
+      })
+    }
+
+    const entity = await getEntityRepository(app).getEntityById<EntityProfile>(entityId)
+    if (!entity) {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'ENTITY_NOT_FOUND',
+          message: `Entity "${entityId}" was not found.`,
+        },
+      })
+    }
+
+    if (!isOwnedByAuth(entity, auth.userId, auth.tenantId)) {
+      return reply.status(403).send({
+        status: 'failed',
+        error: {
+          code: 'ENTITY_ACCESS_DENIED',
+          message: 'You do not own this office.',
+        },
+      })
+    }
+
+    const economicSummary = await buildGrowthEconomicSummary({
+      db: getConnection(app),
+      entityId,
+    })
+
+    return {
+      status: 'ready' as const,
+      entityId,
+      economicSummary,
     }
   })
 
