@@ -9,9 +9,15 @@ import {
   listRegionalCampaigns,
   type RegionalCampaign,
 } from '../backend-bridge/api/regionalGrowthApi'
+import {
+  convertRegionalLeadToCase,
+  listRegionalLeadsByEntity,
+  type RegionalLead,
+} from '../backend-bridge/api/regionalLeadApi'
 
 export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }) {
   const [campaigns, setCampaigns] = useState<RegionalCampaign[]>([])
+  const [leads, setLeads] = useState<RegionalLead[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [actionError, setActionError] = useState<string | null>(null)
   const [draft, setDraft] = useState({
@@ -22,23 +28,28 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
     objective: 'lead_capture' as const,
   })
   const [isCreating, setIsCreating] = useState(false)
+  const [convertingLeadId, setConvertingLeadId] = useState<string | null>(null)
 
-  async function loadCampaigns() {
+  async function loadGrowthData() {
     setIsLoading(true)
     setActionError(null)
 
     try {
-      const payload = await listRegionalCampaigns()
-      setCampaigns(payload.filter((campaign) => campaign.entityId === officeId))
+      const [campaignPayload, leadPayload] = await Promise.all([
+        listRegionalCampaigns(),
+        listRegionalLeadsByEntity(officeId),
+      ])
+      setCampaigns(campaignPayload.filter((campaign) => campaign.entityId === officeId))
+      setLeads(leadPayload)
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Falha ao carregar campanhas.')
+      setActionError(error instanceof Error ? error.message : 'Falha ao carregar dados de crescimento.')
     } finally {
       setIsLoading(false)
     }
   }
 
   useEffect(() => {
-    void loadCampaigns()
+    void loadGrowthData()
   }, [officeId])
 
   const summary = useMemo(() => {
@@ -77,7 +88,7 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
         objective: 'lead_capture',
       })
 
-      await loadCampaigns()
+      await loadGrowthData()
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Falha ao criar campanha.')
     } finally {
@@ -90,10 +101,36 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
 
     try {
       await activateRegionalCampaign(campaignId)
-      await loadCampaigns()
+      await loadGrowthData()
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Falha ao ativar campanha.')
     }
+  }
+
+  async function handleConvertLead(leadId: string) {
+    setActionError(null)
+    setConvertingLeadId(leadId)
+
+    try {
+      await convertRegionalLeadToCase(leadId)
+      await loadGrowthData()
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Falha ao converter lead em caso.')
+    } finally {
+      setConvertingLeadId(null)
+    }
+  }
+
+  function describeLeadOrigin(lead: RegionalLead) {
+    if (lead.utmSource || lead.utmCampaign) {
+      return [lead.utmSource, lead.utmCampaign].filter(Boolean).join(' / ')
+    }
+
+    if (lead.referrer) {
+      return lead.referrer
+    }
+
+    return 'origem direta'
   }
 
   return (
@@ -193,6 +230,54 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
             </button>
           </div>
         </form>
+      </SurfaceCard>
+
+      <SurfaceCard tone="admin">
+        <div className="admin-card-header">
+          <h2>Leads regionais recentes</h2>
+          <a className="admin-button admin-button--ghost" href={`/admin/escritorios/${officeId}/casos`}>
+            Ir para casos
+          </a>
+        </div>
+
+        {leads.length === 0 ? (
+          <p>Nenhum lead regional capturado ainda.</p>
+        ) : (
+          <div className="admin-grid">
+            {leads.map((lead) => (
+              <SurfaceCard key={lead.id} tone="admin">
+                <div className="admin-card-header">
+                  <h2>{lead.name}</h2>
+                  <span>{lead.status}</span>
+                </div>
+
+                <p><strong>Telefone:</strong> {lead.phone}</p>
+                <p><strong>Cidade:</strong> {lead.city}</p>
+                <p><strong>Especialidade:</strong> {lead.specialty}</p>
+                <p><strong>Urgência:</strong> {lead.urgency}</p>
+                <p><strong>Origem:</strong> {describeLeadOrigin(lead)}</p>
+                <p><strong>Resumo:</strong> {lead.caseSummary}</p>
+
+                <div className="admin-actions">
+                  {lead.convertedCaseId ? (
+                    <a className="admin-button" href={`/admin/escritorios/${officeId}/casos`}>
+                      Ver caso convertido
+                    </a>
+                  ) : (
+                    <button
+                      type="button"
+                      className="admin-button"
+                      disabled={convertingLeadId === lead.id}
+                      onClick={() => void handleConvertLead(lead.id)}
+                    >
+                      {convertingLeadId === lead.id ? 'Convertendo...' : 'Converter em caso'}
+                    </button>
+                  )}
+                </div>
+              </SurfaceCard>
+            ))}
+          </div>
+        )}
       </SurfaceCard>
 
       {isLoading ? (

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 
+import type { EntityProfile } from '../../brain/domain/entity/contracts/EntityProfile.js'
 import type { BackendDatabase } from '../../db/index.js'
 import { createRateLimit } from '../middleware/rateLimit.js'
 import { getRequestAuth, requireAuth } from '../middleware/requireAuth.js'
@@ -7,6 +8,9 @@ import { createRegionalGrowthRepository } from '../../modules/growth/regionalGro
 import { createSeoGeneratorService } from '../../modules/growth/seoGeneratorService.js'
 import { createLeadAttributionRepository } from '../../modules/growth/leadAttributionRepository.js'
 import { createRegionalLeadRepository, type RegionalLeadUrgency } from '../../modules/growth/regionalLeadRepository.js'
+import { createEntityRepository } from '../../repositories/entityRepository.js'
+import { createCaseService } from '../../modules/legalCases/caseService.js'
+import type { CasePriority } from '../../modules/legalCases/caseTypes.js'
 
 type BackendContext = {
   backendContext: {
@@ -42,6 +46,14 @@ function getRegionalLeadRepository(app: FastifyInstance) {
   return createRegionalLeadRepository(getConnection(app))
 }
 
+function getEntityRepository(app: FastifyInstance) {
+  return createEntityRepository(getConnection(app))
+}
+
+function getCaseService(app: FastifyInstance) {
+  return createCaseService(getConnection(app))
+}
+
 const privateReadRateLimit = createRateLimit({
   namespace: 'growth-read',
   max: 120,
@@ -75,6 +87,42 @@ function readRequiredString(value: unknown) {
 
 function isLeadUrgency(value: unknown): value is RegionalLeadUrgency {
   return value === 'low' || value === 'normal' || value === 'high' || value === 'critical'
+}
+
+function buildLegacyOwnerId(userId: number, tenantId: number) {
+  return `user:${userId}:tenant:${tenantId}`
+}
+
+function isOwnedByAuth(
+  entity: {
+    ownerUserId?: number
+    ownerTenantId?: number
+    ownerId?: string
+  } | null,
+  userId: number,
+  tenantId: number,
+) {
+  if (!entity) {
+    return false
+  }
+
+  if (entity.ownerUserId === userId && entity.ownerTenantId === tenantId) {
+    return true
+  }
+
+  return entity.ownerId === buildLegacyOwnerId(userId, tenantId)
+}
+
+function mapLeadUrgencyToCasePriority(urgency: RegionalLeadUrgency): CasePriority {
+  if (urgency === 'high' || urgency === 'critical') {
+    return 'high'
+  }
+
+  if (urgency === 'low') {
+    return 'low'
+  }
+
+  return 'normal'
 }
 
 
@@ -195,6 +243,145 @@ export async function registerRegionalGrowthRoutes(app: FastifyInstance) {
       status: 'ready' as const,
       lead,
     })
+  })
+
+  app.get<{
+    Querystring: {
+      entityId?: string
+    }
+  }>('/growth/regional-leads', { preHandler: [requireAuth, privateReadRateLimit] }, async (request, reply) => {
+    const auth = getRequestAuth(request)!
+    const entityId = readRequiredString(request.query?.entityId)
+
+    if (!entityId) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'ENTITY_ID_REQUIRED',
+          message: 'entityId is required.',
+        },
+      })
+    }
+
+    const entity = await getEntityRepository(app).getEntityById<EntityProfile>(entityId)
+    if (!entity) {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'ENTITY_NOT_FOUND',
+          message: `Entity "${entityId}" was not found.`,
+        },
+      })
+    }
+
+    if (!isOwnedByAuth(entity, auth.userId, auth.tenantId)) {
+      return reply.status(403).send({
+        status: 'failed',
+        error: {
+          code: 'ENTITY_ACCESS_DENIED',
+          message: 'You do not own this office.',
+        },
+      })
+    }
+
+    const leads = await getRegionalLeadRepository(app).listLeadsByEntity(entityId)
+
+    return {
+      status: 'ready' as const,
+      entityId,
+      leads,
+    }
+  })
+
+  app.post<{
+    Params: {
+      id: string
+    }
+  }>('/growth/regional-leads/:id/convert-to-case', { preHandler: [requireAuth, privateWriteRateLimit] }, async (request, reply) => {
+    const auth = getRequestAuth(request)!
+    const lead = await getRegionalLeadRepository(app).getLeadById(request.params.id)
+
+    if (!lead) {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'REGIONAL_LEAD_NOT_FOUND',
+          message: `Regional lead "${request.params.id}" was not found.`,
+        },
+      })
+    }
+
+    const entity = await getEntityRepository(app).getEntityById<EntityProfile>(lead.entityId)
+    if (!entity) {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'ENTITY_NOT_FOUND',
+          message: `Entity "${lead.entityId}" was not found.`,
+        },
+      })
+    }
+
+    if (!isOwnedByAuth(entity, auth.userId, auth.tenantId)) {
+      return reply.status(403).send({
+        status: 'failed',
+        error: {
+          code: 'ENTITY_ACCESS_DENIED',
+          message: 'You do not own this office.',
+        },
+      })
+    }
+
+    if (lead.tenantId !== String(auth.tenantId)) {
+      return reply.status(403).send({
+        status: 'failed',
+        error: {
+          code: 'TENANT_ACCESS_DENIED',
+          message: 'Lead tenant does not match authenticated tenant.',
+        },
+      })
+    }
+
+    if (lead.convertedCaseId) {
+      return reply.status(409).send({
+        status: 'failed',
+        error: {
+          code: 'REGIONAL_LEAD_ALREADY_CONVERTED',
+          message: `Regional lead "${lead.id}" has already been converted.`,
+        },
+      })
+    }
+
+    const legalCase = await getCaseService(app).createCase({
+      tenantId: Number(lead.tenantId),
+      entityId: lead.entityId,
+      createdByUserId: auth.userId,
+      title: `${lead.specialty} em ${lead.city}`,
+      description: lead.caseSummary,
+      priority: mapLeadUrgencyToCasePriority(lead.urgency),
+      practiceArea: lead.specialty,
+      source: 'regional_growth',
+      metadata: {
+        source: 'regional_growth',
+        regionalLeadId: lead.id,
+        landingSlug: lead.landingSlug,
+        utm: {
+          source: lead.utmSource ?? null,
+          medium: lead.utmMedium ?? null,
+          campaign: lead.utmCampaign ?? null,
+          term: lead.utmTerm ?? null,
+          referrer: lead.referrer ?? null,
+        },
+      },
+    })
+
+    const convertedLead = await getRegionalLeadRepository(app).markLeadConverted(lead.id, legalCase.id)
+
+    return {
+      status: 'ready' as const,
+      lead: convertedLead,
+      case: legalCase,
+    }
   })
 
   app.get('/sitemap.xml', async (_, reply) => {

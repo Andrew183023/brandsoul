@@ -24,6 +24,8 @@ export type RegionalLeadRecord = {
   utmCampaign?: string
   utmTerm?: string
   referrer?: string
+  convertedCaseId?: string
+  convertedAt?: string
   status: RegionalLeadStatus
   createdAt: string
   updatedAt: string
@@ -68,6 +70,8 @@ type RegionalLeadRow = {
   utm_campaign: string | null
   utm_term: string | null
   referrer: string | null
+  converted_case_id: string | null
+  converted_at: string | null
   status: RegionalLeadStatus
   created_at: string
   updated_at: string
@@ -106,6 +110,8 @@ export function mapRegionalLeadRow(row: RegionalLeadRow): RegionalLeadRecord {
     utmCampaign: row.utm_campaign ?? undefined,
     utmTerm: row.utm_term ?? undefined,
     referrer: row.referrer ?? undefined,
+    convertedCaseId: row.converted_case_id ?? undefined,
+    convertedAt: row.converted_at ?? undefined,
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -163,10 +169,12 @@ export class RegionalLeadRepository {
             utm_campaign,
             utm_term,
             referrer,
+            converted_case_id,
+            converted_at,
             status,
             created_at,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         lead.id,
         lead.campaignId ?? null,
@@ -186,6 +194,8 @@ export class RegionalLeadRepository {
         lead.utmCampaign ?? null,
         lead.utmTerm ?? null,
         lead.referrer ?? null,
+        null,
+        null,
         lead.status,
         lead.createdAt,
         lead.updatedAt,
@@ -221,6 +231,39 @@ export class RegionalLeadRepository {
     return lead
   }
 
+  async getLeadById(id: string) {
+    const row = await this.db.get<RegionalLeadRow>(
+      `
+        SELECT *
+        FROM regional_leads
+        WHERE id = ?
+      `,
+      id,
+    )
+
+    return row ? mapRegionalLeadRow(row) : null
+  }
+
+  async markLeadConverted(id: string, caseId: string) {
+    const now = new Date().toISOString()
+    await this.db.run(
+      `
+        UPDATE regional_leads
+        SET converted_case_id = ?,
+            converted_at = ?,
+            status = 'converted',
+            updated_at = ?
+        WHERE id = ?
+      `,
+      caseId,
+      now,
+      now,
+      id,
+    )
+
+    return this.getLeadById(id)
+  }
+
   async listLeadsByCampaign(campaignId: string) {
     const rows = await this.db.all<RegionalLeadRow[]>(
       `
@@ -241,7 +284,7 @@ export class RegionalLeadRepository {
         SELECT *
         FROM regional_leads
         WHERE entity_id = ?
-        ORDER BY created_at DESC
+        ORDER BY created_at DESC, updated_at DESC
       `,
       entityId,
     )

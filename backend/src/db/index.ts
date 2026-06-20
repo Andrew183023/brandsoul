@@ -459,6 +459,8 @@ const sqliteSchema = `
     utm_campaign TEXT,
     utm_term TEXT,
     referrer TEXT,
+    converted_case_id TEXT,
+    converted_at TEXT,
     status TEXT NOT NULL DEFAULT 'new',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
@@ -471,6 +473,7 @@ const sqliteSchema = `
   CREATE INDEX IF NOT EXISTS idx_regional_leads_entity ON regional_leads(entity_id);
   CREATE INDEX IF NOT EXISTS idx_regional_leads_urgency ON regional_leads(urgency);
   CREATE INDEX IF NOT EXISTS idx_regional_leads_status ON regional_leads(status);
+  CREATE INDEX IF NOT EXISTS idx_regional_leads_converted_case_id ON regional_leads(converted_case_id);
 
   CREATE TABLE IF NOT EXISTS seo_landing_pages (
     id TEXT PRIMARY KEY,
@@ -2838,6 +2841,8 @@ export async function initializeDatabase(db: BackendDatabase) {
   await ensureColumn(db, 'flowmind_runtime_continuity_attestation', 'reconstruction_source', 'TEXT')
   await ensureColumn(db, 'flowmind_sovereign_mutation_registry', 'result_fingerprint', 'TEXT')
   await ensureColumn(db, 'flowmind_sovereign_mutation_registry', 'replay_result_shape', 'TEXT')
+  await ensureColumn(db, 'regional_leads', 'converted_case_id', 'TEXT')
+  await ensureColumn(db, 'regional_leads', 'converted_at', 'TEXT')
   await ensureColumn(db, 'flow_auth_user', 'legacy_source', 'TEXT')
   await ensureColumn(db, 'flow_auth_user', 'legacy_id', 'INTEGER')
   await ensureColumn(db, 'flow_auth_user', 'name', 'TEXT NOT NULL DEFAULT \'\'')
