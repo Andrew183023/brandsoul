@@ -434,7 +434,12 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
                 <SurfaceCard key={signal.id} tone="admin">
                   <div className="admin-card-header">
                     <h2>{signal.city}</h2>
-                    <span>score {signal.signalScore}</span>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      {signal.signalScore <= 1 && signal.leads === 0 && signal.cases === 0 ? (
+                        <span>Bootstrap</span>
+                      ) : null}
+                      <span>score {signal.signalScore}</span>
+                    </div>
                   </div>
                   <p><strong>Especialidade:</strong> {signal.specialty}</p>
                   <p><strong>Visitas:</strong> {signal.visits}</p>
@@ -442,6 +447,9 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
                   <p><strong>Casos:</strong> {signal.cases}</p>
                   <p><strong>Leads urgentes:</strong> {signal.urgentLeads}</p>
                   <p><strong>Urgency score:</strong> {signal.urgencyScore}</p>
+                  {signal.signalScore <= 1 && signal.leads === 0 && signal.cases === 0 ? (
+                    <p>Oportunidade inicial baseada na campanha.</p>
+                  ) : null}
                   {signal.bestChannel ? <p><strong>Canal recomendado:</strong> {signal.bestChannel}</p> : null}
                   {signal.bestAudienceName ? <p><strong>Público recomendado:</strong> {signal.bestAudienceName}</p> : null}
                   {signal.bestIntentStage ? <p><strong>Intenção recomendada:</strong> {signal.bestIntentStage}</p> : null}

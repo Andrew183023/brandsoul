@@ -84,6 +84,23 @@ type BestTargetEvidence = {
   recommendedRadiusKm: number
 }
 
+type BootstrapTargetRow = {
+  cities_json: string
+  specialties_json: string
+  campaign_target_id: string
+  channel: string
+  audience_name: string
+  intent_stage: string
+  search_intent: string | null
+  recommended_radius_km: number
+}
+
+type BootstrapOpportunity = {
+  city: string
+  specialty: string
+  bestTarget: BestTargetEvidence
+}
+
 function mapRegionalSignalRow(row: RegionalSignalRow): RegionalSignalRecord {
   return {
     id: row.id,
@@ -110,6 +127,15 @@ function mapRegionalSignalRow(row: RegionalSignalRow): RegionalSignalRecord {
 
 function buildAggregateKey(city: string, specialty: string) {
   return `${city.trim().toLowerCase()}::${specialty.trim().toLowerCase()}`
+}
+
+function parseStringArray(value: string) {
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
+  } catch {
+    return []
+  }
 }
 
 function computeSignalScore(aggregate: SignalAggregate) {
@@ -152,6 +178,39 @@ function mapBestTargetEvidence(rows: BestTargetEvidenceRow[]) {
   return bestTargetByKey
 }
 
+function mapBootstrapTargetEvidence(rows: BootstrapTargetRow[]) {
+  const bestTargetByKey = new Map<string, BootstrapOpportunity>()
+
+  for (const row of rows) {
+    const cities = parseStringArray(row.cities_json).map((city) => city.trim()).filter(Boolean)
+    const specialties = parseStringArray(row.specialties_json).map((specialty) => specialty.trim()).filter(Boolean)
+
+    for (const city of cities) {
+      for (const specialty of specialties) {
+        const key = buildAggregateKey(city, specialty)
+        if (bestTargetByKey.has(key)) {
+          continue
+        }
+
+        bestTargetByKey.set(key, {
+          city,
+          specialty,
+          bestTarget: {
+            campaignTargetId: row.campaign_target_id,
+            channel: row.channel,
+            audienceName: row.audience_name,
+            intentStage: row.intent_stage,
+            searchIntent: row.search_intent ?? undefined,
+            recommendedRadiusKm: Number(row.recommended_radius_km ?? 0),
+          },
+        })
+      }
+    }
+  }
+
+  return bestTargetByKey
+}
+
 function mergeAggregates(
   target: Map<string, SignalAggregate>,
   rows: AggregateRow[],
@@ -184,7 +243,7 @@ export class RegionalSignalsRepository {
   constructor(private readonly db: BackendDatabase) {}
 
   async recalculateSignalsForEntity(tenantId: string, entityId: string) {
-    const [visitRows, leadRows, caseRows, urgentLeadRows, bestTargetRows] = await Promise.all([
+    const [visitRows, leadRows, caseRows, urgentLeadRows, bestTargetRows, bootstrapTargetRows] = await Promise.all([
       this.db.all<AggregateRow[]>(
         `
           SELECT pages.city AS city, pages.specialty AS specialty, COUNT(attribution.id) AS total
@@ -272,6 +331,27 @@ export class RegionalSignalsRepository {
         tenantId,
         entityId,
       ),
+      this.db.all<BootstrapTargetRow[]>(
+        `
+          SELECT
+            campaigns.cities_json AS cities_json,
+            campaigns.specialties_json AS specialties_json,
+            targets.id AS campaign_target_id,
+            targets.channel AS channel,
+            targets.audience_name AS audience_name,
+            targets.intent_stage AS intent_stage,
+            targets.search_intent AS search_intent,
+            targets.recommended_radius_km AS recommended_radius_km
+          FROM regional_campaign_targets targets
+          INNER JOIN regional_campaigns campaigns
+            ON campaigns.id = targets.campaign_id
+          WHERE campaigns.tenant_id = ?
+            AND campaigns.entity_id = ?
+          ORDER BY targets.updated_at DESC, targets.created_at DESC
+        `,
+        tenantId,
+        entityId,
+      ),
     ])
 
     const aggregates = new Map<string, SignalAggregate>()
@@ -280,6 +360,25 @@ export class RegionalSignalsRepository {
     mergeAggregates(aggregates, caseRows, 'cases')
     mergeAggregates(aggregates, urgentLeadRows, 'urgentLeads')
     const bestTargetByKey = mapBestTargetEvidence(bestTargetRows)
+    const bootstrapTargetByKey = mapBootstrapTargetEvidence(bootstrapTargetRows)
+
+    for (const [key, opportunity] of bootstrapTargetByKey.entries()) {
+      if (aggregates.has(key)) {
+        continue
+      }
+
+      aggregates.set(key, {
+        city: opportunity.city,
+        specialty: opportunity.specialty,
+        visits: 0,
+        leads: 0,
+        cases: 0,
+        urgentLeads: 0,
+      })
+      if (!bestTargetByKey.has(key)) {
+        bestTargetByKey.set(key, opportunity.bestTarget)
+      }
+    }
 
     await this.db.transaction(async (tx) => {
       const keys = Array.from(aggregates.values())
@@ -313,7 +412,11 @@ export class RegionalSignalsRepository {
 
       for (const aggregate of keys) {
         const now = new Date().toISOString()
-        const signalScore = computeSignalScore(aggregate)
+        const hasRealEvidence = aggregate.visits > 0
+          || aggregate.leads > 0
+          || aggregate.cases > 0
+          || aggregate.urgentLeads > 0
+        const signalScore = hasRealEvidence ? computeSignalScore(aggregate) : 1
         const urgencyScore = computeUrgencyScore(aggregate)
         const bestTarget = bestTargetByKey.get(buildAggregateKey(aggregate.city, aggregate.specialty))
         const existing = await tx.get<{ id: string; created_at: string }>(
