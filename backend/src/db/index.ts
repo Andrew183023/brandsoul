@@ -440,9 +440,47 @@ const sqliteSchema = `
   CREATE INDEX IF NOT EXISTS idx_regional_lead_attribution_landing ON regional_lead_attribution(landing_slug);
   CREATE INDEX IF NOT EXISTS idx_regional_lead_attribution_source ON regional_lead_attribution(utm_source);
 
+  CREATE TABLE IF NOT EXISTS regional_campaign_targets (
+    id TEXT PRIMARY KEY,
+    campaign_id TEXT NOT NULL,
+    channel TEXT NOT NULL,
+    audience_name TEXT NOT NULL,
+    audience_description TEXT,
+    intent_stage TEXT NOT NULL,
+    search_intent TEXT,
+    recommended_radius_km INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (campaign_id) REFERENCES regional_campaigns(id) ON DELETE CASCADE,
+    CHECK (channel IN ('google_search', 'google_local', 'facebook', 'instagram')),
+    CHECK (intent_stage IN ('awareness', 'consideration', 'decision')),
+    CHECK (search_intent IS NULL OR search_intent IN ('problem_aware', 'solution_aware', 'provider_aware', 'ready_to_hire')),
+    CHECK (recommended_radius_km > 0)
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_regional_campaign_targets_campaign ON regional_campaign_targets(campaign_id);
+  CREATE INDEX IF NOT EXISTS idx_regional_campaign_targets_channel ON regional_campaign_targets(channel);
+  CREATE INDEX IF NOT EXISTS idx_regional_campaign_targets_intent ON regional_campaign_targets(intent_stage);
+  CREATE INDEX IF NOT EXISTS idx_regional_campaign_targets_audience ON regional_campaign_targets(audience_name);
+
+  CREATE TABLE IF NOT EXISTS specialty_radius_defaults (
+    id TEXT PRIMARY KEY,
+    specialty TEXT NOT NULL,
+    population_density TEXT NOT NULL,
+    recommended_radius_km INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (population_density IN ('small', 'medium', 'large')),
+    CHECK (recommended_radius_km > 0)
+  );
+
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_specialty_radius_defaults_unique
+  ON specialty_radius_defaults(specialty, population_density);
+
   CREATE TABLE IF NOT EXISTS regional_leads (
     id TEXT PRIMARY KEY,
     campaign_id TEXT,
+    campaign_target_id TEXT,
     landing_page_id TEXT,
     tenant_id TEXT NOT NULL,
     entity_id TEXT NOT NULL,
@@ -464,11 +502,13 @@ const sqliteSchema = `
     status TEXT NOT NULL DEFAULT 'new',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
+    FOREIGN KEY (campaign_target_id) REFERENCES regional_campaign_targets(id) ON DELETE SET NULL,
     CHECK (urgency IN ('low', 'normal', 'high', 'critical')),
     CHECK (status IN ('new', 'triaged', 'contacted', 'converted', 'lost'))
   );
 
   CREATE INDEX IF NOT EXISTS idx_regional_leads_campaign ON regional_leads(campaign_id);
+  CREATE INDEX IF NOT EXISTS idx_regional_leads_campaign_target ON regional_leads(campaign_target_id);
   CREATE INDEX IF NOT EXISTS idx_regional_leads_landing_slug ON regional_leads(landing_slug);
   CREATE INDEX IF NOT EXISTS idx_regional_leads_entity ON regional_leads(entity_id);
   CREATE INDEX IF NOT EXISTS idx_regional_leads_urgency ON regional_leads(urgency);
@@ -2793,6 +2833,52 @@ async function initializeSqliteLegalCaseSchema(db: BackendDatabase) {
   `)
 }
 
+const specialtyRadiusSeedDefaults = [
+  { id: 'radius-default-trabalhista-large', specialty: 'trabalhista', populationDensity: 'large', recommendedRadiusKm: 25 },
+  { id: 'radius-default-trabalhista-medium', specialty: 'trabalhista', populationDensity: 'medium', recommendedRadiusKm: 35 },
+  { id: 'radius-default-trabalhista-small', specialty: 'trabalhista', populationDensity: 'small', recommendedRadiusKm: 50 },
+  { id: 'radius-default-consumidor-large', specialty: 'consumidor', populationDensity: 'large', recommendedRadiusKm: 40 },
+  { id: 'radius-default-consumidor-medium', specialty: 'consumidor', populationDensity: 'medium', recommendedRadiusKm: 50 },
+  { id: 'radius-default-consumidor-small', specialty: 'consumidor', populationDensity: 'small', recommendedRadiusKm: 70 },
+  { id: 'radius-default-familia-large', specialty: 'familia', populationDensity: 'large', recommendedRadiusKm: 60 },
+  { id: 'radius-default-familia-medium', specialty: 'familia', populationDensity: 'medium', recommendedRadiusKm: 70 },
+  { id: 'radius-default-familia-small', specialty: 'familia', populationDensity: 'small', recommendedRadiusKm: 90 },
+  { id: 'radius-default-empresarial-large', specialty: 'empresarial', populationDensity: 'large', recommendedRadiusKm: 80 },
+  { id: 'radius-default-empresarial-medium', specialty: 'empresarial', populationDensity: 'medium', recommendedRadiusKm: 90 },
+  { id: 'radius-default-empresarial-small', specialty: 'empresarial', populationDensity: 'small', recommendedRadiusKm: 120 },
+  { id: 'radius-default-previdenciario-large', specialty: 'previdenciario', populationDensity: 'large', recommendedRadiusKm: 60 },
+  { id: 'radius-default-previdenciario-medium', specialty: 'previdenciario', populationDensity: 'medium', recommendedRadiusKm: 90 },
+  { id: 'radius-default-previdenciario-small', specialty: 'previdenciario', populationDensity: 'small', recommendedRadiusKm: 120 },
+] as const
+
+async function seedSpecialtyRadiusDefaults(db: BackendDatabase) {
+  const now = new Date().toISOString()
+
+  for (const row of specialtyRadiusSeedDefaults) {
+    await db.run(
+      `
+        INSERT INTO specialty_radius_defaults (
+          id,
+          specialty,
+          population_density,
+          recommended_radius_km,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT (specialty, population_density) DO UPDATE SET
+          recommended_radius_km = excluded.recommended_radius_km,
+          updated_at = excluded.updated_at
+      `,
+      row.id,
+      row.specialty,
+      row.populationDensity,
+      row.recommendedRadiusKm,
+      now,
+      now,
+    )
+  }
+}
+
 export async function initializeDatabase(db: BackendDatabase) {
   await initializeBaseSchema(db)
   await initializeSqliteLegalCaseSchema(db)
@@ -2840,6 +2926,7 @@ export async function initializeDatabase(db: BackendDatabase) {
   await ensureColumn(db, 'flowmind_runtime_continuity_attestation', 'reconstruction_source', 'TEXT')
   await ensureColumn(db, 'flowmind_sovereign_mutation_registry', 'result_fingerprint', 'TEXT')
   await ensureColumn(db, 'flowmind_sovereign_mutation_registry', 'replay_result_shape', 'TEXT')
+  await ensureColumn(db, 'regional_leads', 'campaign_target_id', 'TEXT')
   await ensureColumn(db, 'regional_leads', 'converted_case_id', 'TEXT')
   await ensureColumn(db, 'regional_leads', 'converted_at', 'TEXT')
   await ensureColumn(db, 'flow_auth_user', 'legacy_source', 'TEXT')
@@ -2888,6 +2975,7 @@ export async function initializeDatabase(db: BackendDatabase) {
   await migratePostgresPortfolioProposalSchema(db)
   await migratePostgresSemanticReplayResultSchema(db)
   await ensureIndexes(db, indexStatements)
+  await seedSpecialtyRadiusDefaults(db)
   await validateAdaptiveEquilibriumEvidenceSchema(db)
 }
 

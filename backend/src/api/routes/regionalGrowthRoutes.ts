@@ -5,12 +5,19 @@ import type { BackendDatabase } from '../../db/index.js'
 import { createRateLimit } from '../middleware/rateLimit.js'
 import { getRequestAuth, requireAuth } from '../middleware/requireAuth.js'
 import { createRegionalGrowthRepository } from '../../modules/growth/regionalGrowthRepository.js'
+import { recommendRadiusForSpecialty, type RadiusRecommendation } from '../../modules/growth/radiusRecommendationService.js'
 import { createSeoGeneratorService } from '../../modules/growth/seoGeneratorService.js'
 import { createLeadAttributionRepository } from '../../modules/growth/leadAttributionRepository.js'
 import { createRegionalLeadRepository, type RegionalLeadUrgency } from '../../modules/growth/regionalLeadRepository.js'
 import { createEntityRepository } from '../../repositories/entityRepository.js'
 import { createCaseService } from '../../modules/legalCases/caseService.js'
 import type { CasePriority } from '../../modules/legalCases/caseTypes.js'
+import type {
+  PopulationDensity,
+  RegionalCampaignTargetChannel,
+  RegionalCampaignTargetIntentStage,
+  RegionalCampaignTargetSearchIntent,
+} from '../../modules/growth/regionalGrowthRepository.js'
 
 type BackendContext = {
   backendContext: {
@@ -28,6 +35,15 @@ type CreateCampaignBody = {
   objective?: 'visibility' | 'lead_capture' | 'emergency_24h' | 'institutional'
   budgetDaily?: number
   budgetMonthly?: number
+}
+
+type CreateCampaignTargetBody = {
+  channel?: RegionalCampaignTargetChannel
+  audienceName?: string
+  audienceDescription?: string
+  intentStage?: RegionalCampaignTargetIntentStage
+  searchIntent?: RegionalCampaignTargetSearchIntent
+  recommendedRadiusKm?: number
 }
 
 function getConnection(app: FastifyInstance) {
@@ -89,6 +105,25 @@ function isLeadUrgency(value: unknown): value is RegionalLeadUrgency {
   return value === 'low' || value === 'normal' || value === 'high' || value === 'critical'
 }
 
+function isCampaignTargetChannel(value: unknown): value is RegionalCampaignTargetChannel {
+  return value === 'google_search' || value === 'google_local' || value === 'facebook' || value === 'instagram'
+}
+
+function isCampaignTargetIntentStage(value: unknown): value is RegionalCampaignTargetIntentStage {
+  return value === 'awareness' || value === 'consideration' || value === 'decision'
+}
+
+function isCampaignTargetSearchIntent(value: unknown): value is RegionalCampaignTargetSearchIntent {
+  return value === 'problem_aware'
+    || value === 'solution_aware'
+    || value === 'provider_aware'
+    || value === 'ready_to_hire'
+}
+
+function isPopulationDensity(value: unknown): value is PopulationDensity {
+  return value === 'small' || value === 'medium' || value === 'large'
+}
+
 function buildLegacyOwnerId(userId: number, tenantId: number) {
   return `user:${userId}:tenant:${tenantId}`
 }
@@ -131,6 +166,7 @@ export async function registerRegionalGrowthRoutes(app: FastifyInstance) {
     Body: {
       landingSlug?: string
       campaignId?: string
+      campaignTargetId?: string
       landingPageId?: string
       utmSource?: string
       utmMedium?: string
@@ -172,6 +208,7 @@ export async function registerRegionalGrowthRoutes(app: FastifyInstance) {
     Body: {
       landingSlug?: string
       campaignId?: string
+      campaignTargetId?: string
       landingPageId?: string
       tenantId?: string
       entityId?: string
@@ -221,6 +258,7 @@ export async function registerRegionalGrowthRoutes(app: FastifyInstance) {
 
     const lead = await getRegionalLeadRepository(app).createLead({
       campaignId: readOptionalString(body.campaignId),
+      campaignTargetId: readOptionalString(body.campaignTargetId),
       landingPageId: readOptionalString(body.landingPageId),
       tenantId,
       entityId,
@@ -243,6 +281,150 @@ export async function registerRegionalGrowthRoutes(app: FastifyInstance) {
       status: 'ready' as const,
       lead,
     })
+  })
+
+  app.get<{
+    Querystring: {
+      specialty?: string
+      populationDensity?: PopulationDensity
+    }
+  }>('/growth/radius-recommendation', { preHandler: [requireAuth, privateReadRateLimit] }, async (request, reply) => {
+    const specialty = readRequiredString(request.query?.specialty)
+    const populationDensity = request.query?.populationDensity
+
+    if (!specialty || !isPopulationDensity(populationDensity)) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_RADIUS_RECOMMENDATION_INPUT',
+          message: 'specialty and populationDensity are required.',
+        },
+      })
+    }
+
+    const recommendation: RadiusRecommendation = await recommendRadiusForSpecialty(getRegionalGrowthRepository(app), {
+      specialty,
+      populationDensity,
+    })
+
+    return {
+      status: 'ready' as const,
+      recommendation,
+    }
+  })
+
+  app.get<{
+    Params: {
+      id: string
+    }
+  }>('/growth/campaigns/:id/targets', { preHandler: [requireAuth, privateReadRateLimit] }, async (request, reply) => {
+    const auth = getRequestAuth(request)!
+    const campaign = await getRegionalGrowthRepository(app).getCampaignById(String(auth.tenantId), request.params.id)
+
+    if (!campaign) {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'REGIONAL_CAMPAIGN_NOT_FOUND',
+          message: `Campaign "${request.params.id}" was not found.`,
+        },
+      })
+    }
+
+    const targets = await getRegionalGrowthRepository(app).listCampaignTargetsByCampaign(String(auth.tenantId), request.params.id)
+
+    return {
+      status: 'ready' as const,
+      campaignId: request.params.id,
+      targets,
+    }
+  })
+
+  app.post<{
+    Params: {
+      id: string
+    }
+    Body: CreateCampaignTargetBody
+  }>('/growth/campaigns/:id/targets', { preHandler: [requireAuth, privateWriteRateLimit] }, async (request, reply) => {
+    const auth = getRequestAuth(request)!
+    const body = request.body ?? {}
+    const audienceName = readRequiredString(body.audienceName)
+
+    if (!isCampaignTargetChannel(body.channel) || !audienceName || !isCampaignTargetIntentStage(body.intentStage)) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_CAMPAIGN_TARGET_INPUT',
+          message: 'channel, audienceName and intentStage are required.',
+        },
+      })
+    }
+
+    if (body.searchIntent !== undefined && !isCampaignTargetSearchIntent(body.searchIntent)) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_CAMPAIGN_TARGET_SEARCH_INTENT',
+          message: 'searchIntent is invalid.',
+        },
+      })
+    }
+
+    if (!Number.isFinite(body.recommendedRadiusKm) || Number(body.recommendedRadiusKm) <= 0) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_CAMPAIGN_TARGET_RADIUS',
+          message: 'recommendedRadiusKm must be greater than 0.',
+        },
+      })
+    }
+
+    const target = await getRegionalGrowthRepository(app).createCampaignTarget(String(auth.tenantId), {
+      campaignId: request.params.id,
+      channel: body.channel,
+      audienceName,
+      audienceDescription: readOptionalString(body.audienceDescription),
+      intentStage: body.intentStage,
+      searchIntent: body.searchIntent,
+      recommendedRadiusKm: Number(body.recommendedRadiusKm),
+    })
+
+    if (!target) {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'REGIONAL_CAMPAIGN_NOT_FOUND',
+          message: `Campaign "${request.params.id}" was not found.`,
+        },
+      })
+    }
+
+    return reply.status(201).send({
+      status: 'ready' as const,
+      target,
+    })
+  })
+
+  app.delete<{
+    Params: {
+      id: string
+    }
+  }>('/growth/campaign-targets/:id', { preHandler: [requireAuth, privateWriteRateLimit] }, async (request, reply) => {
+    const auth = getRequestAuth(request)!
+    const deleted = await getRegionalGrowthRepository(app).deleteCampaignTarget(String(auth.tenantId), request.params.id)
+
+    if (!deleted) {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'REGIONAL_CAMPAIGN_TARGET_NOT_FOUND',
+          message: `Campaign target "${request.params.id}" was not found.`,
+        },
+      })
+    }
+
+    return reply.status(204).send()
   })
 
   app.get<{
@@ -352,6 +534,10 @@ export async function registerRegionalGrowthRoutes(app: FastifyInstance) {
       })
     }
 
+    const campaignTarget = lead.campaignTargetId
+      ? await getRegionalGrowthRepository(app).getCampaignTargetById(lead.campaignTargetId)
+      : null
+
     const legalCase = await getCaseService(app).createCase({
       tenantId: Number(lead.tenantId),
       entityId: lead.entityId,
@@ -362,9 +548,18 @@ export async function registerRegionalGrowthRoutes(app: FastifyInstance) {
       practiceArea: lead.specialty,
       source: 'regional_growth',
       metadata: {
-        source: 'regional_growth',
-        regionalLeadId: lead.id,
-        landingSlug: lead.landingSlug,
+        growth: {
+          regionalLeadId: lead.id,
+          campaignId: lead.campaignId ?? null,
+          campaignTargetId: lead.campaignTargetId ?? null,
+          landingPageId: lead.landingPageId ?? null,
+          landingSlug: lead.landingSlug,
+          channel: campaignTarget?.channel ?? null,
+          audienceName: campaignTarget?.audienceName ?? null,
+          intentStage: campaignTarget?.intentStage ?? null,
+          searchIntent: campaignTarget?.searchIntent ?? null,
+          recommendedRadiusKm: campaignTarget?.recommendedRadiusKm ?? null,
+        },
         utm: {
           source: lead.utmSource ?? null,
           medium: lead.utmMedium ?? null,

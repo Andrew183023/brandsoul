@@ -5,9 +5,15 @@ import SurfaceCard from '../components/SurfaceCard'
 import FeedbackBanner from '../components/FeedbackBanner'
 import {
   activateRegionalCampaign,
+  createCampaignTarget,
   createRegionalCampaign,
+  deleteCampaignTarget,
+  getRadiusRecommendation,
   listRegionalCampaigns,
+  listCampaignTargets,
+  type PopulationDensity,
   type RegionalCampaign,
+  type RegionalCampaignTarget,
 } from '../backend-bridge/api/regionalGrowthApi'
 import {
   convertRegionalLeadToCase,
@@ -15,9 +21,32 @@ import {
   type RegionalLead,
 } from '../backend-bridge/api/regionalLeadApi'
 
+type CampaignTargetDraft = {
+  channel: RegionalCampaignTarget['channel']
+  audienceName: string
+  audienceDescription: string
+  intentStage: RegionalCampaignTarget['intentStage']
+  searchIntent: NonNullable<RegionalCampaignTarget['searchIntent']>
+  populationDensity: PopulationDensity
+  recommendedRadiusKm: string
+}
+
+function createEmptyTargetDraft(): CampaignTargetDraft {
+  return {
+    channel: 'google_search',
+    audienceName: '',
+    audienceDescription: '',
+    intentStage: 'consideration',
+    searchIntent: 'provider_aware',
+    populationDensity: 'medium',
+    recommendedRadiusKm: '',
+  }
+}
+
 export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }) {
   const [campaigns, setCampaigns] = useState<RegionalCampaign[]>([])
   const [leads, setLeads] = useState<RegionalLead[]>([])
+  const [targetsByCampaign, setTargetsByCampaign] = useState<Record<string, RegionalCampaignTarget[]>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [actionError, setActionError] = useState<string | null>(null)
   const [draft, setDraft] = useState({
@@ -29,6 +58,10 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
   })
   const [isCreating, setIsCreating] = useState(false)
   const [convertingLeadId, setConvertingLeadId] = useState<string | null>(null)
+  const [creatingTargetCampaignId, setCreatingTargetCampaignId] = useState<string | null>(null)
+  const [deletingTargetId, setDeletingTargetId] = useState<string | null>(null)
+  const [suggestingRadiusCampaignId, setSuggestingRadiusCampaignId] = useState<string | null>(null)
+  const [targetDrafts, setTargetDrafts] = useState<Record<string, CampaignTargetDraft>>({})
 
   async function loadGrowthData() {
     setIsLoading(true)
@@ -39,8 +72,21 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
         listRegionalCampaigns(),
         listRegionalLeadsByEntity(officeId),
       ])
-      setCampaigns(campaignPayload.filter((campaign) => campaign.entityId === officeId))
+      const officeCampaigns = campaignPayload.filter((campaign) => campaign.entityId === officeId)
+      const targetEntries = await Promise.all(
+        officeCampaigns.map(async (campaign) => [campaign.id, await listCampaignTargets(campaign.id)] as const),
+      )
+
+      setCampaigns(officeCampaigns)
       setLeads(leadPayload)
+      setTargetsByCampaign(Object.fromEntries(targetEntries))
+      setTargetDrafts((current) => {
+        const next: Record<string, CampaignTargetDraft> = {}
+        for (const campaign of officeCampaigns) {
+          next[campaign.id] = current[campaign.id] ?? createEmptyTargetDraft()
+        }
+        return next
+      })
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Falha ao carregar dados de crescimento.')
     } finally {
@@ -131,6 +177,69 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
     }
 
     return 'origem direta'
+  }
+
+  async function handleSuggestRadius(campaign: RegionalCampaign) {
+    setActionError(null)
+    setSuggestingRadiusCampaignId(campaign.id)
+
+    try {
+      const draft = targetDrafts[campaign.id] ?? createEmptyTargetDraft()
+      const specialty = campaign.specialties[0] ?? draft.audienceName
+      const recommendation = await getRadiusRecommendation(specialty, draft.populationDensity)
+      setTargetDrafts((current) => ({
+        ...current,
+        [campaign.id]: {
+          ...(current[campaign.id] ?? createEmptyTargetDraft()),
+          recommendedRadiusKm: String(recommendation.recommendedRadiusKm),
+        },
+      }))
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Falha ao sugerir raio.')
+    } finally {
+      setSuggestingRadiusCampaignId(null)
+    }
+  }
+
+  async function handleCreateTarget(campaignId: string, event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setActionError(null)
+    setCreatingTargetCampaignId(campaignId)
+
+    try {
+      const draft = targetDrafts[campaignId] ?? createEmptyTargetDraft()
+      await createCampaignTarget(campaignId, {
+        channel: draft.channel,
+        audienceName: draft.audienceName.trim(),
+        audienceDescription: draft.audienceDescription.trim() || undefined,
+        intentStage: draft.intentStage,
+        searchIntent: draft.searchIntent,
+        recommendedRadiusKm: Number(draft.recommendedRadiusKm),
+      })
+      setTargetDrafts((current) => ({
+        ...current,
+        [campaignId]: createEmptyTargetDraft(),
+      }))
+      await loadGrowthData()
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Falha ao criar público da campanha.')
+    } finally {
+      setCreatingTargetCampaignId(null)
+    }
+  }
+
+  async function handleDeleteTarget(targetId: string) {
+    setActionError(null)
+    setDeletingTargetId(targetId)
+
+    try {
+      await deleteCampaignTarget(targetId)
+      await loadGrowthData()
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Falha ao remover público da campanha.')
+    } finally {
+      setDeletingTargetId(null)
+    }
   }
 
   return (
@@ -301,6 +410,182 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
 
               <p>{campaign.cities.join(', ') || 'Sem cidades definidas'}</p>
               <p>{campaign.specialties.join(', ') || 'Sem especialidades definidas'}</p>
+
+              <div className="admin-form-section">
+                <h3>Campaign Targets</h3>
+                {(targetsByCampaign[campaign.id] ?? []).length === 0 ? (
+                  <p>Nenhum público-alvo configurado ainda.</p>
+                ) : (
+                  <div className="admin-grid">
+                    {(targetsByCampaign[campaign.id] ?? []).map((target) => (
+                      <SurfaceCard key={target.id} tone="admin">
+                        <div className="admin-card-header">
+                          <h2>{target.audienceName}</h2>
+                          <span>{target.channel}</span>
+                        </div>
+                        <p><strong>Intenção:</strong> {target.intentStage}</p>
+                        <p><strong>Search intent:</strong> {target.searchIntent ?? 'n/a'}</p>
+                        <p><strong>Raio:</strong> {target.recommendedRadiusKm} km</p>
+                        {target.audienceDescription ? <p>{target.audienceDescription}</p> : null}
+                        <div className="admin-actions">
+                          <button
+                            type="button"
+                            className="admin-button admin-button--ghost"
+                            disabled={deletingTargetId === target.id}
+                            onClick={() => void handleDeleteTarget(target.id)}
+                          >
+                            {deletingTargetId === target.id ? 'Removendo...' : 'Remover target'}
+                          </button>
+                        </div>
+                      </SurfaceCard>
+                    ))}
+                  </div>
+                )}
+
+                <form className="admin-form-section" onSubmit={(event) => void handleCreateTarget(campaign.id, event)}>
+                  <label className="admin-field">
+                    <span>Canal</span>
+                    <select
+                      value={(targetDrafts[campaign.id] ?? createEmptyTargetDraft()).channel}
+                      onChange={(event) => setTargetDrafts((current) => ({
+                        ...current,
+                        [campaign.id]: {
+                          ...(current[campaign.id] ?? createEmptyTargetDraft()),
+                          channel: event.target.value as RegionalCampaignTarget['channel'],
+                        },
+                      }))}
+                    >
+                      <option value="google_search">Google Search</option>
+                      <option value="google_local">Google Local</option>
+                      <option value="facebook">Facebook</option>
+                      <option value="instagram">Instagram</option>
+                    </select>
+                  </label>
+
+                  <label className="admin-field">
+                    <span>Público</span>
+                    <input
+                      value={(targetDrafts[campaign.id] ?? createEmptyTargetDraft()).audienceName}
+                      onChange={(event) => setTargetDrafts((current) => ({
+                        ...current,
+                        [campaign.id]: {
+                          ...(current[campaign.id] ?? createEmptyTargetDraft()),
+                          audienceName: event.target.value,
+                        },
+                      }))}
+                      placeholder="Ex.: Trabalhadores CLT com rescisão recente"
+                      required
+                    />
+                  </label>
+
+                  <label className="admin-field">
+                    <span>Descrição do público</span>
+                    <textarea
+                      value={(targetDrafts[campaign.id] ?? createEmptyTargetDraft()).audienceDescription}
+                      onChange={(event) => setTargetDrafts((current) => ({
+                        ...current,
+                        [campaign.id]: {
+                          ...(current[campaign.id] ?? createEmptyTargetDraft()),
+                          audienceDescription: event.target.value,
+                        },
+                      }))}
+                      rows={3}
+                    />
+                  </label>
+
+                  <div className="admin-diagnosis-grid">
+                    <label className="admin-field">
+                      <span>Intent Stage</span>
+                      <select
+                        value={(targetDrafts[campaign.id] ?? createEmptyTargetDraft()).intentStage}
+                        onChange={(event) => setTargetDrafts((current) => ({
+                          ...current,
+                          [campaign.id]: {
+                            ...(current[campaign.id] ?? createEmptyTargetDraft()),
+                            intentStage: event.target.value as RegionalCampaignTarget['intentStage'],
+                          },
+                        }))}
+                      >
+                        <option value="awareness">Awareness</option>
+                        <option value="consideration">Consideration</option>
+                        <option value="decision">Decision</option>
+                      </select>
+                    </label>
+
+                    <label className="admin-field">
+                      <span>Search Intent</span>
+                      <select
+                        value={(targetDrafts[campaign.id] ?? createEmptyTargetDraft()).searchIntent}
+                        onChange={(event) => setTargetDrafts((current) => ({
+                          ...current,
+                          [campaign.id]: {
+                            ...(current[campaign.id] ?? createEmptyTargetDraft()),
+                            searchIntent: event.target.value as NonNullable<RegionalCampaignTarget['searchIntent']>,
+                          },
+                        }))}
+                      >
+                        <option value="problem_aware">Problem aware</option>
+                        <option value="solution_aware">Solution aware</option>
+                        <option value="provider_aware">Provider aware</option>
+                        <option value="ready_to_hire">Ready to hire</option>
+                      </select>
+                    </label>
+
+                    <label className="admin-field">
+                      <span>Densidade populacional</span>
+                      <select
+                        value={(targetDrafts[campaign.id] ?? createEmptyTargetDraft()).populationDensity}
+                        onChange={(event) => setTargetDrafts((current) => ({
+                          ...current,
+                          [campaign.id]: {
+                            ...(current[campaign.id] ?? createEmptyTargetDraft()),
+                            populationDensity: event.target.value as PopulationDensity,
+                          },
+                        }))}
+                      >
+                        <option value="large">Grande</option>
+                        <option value="medium">Média</option>
+                        <option value="small">Pequena</option>
+                      </select>
+                    </label>
+
+                    <label className="admin-field">
+                      <span>Raio recomendado (km)</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={(targetDrafts[campaign.id] ?? createEmptyTargetDraft()).recommendedRadiusKm}
+                        onChange={(event) => setTargetDrafts((current) => ({
+                          ...current,
+                          [campaign.id]: {
+                            ...(current[campaign.id] ?? createEmptyTargetDraft()),
+                            recommendedRadiusKm: event.target.value,
+                          },
+                        }))}
+                        required
+                      />
+                    </label>
+                  </div>
+
+                  <div className="admin-actions">
+                    <button
+                      type="button"
+                      className="admin-button admin-button--ghost"
+                      disabled={suggestingRadiusCampaignId === campaign.id}
+                      onClick={() => void handleSuggestRadius(campaign)}
+                    >
+                      {suggestingRadiusCampaignId === campaign.id ? 'Sugerindo...' : 'Sugerir raio'}
+                    </button>
+                    <button
+                      type="submit"
+                      className="admin-button"
+                      disabled={creatingTargetCampaignId === campaign.id}
+                    >
+                      {creatingTargetCampaignId === campaign.id ? 'Salvando target...' : 'Salvar target'}
+                    </button>
+                  </div>
+                </form>
+              </div>
 
               <div className="admin-actions">
                 {campaign.status !== 'active' ? (

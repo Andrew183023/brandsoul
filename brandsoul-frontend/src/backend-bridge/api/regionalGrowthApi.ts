@@ -23,6 +23,41 @@ export type RegionalCampaign = {
   updatedAt: string
 }
 
+export type PopulationDensity = 'small' | 'medium' | 'large'
+
+export type RegionalCampaignTarget = {
+  id: string
+  campaignId: string
+  channel: 'google_search' | 'google_local' | 'facebook' | 'instagram'
+  audienceName: string
+  audienceDescription?: string
+  intentStage: 'awareness' | 'consideration' | 'decision'
+  searchIntent?: 'problem_aware' | 'solution_aware' | 'provider_aware' | 'ready_to_hire'
+  recommendedRadiusKm: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type RadiusRecommendation = {
+  specialty: string
+  populationDensity: PopulationDensity
+  recommendedRadiusKm: number
+  usedFallback: boolean
+}
+
+async function readApiErrorMessage(response: Response, fallback: string) {
+  try {
+    const payload = await response.json() as { error?: { message?: string } }
+    if (payload.error?.message) {
+      return payload.error.message
+    }
+  } catch {
+    // noop
+  }
+
+  return fallback
+}
+
 export async function listRegionalCampaigns() {
   const baseUrl = readBackendBridgeBaseUrl()
   const response = await fetch(`${baseUrl}/growth/campaigns`, {
@@ -69,8 +104,80 @@ export async function createRegionalCampaign(input: {
   })
 
   if (!response.ok) {
-    throw new Error(`Falha ao criar campanha regional (${response.status}).`)
+    throw new Error(await readApiErrorMessage(response, `Falha ao criar campanha regional (${response.status}).`))
   }
 
   return response.json()
+}
+
+export async function listCampaignTargets(campaignId: string) {
+  const baseUrl = readBackendBridgeBaseUrl()
+  const response = await fetch(`${baseUrl}/growth/campaigns/${encodeURIComponent(campaignId)}/targets`, {
+    headers: await buildRequiredBackendAuthHeaders(),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, `Falha ao carregar públicos da campanha (${response.status}).`))
+  }
+
+  const payload = await response.json() as { targets?: RegionalCampaignTarget[] }
+  return payload.targets ?? []
+}
+
+export async function createCampaignTarget(
+  campaignId: string,
+  input: {
+    channel: RegionalCampaignTarget['channel']
+    audienceName: string
+    audienceDescription?: string
+    intentStage: RegionalCampaignTarget['intentStage']
+    searchIntent?: RegionalCampaignTarget['searchIntent']
+    recommendedRadiusKm: number
+  },
+) {
+  const baseUrl = readBackendBridgeBaseUrl()
+  const response = await fetch(`${baseUrl}/growth/campaigns/${encodeURIComponent(campaignId)}/targets`, {
+    method: 'POST',
+    headers: await buildRequiredBackendAuthHeaders({
+      'Content-Type': 'application/json',
+    }),
+    body: JSON.stringify(input),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, `Falha ao criar público da campanha (${response.status}).`))
+  }
+
+  const payload = await response.json() as { target: RegionalCampaignTarget }
+  return payload.target
+}
+
+export async function deleteCampaignTarget(targetId: string) {
+  const baseUrl = readBackendBridgeBaseUrl()
+  const response = await fetch(`${baseUrl}/growth/campaign-targets/${encodeURIComponent(targetId)}`, {
+    method: 'DELETE',
+    headers: await buildRequiredBackendAuthHeaders(),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, `Falha ao remover público da campanha (${response.status}).`))
+  }
+}
+
+export async function getRadiusRecommendation(specialty: string, populationDensity: PopulationDensity) {
+  const baseUrl = readBackendBridgeBaseUrl()
+  const query = new URLSearchParams({
+    specialty,
+    populationDensity,
+  })
+  const response = await fetch(`${baseUrl}/growth/radius-recommendation?${query.toString()}`, {
+    headers: await buildRequiredBackendAuthHeaders(),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, `Falha ao sugerir raio (${response.status}).`))
+  }
+
+  const payload = await response.json() as { recommendation: RadiusRecommendation }
+  return payload.recommendation
 }
