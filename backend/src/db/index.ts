@@ -508,7 +508,6 @@ const sqliteSchema = `
   );
 
   CREATE INDEX IF NOT EXISTS idx_regional_leads_campaign ON regional_leads(campaign_id);
-  CREATE INDEX IF NOT EXISTS idx_regional_leads_campaign_target ON regional_leads(campaign_target_id);
   CREATE INDEX IF NOT EXISTS idx_regional_leads_landing_slug ON regional_leads(landing_slug);
   CREATE INDEX IF NOT EXISTS idx_regional_leads_entity ON regional_leads(entity_id);
   CREATE INDEX IF NOT EXISTS idx_regional_leads_urgency ON regional_leads(urgency);
@@ -2927,6 +2926,7 @@ export async function initializeDatabase(db: BackendDatabase) {
   await ensureColumn(db, 'flowmind_sovereign_mutation_registry', 'result_fingerprint', 'TEXT')
   await ensureColumn(db, 'flowmind_sovereign_mutation_registry', 'replay_result_shape', 'TEXT')
   await ensureColumn(db, 'regional_leads', 'campaign_target_id', 'TEXT')
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_regional_leads_campaign_target ON regional_leads(campaign_target_id)')
   await ensureColumn(db, 'regional_leads', 'converted_case_id', 'TEXT')
   await ensureColumn(db, 'regional_leads', 'converted_at', 'TEXT')
   await ensureColumn(db, 'flow_auth_user', 'legacy_source', 'TEXT')
