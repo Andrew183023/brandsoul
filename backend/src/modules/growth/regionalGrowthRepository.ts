@@ -4,6 +4,10 @@ import type { BackendDatabase } from '../../db/index.js'
 
 export type RegionalCampaignStatus = 'draft' | 'active' | 'paused' | 'archived'
 export type RegionalCampaignObjective = 'visibility' | 'lead_capture' | 'emergency_24h' | 'institutional'
+export type RegionalCampaignTargetChannel = 'google_search' | 'google_local' | 'facebook' | 'instagram'
+export type RegionalCampaignTargetIntentStage = 'awareness' | 'consideration' | 'decision'
+export type RegionalCampaignTargetSearchIntent = 'problem_aware' | 'solution_aware' | 'provider_aware' | 'ready_to_hire'
+export type PopulationDensity = 'small' | 'medium' | 'large'
 
 export type RegionalCampaignRecord = {
   id: string
@@ -41,6 +45,38 @@ export type CreateRegionalCampaignInput = {
   budgetMonthly?: number
 }
 
+export type RegionalCampaignTargetRecord = {
+  id: string
+  campaignId: string
+  channel: RegionalCampaignTargetChannel
+  audienceName: string
+  audienceDescription?: string
+  intentStage: RegionalCampaignTargetIntentStage
+  searchIntent?: RegionalCampaignTargetSearchIntent
+  recommendedRadiusKm: number
+  createdAt: string
+  updatedAt: string
+}
+
+export type CreateRegionalCampaignTargetInput = {
+  campaignId: string
+  channel: RegionalCampaignTargetChannel
+  audienceName: string
+  audienceDescription?: string
+  intentStage: RegionalCampaignTargetIntentStage
+  searchIntent?: RegionalCampaignTargetSearchIntent
+  recommendedRadiusKm: number
+}
+
+export type SpecialtyRadiusDefaultRecord = {
+  id: string
+  specialty: string
+  populationDensity: PopulationDensity
+  recommendedRadiusKm: number
+  createdAt: string
+  updatedAt: string
+}
+
 type RegionalCampaignRow = {
   id: string
   tenant_id: string
@@ -60,6 +96,28 @@ type RegionalCampaignRow = {
   avg_cpc: number | null
   conversions: number
   seo_pages_generated: number
+  created_at: string
+  updated_at: string
+}
+
+type RegionalCampaignTargetRow = {
+  id: string
+  campaign_id: string
+  channel: RegionalCampaignTargetChannel
+  audience_name: string
+  audience_description: string | null
+  intent_stage: RegionalCampaignTargetIntentStage
+  search_intent: RegionalCampaignTargetSearchIntent | null
+  recommended_radius_km: number
+  created_at: string
+  updated_at: string
+}
+
+type SpecialtyRadiusDefaultRow = {
+  id: string
+  specialty: string
+  population_density: PopulationDensity
+  recommended_radius_km: number
   created_at: string
   updated_at: string
 }
@@ -93,6 +151,32 @@ function mapCampaignRow(row: RegionalCampaignRow): RegionalCampaignRecord {
     avgCpc: row.avg_cpc ?? undefined,
     conversions: row.conversions,
     seoPagesGenerated: row.seo_pages_generated === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+function mapCampaignTargetRow(row: RegionalCampaignTargetRow): RegionalCampaignTargetRecord {
+  return {
+    id: row.id,
+    campaignId: row.campaign_id,
+    channel: row.channel,
+    audienceName: row.audience_name,
+    audienceDescription: row.audience_description ?? undefined,
+    intentStage: row.intent_stage,
+    searchIntent: row.search_intent ?? undefined,
+    recommendedRadiusKm: row.recommended_radius_km,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+function mapSpecialtyRadiusDefaultRow(row: SpecialtyRadiusDefaultRow): SpecialtyRadiusDefaultRecord {
+  return {
+    id: row.id,
+    specialty: row.specialty,
+    populationDensity: row.population_density,
+    recommendedRadiusKm: row.recommended_radius_km,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -224,6 +308,133 @@ export class RegionalGrowthRepository {
     )
 
     return this.getCampaignById(tenantId, campaignId)
+  }
+
+  async createCampaignTarget(tenantId: string, input: CreateRegionalCampaignTargetInput) {
+    const campaign = await this.getCampaignById(tenantId, input.campaignId)
+    if (!campaign) {
+      return null
+    }
+
+    const now = new Date().toISOString()
+    const id = randomUUID()
+
+    await this.db.run(
+      `
+        INSERT INTO regional_campaign_targets (
+          id,
+          campaign_id,
+          channel,
+          audience_name,
+          audience_description,
+          intent_stage,
+          search_intent,
+          recommended_radius_km,
+          created_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+      id,
+      input.campaignId,
+      input.channel,
+      input.audienceName,
+      input.audienceDescription ?? null,
+      input.intentStage,
+      input.searchIntent ?? null,
+      input.recommendedRadiusKm,
+      now,
+      now,
+    )
+
+    return this.getCampaignTargetById(id)
+  }
+
+  async listCampaignTargetsByCampaign(tenantId: string, campaignId: string) {
+    const rows = await this.db.all<RegionalCampaignTargetRow[]>(
+      `
+        SELECT targets.*
+        FROM regional_campaign_targets targets
+        INNER JOIN regional_campaigns campaigns
+          ON campaigns.id = targets.campaign_id
+        WHERE campaigns.tenant_id = ?
+          AND campaigns.id = ?
+        ORDER BY targets.updated_at DESC, targets.created_at DESC
+      `,
+      tenantId,
+      campaignId,
+    )
+
+    return rows.map(mapCampaignTargetRow)
+  }
+
+  async getCampaignTargetById(targetId: string) {
+    const row = await this.db.get<RegionalCampaignTargetRow>(
+      `
+        SELECT *
+        FROM regional_campaign_targets
+        WHERE id = ?
+      `,
+      targetId,
+    )
+
+    return row ? mapCampaignTargetRow(row) : null
+  }
+
+  async deleteCampaignTarget(tenantId: string, targetId: string) {
+    const target = await this.db.get<{ id: string }>(
+      `
+        SELECT targets.id
+        FROM regional_campaign_targets targets
+        INNER JOIN regional_campaigns campaigns
+          ON campaigns.id = targets.campaign_id
+        WHERE campaigns.tenant_id = ?
+          AND targets.id = ?
+      `,
+      tenantId,
+      targetId,
+    )
+
+    if (!target) {
+      return false
+    }
+
+    await this.db.run(
+      `
+        DELETE FROM regional_campaign_targets
+        WHERE id = ?
+      `,
+      targetId,
+    )
+
+    return true
+  }
+
+  async listRadiusDefaults() {
+    const rows = await this.db.all<SpecialtyRadiusDefaultRow[]>(
+      `
+        SELECT *
+        FROM specialty_radius_defaults
+        ORDER BY specialty ASC, population_density ASC
+      `,
+    )
+
+    return rows.map(mapSpecialtyRadiusDefaultRow)
+  }
+
+  async recommendRadius(specialty: string, populationDensity: PopulationDensity) {
+    const normalizedSpecialty = specialty.trim().toLowerCase()
+    const row = await this.db.get<SpecialtyRadiusDefaultRow>(
+      `
+        SELECT *
+        FROM specialty_radius_defaults
+        WHERE specialty = ?
+          AND population_density = ?
+      `,
+      normalizedSpecialty,
+      populationDensity,
+    )
+
+    return row ? mapSpecialtyRadiusDefaultRow(row) : null
   }
 }
 

@@ -6,6 +6,7 @@ export type RegionalLeadUrgency = 'low' | 'normal' | 'high' | 'critical'
 export type CreateRegionalLeadInput = {
   landingSlug: string
   campaignId?: string
+  campaignTargetId?: string
   landingPageId?: string
   tenantId: string
   entityId: string
@@ -26,6 +27,7 @@ export type CreateRegionalLeadInput = {
 export type RegionalLead = {
   id: string
   campaignId?: string
+  campaignTargetId?: string
   landingPageId?: string
   tenantId: string
   entityId: string

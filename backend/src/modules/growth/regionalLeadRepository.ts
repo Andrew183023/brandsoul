@@ -8,6 +8,7 @@ export type RegionalLeadStatus = 'new' | 'triaged' | 'contacted' | 'converted' |
 export type RegionalLeadRecord = {
   id: string
   campaignId?: string
+  campaignTargetId?: string
   landingPageId?: string
   tenantId: string
   entityId: string
@@ -33,6 +34,7 @@ export type RegionalLeadRecord = {
 
 export type CreateRegionalLeadInput = {
   campaignId?: string
+  campaignTargetId?: string
   landingPageId?: string
   tenantId: string
   entityId: string
@@ -54,6 +56,7 @@ export type CreateRegionalLeadInput = {
 type RegionalLeadRow = {
   id: string
   campaign_id: string | null
+  campaign_target_id: string | null
   landing_page_id: string | null
   tenant_id: string
   entity_id: string
@@ -94,6 +97,7 @@ export function mapRegionalLeadRow(row: RegionalLeadRow): RegionalLeadRecord {
   return {
     id: row.id,
     campaignId: row.campaign_id ?? undefined,
+    campaignTargetId: row.campaign_target_id ?? undefined,
     landingPageId: row.landing_page_id ?? undefined,
     tenantId: row.tenant_id,
     entityId: row.entity_id,
@@ -126,6 +130,7 @@ export class RegionalLeadRepository {
     const lead: RegionalLeadRecord = {
       id: randomUUID(),
       campaignId: normalizeOptionalText(input.campaignId),
+      campaignTargetId: normalizeOptionalText(input.campaignTargetId),
       landingPageId: normalizeOptionalText(input.landingPageId),
       tenantId: normalizeRequiredText(input.tenantId),
       entityId: normalizeRequiredText(input.entityId),
@@ -153,6 +158,7 @@ export class RegionalLeadRepository {
           INSERT INTO regional_leads (
             id,
             campaign_id,
+            campaign_target_id,
             landing_page_id,
             tenant_id,
             entity_id,
@@ -174,10 +180,11 @@ export class RegionalLeadRepository {
             status,
             created_at,
             updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         lead.id,
         lead.campaignId ?? null,
+        lead.campaignTargetId ?? null,
         lead.landingPageId ?? null,
         lead.tenantId,
         lead.entityId,
