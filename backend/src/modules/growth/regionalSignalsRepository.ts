@@ -14,6 +14,12 @@ export type RegionalSignalRecord = {
   urgentLeads: number
   urgencyScore: number
   signalScore: number
+  bestChannel?: string
+  bestAudienceName?: string
+  bestIntentStage?: string
+  bestSearchIntent?: string
+  bestCampaignTargetId?: string
+  bestRecommendedRadiusKm?: number
   createdAt: string
   updatedAt: string
 }
@@ -30,6 +36,12 @@ type RegionalSignalRow = {
   urgent_leads: number
   urgency_score: number
   signal_score: number
+  best_channel: string | null
+  best_audience_name: string | null
+  best_intent_stage: string | null
+  best_search_intent: string | null
+  best_campaign_target_id: string | null
+  best_recommended_radius_km: number | null
   created_at: string
   updated_at: string
 }
@@ -49,6 +61,29 @@ type SignalAggregate = {
   urgentLeads: number
 }
 
+type BestTargetEvidenceRow = {
+  city: string
+  specialty: string
+  campaign_target_id: string
+  channel: string
+  audience_name: string
+  intent_stage: string
+  search_intent: string | null
+  recommended_radius_km: number
+  converted_count: number
+  urgent_count: number
+  lead_count: number
+}
+
+type BestTargetEvidence = {
+  campaignTargetId: string
+  channel: string
+  audienceName: string
+  intentStage: string
+  searchIntent?: string
+  recommendedRadiusKm: number
+}
+
 function mapRegionalSignalRow(row: RegionalSignalRow): RegionalSignalRecord {
   return {
     id: row.id,
@@ -62,6 +97,12 @@ function mapRegionalSignalRow(row: RegionalSignalRow): RegionalSignalRecord {
     urgentLeads: Number(row.urgent_leads ?? 0),
     urgencyScore: Number(row.urgency_score ?? 0),
     signalScore: Number(row.signal_score ?? 0),
+    bestChannel: row.best_channel ?? undefined,
+    bestAudienceName: row.best_audience_name ?? undefined,
+    bestIntentStage: row.best_intent_stage ?? undefined,
+    bestSearchIntent: row.best_search_intent ?? undefined,
+    bestCampaignTargetId: row.best_campaign_target_id ?? undefined,
+    bestRecommendedRadiusKm: row.best_recommended_radius_km ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
@@ -80,6 +121,35 @@ function computeSignalScore(aggregate: SignalAggregate) {
 
 function computeUrgencyScore(aggregate: SignalAggregate) {
   return aggregate.urgentLeads * 25
+}
+
+function mapBestTargetEvidence(rows: BestTargetEvidenceRow[]) {
+  const bestTargetByKey = new Map<string, BestTargetEvidence>()
+
+  for (const row of rows) {
+    const city = row.city?.trim()
+    const specialty = row.specialty?.trim()
+
+    if (!city || !specialty) {
+      continue
+    }
+
+    const key = buildAggregateKey(city, specialty)
+    if (bestTargetByKey.has(key)) {
+      continue
+    }
+
+    bestTargetByKey.set(key, {
+      campaignTargetId: row.campaign_target_id,
+      channel: row.channel,
+      audienceName: row.audience_name,
+      intentStage: row.intent_stage,
+      searchIntent: row.search_intent ?? undefined,
+      recommendedRadiusKm: Number(row.recommended_radius_km ?? 0),
+    })
+  }
+
+  return bestTargetByKey
 }
 
 function mergeAggregates(
@@ -114,7 +184,7 @@ export class RegionalSignalsRepository {
   constructor(private readonly db: BackendDatabase) {}
 
   async recalculateSignalsForEntity(tenantId: string, entityId: string) {
-    const [visitRows, leadRows, caseRows, urgentLeadRows] = await Promise.all([
+    const [visitRows, leadRows, caseRows, urgentLeadRows, bestTargetRows] = await Promise.all([
       this.db.all<AggregateRow[]>(
         `
           SELECT pages.city AS city, pages.specialty AS specialty, COUNT(attribution.id) AS total
@@ -163,6 +233,45 @@ export class RegionalSignalsRepository {
         tenantId,
         entityId,
       ),
+      this.db.all<BestTargetEvidenceRow[]>(
+        `
+          SELECT
+            leads.city AS city,
+            leads.specialty AS specialty,
+            leads.campaign_target_id AS campaign_target_id,
+            targets.channel AS channel,
+            targets.audience_name AS audience_name,
+            targets.intent_stage AS intent_stage,
+            targets.search_intent AS search_intent,
+            targets.recommended_radius_km AS recommended_radius_km,
+            SUM(CASE WHEN leads.converted_case_id IS NOT NULL THEN 1 ELSE 0 END) AS converted_count,
+            SUM(CASE WHEN leads.urgency IN ('high', 'critical') THEN 1 ELSE 0 END) AS urgent_count,
+            COUNT(leads.id) AS lead_count
+          FROM regional_leads leads
+          INNER JOIN regional_campaign_targets targets
+            ON targets.id = leads.campaign_target_id
+          WHERE leads.tenant_id = ?
+            AND leads.entity_id = ?
+            AND leads.campaign_target_id IS NOT NULL
+          GROUP BY
+            leads.city,
+            leads.specialty,
+            leads.campaign_target_id,
+            targets.channel,
+            targets.audience_name,
+            targets.intent_stage,
+            targets.search_intent,
+            targets.recommended_radius_km
+          ORDER BY
+            converted_count DESC,
+            urgent_count DESC,
+            lead_count DESC,
+            leads.city ASC,
+            leads.specialty ASC
+        `,
+        tenantId,
+        entityId,
+      ),
     ])
 
     const aggregates = new Map<string, SignalAggregate>()
@@ -170,6 +279,7 @@ export class RegionalSignalsRepository {
     mergeAggregates(aggregates, leadRows, 'leads')
     mergeAggregates(aggregates, caseRows, 'cases')
     mergeAggregates(aggregates, urgentLeadRows, 'urgentLeads')
+    const bestTargetByKey = mapBestTargetEvidence(bestTargetRows)
 
     await this.db.transaction(async (tx) => {
       const keys = Array.from(aggregates.values())
@@ -205,6 +315,7 @@ export class RegionalSignalsRepository {
         const now = new Date().toISOString()
         const signalScore = computeSignalScore(aggregate)
         const urgencyScore = computeUrgencyScore(aggregate)
+        const bestTarget = bestTargetByKey.get(buildAggregateKey(aggregate.city, aggregate.specialty))
         const existing = await tx.get<{ id: string; created_at: string }>(
           `
             SELECT id, created_at
@@ -239,6 +350,12 @@ export class RegionalSignalsRepository {
               urgent_leads,
               urgency_score,
               signal_score,
+              best_channel,
+              best_audience_name,
+              best_intent_stage,
+              best_search_intent,
+              best_campaign_target_id,
+              best_recommended_radius_km,
               demand_score,
               competition_score,
               opportunity_score,
@@ -248,7 +365,7 @@ export class RegionalSignalsRepository {
               last_updated,
               created_at,
               updated_at
-            ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 'stable', 'internal', '{}', ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, 'stable', 'internal', '{}', ?, ?, ?)
             ON CONFLICT (tenant_id, entity_id, city, specialty) DO UPDATE SET
               visits = excluded.visits,
               leads = excluded.leads,
@@ -256,6 +373,12 @@ export class RegionalSignalsRepository {
               urgent_leads = excluded.urgent_leads,
               urgency_score = excluded.urgency_score,
               signal_score = excluded.signal_score,
+              best_channel = excluded.best_channel,
+              best_audience_name = excluded.best_audience_name,
+              best_intent_stage = excluded.best_intent_stage,
+              best_search_intent = excluded.best_search_intent,
+              best_campaign_target_id = excluded.best_campaign_target_id,
+              best_recommended_radius_km = excluded.best_recommended_radius_km,
               opportunity_score = excluded.opportunity_score,
               last_updated = excluded.last_updated,
               updated_at = excluded.updated_at
@@ -272,6 +395,12 @@ export class RegionalSignalsRepository {
           aggregate.urgentLeads,
           urgencyScore,
           signalScore,
+          bestTarget?.channel ?? null,
+          bestTarget?.audienceName ?? null,
+          bestTarget?.intentStage ?? null,
+          bestTarget?.searchIntent ?? null,
+          bestTarget?.campaignTargetId ?? null,
+          bestTarget?.recommendedRadiusKm ?? null,
           signalScore,
           now,
           createdAt,
@@ -298,6 +427,12 @@ export class RegionalSignalsRepository {
           urgent_leads,
           urgency_score,
           signal_score,
+          best_channel,
+          best_audience_name,
+          best_intent_stage,
+          best_search_intent,
+          best_campaign_target_id,
+          best_recommended_radius_km,
           created_at,
           updated_at
         FROM regional_signals
@@ -327,6 +462,12 @@ export class RegionalSignalsRepository {
           urgent_leads,
           urgency_score,
           signal_score,
+          best_channel,
+          best_audience_name,
+          best_intent_stage,
+          best_search_intent,
+          best_campaign_target_id,
+          best_recommended_radius_km,
           created_at,
           updated_at
         FROM regional_signals

@@ -409,6 +409,12 @@ const sqliteSchema = `
     urgent_leads INTEGER NOT NULL DEFAULT 0,
     urgency_score INTEGER NOT NULL DEFAULT 0,
     signal_score INTEGER NOT NULL DEFAULT 0,
+    best_channel TEXT,
+    best_audience_name TEXT,
+    best_intent_stage TEXT,
+    best_search_intent TEXT,
+    best_campaign_target_id TEXT,
+    best_recommended_radius_km INTEGER,
     demand_score REAL NOT NULL DEFAULT 0,
     competition_score REAL NOT NULL DEFAULT 0,
     opportunity_score REAL NOT NULL DEFAULT 0,
@@ -2940,6 +2946,12 @@ export async function initializeDatabase(db: BackendDatabase) {
   await ensureColumn(db, 'regional_signals', 'urgent_leads', 'INTEGER NOT NULL DEFAULT 0')
   await ensureColumn(db, 'regional_signals', 'urgency_score', 'INTEGER NOT NULL DEFAULT 0')
   await ensureColumn(db, 'regional_signals', 'signal_score', 'INTEGER NOT NULL DEFAULT 0')
+  await ensureColumn(db, 'regional_signals', 'best_channel', 'TEXT')
+  await ensureColumn(db, 'regional_signals', 'best_audience_name', 'TEXT')
+  await ensureColumn(db, 'regional_signals', 'best_intent_stage', 'TEXT')
+  await ensureColumn(db, 'regional_signals', 'best_search_intent', 'TEXT')
+  await ensureColumn(db, 'regional_signals', 'best_campaign_target_id', 'TEXT')
+  await ensureColumn(db, 'regional_signals', 'best_recommended_radius_km', 'INTEGER')
   await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_regional_signals_entity_city_specialty_unique ON regional_signals(tenant_id, entity_id, city, specialty)')
   await db.exec('CREATE INDEX IF NOT EXISTS idx_regional_signals_score ON regional_signals(signal_score)')
   await ensureColumn(db, 'regional_leads', 'campaign_target_id', 'TEXT')

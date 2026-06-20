@@ -442,6 +442,13 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
                   <p><strong>Casos:</strong> {signal.cases}</p>
                   <p><strong>Leads urgentes:</strong> {signal.urgentLeads}</p>
                   <p><strong>Urgency score:</strong> {signal.urgencyScore}</p>
+                  {signal.bestChannel ? <p><strong>Canal recomendado:</strong> {signal.bestChannel}</p> : null}
+                  {signal.bestAudienceName ? <p><strong>Público recomendado:</strong> {signal.bestAudienceName}</p> : null}
+                  {signal.bestIntentStage ? <p><strong>Intenção recomendada:</strong> {signal.bestIntentStage}</p> : null}
+                  {signal.bestSearchIntent ? <p><strong>Search intent:</strong> {signal.bestSearchIntent}</p> : null}
+                  {typeof signal.bestRecommendedRadiusKm === 'number' ? (
+                    <p><strong>Raio recomendado:</strong> {signal.bestRecommendedRadiusKm}km</p>
+                  ) : null}
                 </SurfaceCard>
               ))}
           </div>

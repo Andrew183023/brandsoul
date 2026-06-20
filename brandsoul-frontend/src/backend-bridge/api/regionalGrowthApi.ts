@@ -57,6 +57,12 @@ export type RegionalSignal = {
   urgentLeads: number
   urgencyScore: number
   signalScore: number
+  bestChannel?: string
+  bestAudienceName?: string
+  bestIntentStage?: string
+  bestSearchIntent?: string
+  bestCampaignTargetId?: string
+  bestRecommendedRadiusKm?: number
   createdAt: string
   updatedAt: string
 }
