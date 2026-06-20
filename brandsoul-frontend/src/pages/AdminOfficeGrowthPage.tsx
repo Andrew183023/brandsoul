@@ -8,10 +8,15 @@ import {
   createCampaignTarget,
   createRegionalCampaign,
   deleteCampaignTarget,
+  getGrowthInsights,
   getRadiusRecommendation,
+  listGrowthRecommendations,
   listRegionalSignals,
   listRegionalCampaigns,
   listCampaignTargets,
+  type GrowthInsightRankItem,
+  type GrowthInsights,
+  type GrowthRecommendation,
   type PopulationDensity,
   type RegionalCampaign,
   type RegionalCampaignTarget,
@@ -50,6 +55,8 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
   const [campaigns, setCampaigns] = useState<RegionalCampaign[]>([])
   const [leads, setLeads] = useState<RegionalLead[]>([])
   const [signals, setSignals] = useState<RegionalSignal[]>([])
+  const [insights, setInsights] = useState<GrowthInsights | null>(null)
+  const [recommendations, setRecommendations] = useState<GrowthRecommendation[]>([])
   const [targetsByCampaign, setTargetsByCampaign] = useState<Record<string, RegionalCampaignTarget[]>>({})
   const [isLoading, setIsLoading] = useState(true)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -73,10 +80,12 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
     setActionError(null)
 
     try {
-      const [campaignPayload, leadPayload, signalPayload] = await Promise.all([
+      const [campaignPayload, leadPayload, signalPayload, insightsPayload, recommendationPayload] = await Promise.all([
         listRegionalCampaigns(),
         listRegionalLeadsByEntity(officeId),
         listRegionalSignals(officeId),
+        getGrowthInsights(officeId),
+        listGrowthRecommendations(officeId),
       ])
       const officeCampaigns = campaignPayload.filter((campaign) => campaign.entityId === officeId)
       const targetEntries = await Promise.all(
@@ -86,6 +95,8 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
       setCampaigns(officeCampaigns)
       setLeads(leadPayload)
       setSignals(signalPayload)
+      setInsights(insightsPayload)
+      setRecommendations(recommendationPayload)
       setTargetsByCampaign(Object.fromEntries(targetEntries))
       setTargetDrafts((current) => {
         const next: Record<string, CampaignTargetDraft> = {}
@@ -107,7 +118,11 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
 
     try {
       const nextSignals = await recalculateRegionalSignals(officeId)
+      const nextInsights = await getGrowthInsights(officeId)
+      const nextRecommendations = await listGrowthRecommendations(officeId)
       setSignals(nextSignals)
+      setInsights(nextInsights)
+      setRecommendations(nextRecommendations)
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Falha ao recalcular sinais.')
     } finally {
@@ -198,6 +213,25 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
     }
 
     return 'origem direta'
+  }
+
+  function renderInsightRank(title: string, items: GrowthInsightRankItem[]) {
+    return (
+      <SurfaceCard tone="admin">
+        <h2>{title}</h2>
+        {items.length === 0 ? (
+          <p>Sem dados suficientes ainda.</p>
+        ) : (
+          <div className="admin-form-section">
+            {items.slice(0, 5).map((item) => (
+              <p key={`${title}-${item.label}`}>
+                <strong>{item.label}:</strong> {item.score}
+              </p>
+            ))}
+          </div>
+        )}
+      </SurfaceCard>
+    )
   }
 
   async function handleSuggestRadius(campaign: RegionalCampaign) {
@@ -404,6 +438,83 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
                     </button>
                   )}
                 </div>
+              </SurfaceCard>
+            ))}
+          </div>
+        )}
+      </SurfaceCard>
+
+      <SurfaceCard tone="admin">
+        <div className="admin-card-header">
+          <h2>Inteligência Growth</h2>
+        </div>
+
+        {!insights || insights.totalSignals === 0 ? (
+          <p>Inteligência Growth será exibida após recalcular sinais.</p>
+        ) : (
+          <>
+            <div className="admin-diagnosis-grid">
+              <SurfaceCard tone="admin">
+                <strong>{insights.totalSignals}</strong>
+                <span>sinais detectados</span>
+              </SurfaceCard>
+              <SurfaceCard tone="admin">
+                <strong>{insights.totalVisits}</strong>
+                <span>visitas</span>
+              </SurfaceCard>
+              <SurfaceCard tone="admin">
+                <strong>{insights.totalLeads}</strong>
+                <span>leads</span>
+              </SurfaceCard>
+              <SurfaceCard tone="admin">
+                <strong>{insights.totalCases}</strong>
+                <span>casos</span>
+              </SurfaceCard>
+              <SurfaceCard tone="admin">
+                <strong>{(insights.leadToCaseRate * 100).toFixed(1)}%</strong>
+                <span>lead → caso</span>
+              </SurfaceCard>
+              <SurfaceCard tone="admin">
+                <strong>{insights.expansionScore}</strong>
+                <span>score de expansão</span>
+              </SurfaceCard>
+            </div>
+
+            <div className="admin-grid">
+              {renderInsightRank('Top cidades', insights.topCities)}
+              {renderInsightRank('Top especialidades', insights.topSpecialties)}
+              {renderInsightRank('Top canais', insights.topChannels)}
+              {renderInsightRank('Top públicos', insights.topAudiences)}
+              {renderInsightRank('Top intenções', insights.topIntentStages)}
+              {renderInsightRank('Top search intents', insights.topSearchIntents)}
+            </div>
+          </>
+        )}
+      </SurfaceCard>
+
+      <SurfaceCard tone="admin">
+        <div className="admin-card-header">
+          <h2>Recomendações de Expansão</h2>
+        </div>
+
+        {recommendations.length === 0 ? (
+          <p>Nenhuma recomendação disponível ainda. Recalcule os sinais.</p>
+        ) : (
+          <div className="admin-grid">
+            {recommendations.map((recommendation) => (
+              <SurfaceCard key={recommendation.id} tone="admin">
+                <div className="admin-card-header">
+                  <h2>{recommendation.city}</h2>
+                  <span>{recommendation.priority}</span>
+                </div>
+                <p><strong>Especialidade:</strong> {recommendation.specialty}</p>
+                <p><strong>Canal recomendado:</strong> {recommendation.recommendedChannel ?? 'n/a'}</p>
+                <p><strong>Público recomendado:</strong> {recommendation.recommendedAudience ?? 'n/a'}</p>
+                <p><strong>Intenção recomendada:</strong> {recommendation.recommendedIntentStage ?? 'n/a'}</p>
+                <p><strong>Search intent:</strong> {recommendation.recommendedSearchIntent ?? 'n/a'}</p>
+                <p><strong>Raio recomendado:</strong> {typeof recommendation.recommendedRadiusKm === 'number' ? `${recommendation.recommendedRadiusKm}km` : 'n/a'}</p>
+                <p><strong>Orçamento diário sugerido:</strong> R$ {recommendation.recommendedBudgetDaily}</p>
+                <p><strong>Motivo:</strong> {recommendation.reason}</p>
               </SurfaceCard>
             ))}
           </div>

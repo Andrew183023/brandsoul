@@ -67,6 +67,45 @@ export type RegionalSignal = {
   updatedAt: string
 }
 
+export type GrowthInsightRankItem = {
+  label: string
+  score: number
+}
+
+export type GrowthInsights = {
+  totalSignals: number
+  totalVisits: number
+  totalLeads: number
+  totalCases: number
+  totalUrgentLeads: number
+  averageSignalScore: number
+  leadToCaseRate: number
+  topCities: GrowthInsightRankItem[]
+  topSpecialties: GrowthInsightRankItem[]
+  topChannels: GrowthInsightRankItem[]
+  topAudiences: GrowthInsightRankItem[]
+  topIntentStages: GrowthInsightRankItem[]
+  topSearchIntents: GrowthInsightRankItem[]
+  expansionScore: number
+}
+
+export type GrowthRecommendationPriority = 'critical' | 'high' | 'medium' | 'low'
+
+export type GrowthRecommendation = {
+  id: string
+  city: string
+  specialty: string
+  priority: GrowthRecommendationPriority
+  signalScore: number
+  recommendedChannel?: string
+  recommendedAudience?: string
+  recommendedIntentStage?: string
+  recommendedSearchIntent?: string
+  recommendedRadiusKm?: number
+  recommendedBudgetDaily: number
+  reason: string
+}
+
 async function readApiErrorMessage(response: Response, fallback: string) {
   try {
     const payload = await response.json() as { error?: { message?: string } }
@@ -234,4 +273,32 @@ export async function recalculateRegionalSignals(entityId: string) {
 
   const payload = await response.json() as { signals?: RegionalSignal[] }
   return payload.signals ?? []
+}
+
+export async function getGrowthInsights(entityId: string) {
+  const baseUrl = readBackendBridgeBaseUrl()
+  const response = await fetch(`${baseUrl}/growth/insights?entityId=${encodeURIComponent(entityId)}`, {
+    headers: await buildRequiredBackendAuthHeaders(),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, `Falha ao carregar inteligência de growth (${response.status}).`))
+  }
+
+  const payload = await response.json() as { insights?: GrowthInsights }
+  return payload.insights ?? null
+}
+
+export async function listGrowthRecommendations(entityId: string) {
+  const baseUrl = readBackendBridgeBaseUrl()
+  const response = await fetch(`${baseUrl}/growth/recommendations?entityId=${encodeURIComponent(entityId)}`, {
+    headers: await buildRequiredBackendAuthHeaders(),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, `Falha ao carregar recomendações de growth (${response.status}).`))
+  }
+
+  const payload = await response.json() as { recommendations?: GrowthRecommendation[] }
+  return payload.recommendations ?? []
 }
