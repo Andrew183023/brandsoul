@@ -45,11 +45,12 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
     return campaigns.reduce(
       (acc, campaign) => ({
         active: acc.active + (campaign.status === 'active' ? 1 : 0),
+        visits: acc.visits + campaign.clicks,
         leads: acc.leads + campaign.leadsReceived,
         conversions: acc.conversions + campaign.conversions,
         seoPages: acc.seoPages + (campaign.seoPagesGenerated ? 1 : 0),
       }),
-      { active: 0, leads: 0, conversions: 0, seoPages: 0 },
+      { active: 0, visits: 0, leads: 0, conversions: 0, seoPages: 0 },
     )
   }, [campaigns])
 
@@ -112,6 +113,10 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
         <SurfaceCard tone="admin">
           <strong>{summary.seoPages}</strong>
           <span>grupos SEO gerados</span>
+        </SurfaceCard>
+        <SurfaceCard tone="admin">
+          <strong>{summary.visits}</strong>
+          <span>visitas SEO</span>
         </SurfaceCard>
         <SurfaceCard tone="admin">
           <strong>{summary.leads}</strong>

@@ -440,6 +440,38 @@ const sqliteSchema = `
   CREATE INDEX IF NOT EXISTS idx_regional_lead_attribution_landing ON regional_lead_attribution(landing_slug);
   CREATE INDEX IF NOT EXISTS idx_regional_lead_attribution_source ON regional_lead_attribution(utm_source);
 
+  CREATE TABLE IF NOT EXISTS regional_leads (
+    id TEXT PRIMARY KEY,
+    campaign_id TEXT,
+    landing_page_id TEXT,
+    tenant_id TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    landing_slug TEXT NOT NULL,
+    name TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    email TEXT,
+    city TEXT NOT NULL,
+    specialty TEXT NOT NULL,
+    urgency TEXT NOT NULL DEFAULT 'normal',
+    case_summary TEXT NOT NULL,
+    utm_source TEXT,
+    utm_medium TEXT,
+    utm_campaign TEXT,
+    utm_term TEXT,
+    referrer TEXT,
+    status TEXT NOT NULL DEFAULT 'new',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (urgency IN ('low', 'normal', 'high', 'critical')),
+    CHECK (status IN ('new', 'triaged', 'contacted', 'converted', 'lost'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_regional_leads_campaign ON regional_leads(campaign_id);
+  CREATE INDEX IF NOT EXISTS idx_regional_leads_landing_slug ON regional_leads(landing_slug);
+  CREATE INDEX IF NOT EXISTS idx_regional_leads_entity ON regional_leads(entity_id);
+  CREATE INDEX IF NOT EXISTS idx_regional_leads_urgency ON regional_leads(urgency);
+  CREATE INDEX IF NOT EXISTS idx_regional_leads_status ON regional_leads(status);
+
   CREATE TABLE IF NOT EXISTS seo_landing_pages (
     id TEXT PRIMARY KEY,
     campaign_id TEXT NOT NULL,

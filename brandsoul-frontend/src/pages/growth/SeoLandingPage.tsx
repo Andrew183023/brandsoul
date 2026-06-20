@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { getSeoLandingPage, type SeoLandingPage } from '../../backend-bridge/api/seoLandingApi'
 import { trackLandingVisit } from '../../backend-bridge/api/leadAttributionApi'
+import { createRegionalLead, type RegionalLeadUrgency } from '../../backend-bridge/api/regionalLeadApi'
 import PublicShell from '../../app/shells/PublicShell'
 import '../../styles/entityPublicPage.css'
 
@@ -13,6 +14,14 @@ type AttributionRegistry = Record<string, string>
 type SeoLandingPageProps = {
   city: string
   specialty: string
+}
+
+type LeadFormState = {
+  name: string
+  phone: string
+  email: string
+  urgency: RegionalLeadUrgency
+  caseSummary: string
 }
 
 function buildAttributionKey(pathname: string, search: string) {
@@ -40,6 +49,16 @@ function saveAttributionRegistry(registry: AttributionRegistry) {
 export default function SeoLandingPage({ city, specialty }: SeoLandingPageProps) {
   const [page, setPage] = useState<SeoLandingPage | undefined>()
   const [isLoading, setIsLoading] = useState(true)
+  const [submitError, setSubmitError] = useState<string | null>(null)
+  const [submitSuccess, setSubmitSuccess] = useState<string | null>(null)
+  const [isSubmittingLead, setIsSubmittingLead] = useState(false)
+  const [formState, setFormState] = useState<LeadFormState>({
+    name: '',
+    phone: '',
+    email: '',
+    urgency: 'normal',
+    caseSummary: '',
+  })
 
   useEffect(() => {
     const attributionKey = buildAttributionKey(window.location.pathname, window.location.search)
@@ -127,6 +146,54 @@ export default function SeoLandingPage({ city, specialty }: SeoLandingPageProps)
     )
   }
 
+  async function handleLeadSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!page) {
+      return
+    }
+
+    const searchParams = new URLSearchParams(window.location.search)
+
+    setIsSubmittingLead(true)
+    setSubmitError(null)
+    setSubmitSuccess(null)
+
+    try {
+      await createRegionalLead({
+        landingSlug: page.slug,
+        campaignId: page.campaignId,
+        landingPageId: page.id,
+        tenantId: page.tenantId,
+        entityId: page.entityId,
+        name: formState.name,
+        phone: formState.phone,
+        email: formState.email || undefined,
+        city: page.city,
+        specialty: page.specialty,
+        urgency: formState.urgency,
+        caseSummary: formState.caseSummary,
+        utmSource: searchParams.get('utm_source') ?? undefined,
+        utmMedium: searchParams.get('utm_medium') ?? undefined,
+        utmCampaign: searchParams.get('utm_campaign') ?? undefined,
+        utmTerm: searchParams.get('utm_term') ?? undefined,
+        referrer: document.referrer || undefined,
+      })
+
+      setSubmitSuccess('Recebemos sua solicitação. O escritório poderá analisar seu caso com mais contexto.')
+      setFormState({
+        name: '',
+        phone: '',
+        email: '',
+        urgency: 'normal',
+        caseSummary: '',
+      })
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : 'Não foi possível enviar sua solicitação agora.')
+    } finally {
+      setIsSubmittingLead(false)
+    }
+  }
+
   return (
     <PublicShell>
       <main className="office-profile-page">
@@ -173,9 +240,84 @@ export default function SeoLandingPage({ city, specialty }: SeoLandingPageProps)
             </p>
           </div>
 
-          <a className="office-button office-button--primary" href={`/escritorios/${page.entityId}/perfil#office-public-triagem`}>
-            Iniciar agora
-          </a>
+          <form className="admin-form-section" onSubmit={(event) => void handleLeadSubmit(event)}>
+            <label className="admin-field">
+              <span>Nome</span>
+              <input
+                value={formState.name}
+                onChange={(event) => setFormState((current) => ({ ...current, name: event.target.value }))}
+                placeholder="Seu nome"
+                required
+              />
+            </label>
+
+            <label className="admin-field">
+              <span>WhatsApp ou telefone</span>
+              <input
+                value={formState.phone}
+                onChange={(event) => setFormState((current) => ({ ...current, phone: event.target.value }))}
+                placeholder="(31) 99999-9999"
+                required
+              />
+            </label>
+
+            <label className="admin-field">
+              <span>Email (opcional)</span>
+              <input
+                value={formState.email}
+                onChange={(event) => setFormState((current) => ({ ...current, email: event.target.value }))}
+                placeholder="voce@exemplo.com"
+                type="email"
+              />
+            </label>
+
+            <label className="admin-field">
+              <span>Urgência</span>
+              <select
+                value={formState.urgency}
+                onChange={(event) => setFormState((current) => ({ ...current, urgency: event.target.value as RegionalLeadUrgency }))}
+              >
+                <option value="low">Baixa</option>
+                <option value="normal">Normal</option>
+                <option value="high">Alta</option>
+                <option value="critical">Crítica</option>
+              </select>
+            </label>
+
+            <label className="admin-field">
+              <span>Resumo do caso</span>
+              <textarea
+                value={formState.caseSummary}
+                onChange={(event) => setFormState((current) => ({ ...current, caseSummary: event.target.value }))}
+                placeholder="Explique seu caso com o máximo de contexto útil para a triagem."
+                rows={5}
+                required
+              />
+            </label>
+
+            {submitError ? (
+              <div className="office-state-banner office-state-banner--warning">
+                <strong>Não foi possível enviar agora.</strong>
+                <p>{submitError}</p>
+              </div>
+            ) : null}
+
+            {submitSuccess ? (
+              <div className="office-state-banner">
+                <strong>Solicitação recebida.</strong>
+                <p>{submitSuccess}</p>
+              </div>
+            ) : null}
+
+            <div className="office-profile-header__actions">
+              <button className="office-button office-button--primary" type="submit" disabled={isSubmittingLead}>
+                {isSubmittingLead ? 'Enviando triagem...' : 'Enviar triagem'}
+              </button>
+              <a className="office-button office-button--secondary" href={`/escritorios/${page.entityId}/perfil`}>
+                Ver escritório
+              </a>
+            </div>
+          </form>
         </section>
       </main>
     </PublicShell>

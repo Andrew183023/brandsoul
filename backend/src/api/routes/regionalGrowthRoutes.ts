@@ -6,6 +6,7 @@ import { getRequestAuth, requireAuth } from '../middleware/requireAuth.js'
 import { createRegionalGrowthRepository } from '../../modules/growth/regionalGrowthRepository.js'
 import { createSeoGeneratorService } from '../../modules/growth/seoGeneratorService.js'
 import { createLeadAttributionRepository } from '../../modules/growth/leadAttributionRepository.js'
+import { createRegionalLeadRepository, type RegionalLeadUrgency } from '../../modules/growth/regionalLeadRepository.js'
 
 type BackendContext = {
   backendContext: {
@@ -37,6 +38,10 @@ function getLeadAttributionRepository(app: FastifyInstance) {
   return createLeadAttributionRepository(getConnection(app))
 }
 
+function getRegionalLeadRepository(app: FastifyInstance) {
+  return createRegionalLeadRepository(getConnection(app))
+}
+
 const privateReadRateLimit = createRateLimit({
   namespace: 'growth-read',
   max: 120,
@@ -55,6 +60,22 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string')
 }
 
+function readOptionalString(value: unknown) {
+  if (typeof value !== 'string') {
+    return undefined
+  }
+
+  const normalized = value.trim()
+  return normalized.length > 0 ? normalized : undefined
+}
+
+function readRequiredString(value: unknown) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function isLeadUrgency(value: unknown): value is RegionalLeadUrgency {
+  return value === 'low' || value === 'normal' || value === 'high' || value === 'critical'
+}
 
 
 export async function registerRegionalGrowthRoutes(app: FastifyInstance) {
@@ -98,6 +119,84 @@ export async function registerRegionalGrowthRoutes(app: FastifyInstance) {
       attribution,
     }
   })
+
+  app.post<{
+    Body: {
+      landingSlug?: string
+      campaignId?: string
+      landingPageId?: string
+      tenantId?: string
+      entityId?: string
+      name?: string
+      phone?: string
+      email?: string
+      city?: string
+      specialty?: string
+      urgency?: RegionalLeadUrgency
+      caseSummary?: string
+      utmSource?: string
+      utmMedium?: string
+      utmCampaign?: string
+      utmTerm?: string
+      referrer?: string
+    }
+  }>('/growth/regional-leads', async (request, reply) => {
+    const body = request.body ?? {}
+    const landingSlug = readRequiredString(body.landingSlug)
+    const entityId = readRequiredString(body.entityId)
+    const tenantId = readRequiredString(body.tenantId)
+    const name = readRequiredString(body.name)
+    const phone = readRequiredString(body.phone)
+    const city = readRequiredString(body.city)
+    const specialty = readRequiredString(body.specialty)
+    const caseSummary = readRequiredString(body.caseSummary)
+
+    if (!landingSlug || !entityId || !tenantId || !name || !phone || !city || !specialty || !caseSummary) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_REGIONAL_LEAD_INPUT',
+          message: 'landingSlug, entityId, tenantId, name, phone, city, specialty and caseSummary are required.',
+        },
+      })
+    }
+
+    if (body.urgency !== undefined && !isLeadUrgency(body.urgency)) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_REGIONAL_LEAD_URGENCY',
+          message: 'urgency must be low, normal, high or critical.',
+        },
+      })
+    }
+
+    const lead = await getRegionalLeadRepository(app).createLead({
+      campaignId: readOptionalString(body.campaignId),
+      landingPageId: readOptionalString(body.landingPageId),
+      tenantId,
+      entityId,
+      landingSlug,
+      name,
+      phone,
+      email: readOptionalString(body.email),
+      city,
+      specialty,
+      urgency: body.urgency,
+      caseSummary,
+      utmSource: readOptionalString(body.utmSource),
+      utmMedium: readOptionalString(body.utmMedium),
+      utmCampaign: readOptionalString(body.utmCampaign),
+      utmTerm: readOptionalString(body.utmTerm),
+      referrer: readOptionalString(body.referrer),
+    })
+
+    return reply.status(201).send({
+      status: 'ready' as const,
+      lead,
+    })
+  })
+
   app.get('/sitemap.xml', async (_, reply) => {
     const pages = await getRegionalGrowthRepository(app).listPublishedSeoLandingPages()
     const baseUrl = (process.env.PUBLIC_SITE_URL ?? 'https://brandsoul-legal-platform.onrender.com').replace(/\/+$/, '')
