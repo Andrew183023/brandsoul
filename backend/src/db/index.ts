@@ -423,11 +423,9 @@ const sqliteSchema = `
   );
 
   CREATE UNIQUE INDEX IF NOT EXISTS idx_regional_signals_unique ON regional_signals(tenant_id, region, specialty, source);
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_regional_signals_entity_city_specialty_unique ON regional_signals(tenant_id, entity_id, city, specialty);
   CREATE INDEX IF NOT EXISTS idx_regional_signals_tenant ON regional_signals(tenant_id);
   CREATE INDEX IF NOT EXISTS idx_regional_signals_city ON regional_signals(city);
   CREATE INDEX IF NOT EXISTS idx_regional_signals_specialty ON regional_signals(specialty);
-  CREATE INDEX IF NOT EXISTS idx_regional_signals_score ON regional_signals(signal_score);
   CREATE INDEX IF NOT EXISTS idx_regional_signals_tenant_score ON regional_signals(tenant_id, opportunity_score);
   CREATE INDEX IF NOT EXISTS idx_regional_signals_entity ON regional_signals(entity_id);
 
@@ -2942,6 +2940,8 @@ export async function initializeDatabase(db: BackendDatabase) {
   await ensureColumn(db, 'regional_signals', 'urgent_leads', 'INTEGER NOT NULL DEFAULT 0')
   await ensureColumn(db, 'regional_signals', 'urgency_score', 'INTEGER NOT NULL DEFAULT 0')
   await ensureColumn(db, 'regional_signals', 'signal_score', 'INTEGER NOT NULL DEFAULT 0')
+  await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_regional_signals_entity_city_specialty_unique ON regional_signals(tenant_id, entity_id, city, specialty)')
+  await db.exec('CREATE INDEX IF NOT EXISTS idx_regional_signals_score ON regional_signals(signal_score)')
   await ensureColumn(db, 'regional_leads', 'campaign_target_id', 'TEXT')
   await db.exec('CREATE INDEX IF NOT EXISTS idx_regional_leads_campaign_target ON regional_leads(campaign_target_id)')
   await ensureColumn(db, 'regional_leads', 'converted_case_id', 'TEXT')
