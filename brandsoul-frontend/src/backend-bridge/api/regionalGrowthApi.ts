@@ -302,3 +302,25 @@ export async function listGrowthRecommendations(entityId: string) {
   const payload = await response.json() as { recommendations?: GrowthRecommendation[] }
   return payload.recommendations ?? []
 }
+
+export async function executeGrowthRecommendation(entityId: string, signalId: string) {
+  const baseUrl = readBackendBridgeBaseUrl()
+  const response = await fetch(`${baseUrl}/growth/recommendations/execute`, {
+    method: 'POST',
+    headers: await buildRequiredBackendAuthHeaders({
+      'Content-Type': 'application/json',
+    }),
+    body: JSON.stringify({ entityId, signalId }),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, `Falha ao executar oportunidade (${response.status}).`))
+  }
+
+  return response.json() as Promise<{
+    status: 'ready'
+    entityId: string
+    campaign: RegionalCampaign
+    target: RegionalCampaignTarget
+  }>
+}

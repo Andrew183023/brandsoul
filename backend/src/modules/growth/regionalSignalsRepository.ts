@@ -242,6 +242,42 @@ function mergeAggregates(
 export class RegionalSignalsRepository {
   constructor(private readonly db: BackendDatabase) {}
 
+  async getSignalById(tenantId: string, entityId: string, signalId: string) {
+    const row = await this.db.get<RegionalSignalRow>(
+      `
+        SELECT
+          id,
+          tenant_id,
+          entity_id,
+          city,
+          specialty,
+          visits,
+          leads,
+          cases,
+          urgent_leads,
+          urgency_score,
+          signal_score,
+          best_channel,
+          best_audience_name,
+          best_intent_stage,
+          best_search_intent,
+          best_campaign_target_id,
+          best_recommended_radius_km,
+          created_at,
+          updated_at
+        FROM regional_signals
+        WHERE tenant_id = ?
+          AND entity_id = ?
+          AND id = ?
+      `,
+      tenantId,
+      entityId,
+      signalId,
+    )
+
+    return row ? mapRegionalSignalRow(row) : null
+  }
+
   async recalculateSignalsForEntity(tenantId: string, entityId: string) {
     const [visitRows, leadRows, caseRows, urgentLeadRows, bestTargetRows, bootstrapTargetRows] = await Promise.all([
       this.db.all<AggregateRow[]>(

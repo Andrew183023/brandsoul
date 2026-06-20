@@ -8,6 +8,7 @@ import {
   createCampaignTarget,
   createRegionalCampaign,
   deleteCampaignTarget,
+  executeGrowthRecommendation,
   getGrowthInsights,
   getRadiusRecommendation,
   listGrowthRecommendations,
@@ -69,11 +70,13 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
   })
   const [isCreating, setIsCreating] = useState(false)
   const [convertingLeadId, setConvertingLeadId] = useState<string | null>(null)
+  const [executingRecommendationId, setExecutingRecommendationId] = useState<string | null>(null)
   const [creatingTargetCampaignId, setCreatingTargetCampaignId] = useState<string | null>(null)
   const [deletingTargetId, setDeletingTargetId] = useState<string | null>(null)
   const [suggestingRadiusCampaignId, setSuggestingRadiusCampaignId] = useState<string | null>(null)
   const [isRecalculatingSignals, setIsRecalculatingSignals] = useState(false)
   const [targetDrafts, setTargetDrafts] = useState<Record<string, CampaignTargetDraft>>({})
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null)
 
   async function loadGrowthData() {
     setIsLoading(true)
@@ -114,6 +117,7 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
 
   async function handleRecalculateSignals() {
     setActionError(null)
+    setActionSuccess(null)
     setIsRecalculatingSignals(true)
 
     try {
@@ -150,6 +154,7 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
   async function handleCreateCampaign(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setActionError(null)
+    setActionSuccess(null)
     setIsCreating(true)
 
     try {
@@ -180,6 +185,7 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
 
   async function handleActivate(campaignId: string) {
     setActionError(null)
+    setActionSuccess(null)
 
     try {
       await activateRegionalCampaign(campaignId)
@@ -191,6 +197,7 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
 
   async function handleConvertLead(leadId: string) {
     setActionError(null)
+    setActionSuccess(null)
     setConvertingLeadId(leadId)
 
     try {
@@ -236,6 +243,7 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
 
   async function handleSuggestRadius(campaign: RegionalCampaign) {
     setActionError(null)
+    setActionSuccess(null)
     setSuggestingRadiusCampaignId(campaign.id)
 
     try {
@@ -259,6 +267,7 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
   async function handleCreateTarget(campaignId: string, event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setActionError(null)
+    setActionSuccess(null)
     setCreatingTargetCampaignId(campaignId)
 
     try {
@@ -285,6 +294,7 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
 
   async function handleDeleteTarget(targetId: string) {
     setActionError(null)
+    setActionSuccess(null)
     setDeletingTargetId(targetId)
 
     try {
@@ -297,6 +307,22 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
     }
   }
 
+  async function handleExecuteRecommendation(recommendation: GrowthRecommendation) {
+    setActionError(null)
+    setActionSuccess(null)
+    setExecutingRecommendationId(recommendation.id)
+
+    try {
+      const result = await executeGrowthRecommendation(officeId, recommendation.id)
+      await loadGrowthData()
+      setActionSuccess(`Oportunidade executada: campanha "${result.campaign.campaignName}" criada em draft.`)
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Falha ao executar oportunidade.')
+    } finally {
+      setExecutingRecommendationId(null)
+    }
+  }
+
   return (
     <AdminOfficeLayout
       officeId={officeId}
@@ -305,6 +331,7 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
       subtitle="Campanhas locais, páginas SEO e geração de demanda para o escritório."
     >
       {actionError ? <FeedbackBanner tone="error">{actionError}</FeedbackBanner> : null}
+      {actionSuccess ? <FeedbackBanner tone="success">{actionSuccess}</FeedbackBanner> : null}
 
       <div className="admin-diagnosis-grid">
         <SurfaceCard tone="admin">
@@ -515,6 +542,16 @@ export default function AdminOfficeGrowthPage({ officeId }: { officeId: string }
                 <p><strong>Raio recomendado:</strong> {typeof recommendation.recommendedRadiusKm === 'number' ? `${recommendation.recommendedRadiusKm}km` : 'n/a'}</p>
                 <p><strong>Orçamento diário sugerido:</strong> R$ {recommendation.recommendedBudgetDaily}</p>
                 <p><strong>Motivo:</strong> {recommendation.reason}</p>
+                <div className="admin-actions">
+                  <button
+                    type="button"
+                    className="admin-button"
+                    disabled={executingRecommendationId === recommendation.id}
+                    onClick={() => void handleExecuteRecommendation(recommendation)}
+                  >
+                    {executingRecommendationId === recommendation.id ? 'Executando...' : 'Executar oportunidade'}
+                  </button>
+                </div>
               </SurfaceCard>
             ))}
           </div>

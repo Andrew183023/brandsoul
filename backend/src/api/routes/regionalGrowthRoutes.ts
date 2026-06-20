@@ -12,6 +12,7 @@ import { createRegionalLeadRepository, type RegionalLeadUrgency } from '../../mo
 import { createRegionalSignalsRepository } from '../../modules/growth/regionalSignalsRepository.js'
 import { buildGrowthInsights } from '../../modules/growth/regionalGrowthInsightsService.js'
 import { buildGrowthRecommendations } from '../../modules/growth/regionalGrowthRecommendationService.js'
+import { executeGrowthRecommendation, GrowthRecommendationExecutionError } from '../../modules/growth/regionalGrowthExecutionService.js'
 import { createEntityRepository } from '../../repositories/entityRepository.js'
 import { createCaseService } from '../../modules/legalCases/caseService.js'
 import type { CasePriority } from '../../modules/legalCases/caseTypes.js'
@@ -673,6 +674,80 @@ export async function registerRegionalGrowthRoutes(app: FastifyInstance) {
       status: 'ready' as const,
       entityId,
       recommendations,
+    }
+  })
+
+  app.post<{
+    Body: {
+      entityId?: string
+      signalId?: string
+    }
+  }>('/growth/recommendations/execute', { preHandler: [requireAuth, privateWriteRateLimit] }, async (request, reply) => {
+    const auth = getRequestAuth(request)!
+    const entityId = readRequiredString(request.body?.entityId)
+    const signalId = readRequiredString(request.body?.signalId)
+
+    if (!entityId || !signalId) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_GROWTH_RECOMMENDATION_EXECUTION_INPUT',
+          message: 'entityId and signalId are required.',
+        },
+      })
+    }
+
+    const entity = await getEntityRepository(app).getEntityById<EntityProfile>(entityId)
+    if (!entity) {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'ENTITY_NOT_FOUND',
+          message: `Entity "${entityId}" was not found.`,
+        },
+      })
+    }
+
+    if (!isOwnedByAuth(entity, auth.userId, auth.tenantId)) {
+      return reply.status(403).send({
+        status: 'failed',
+        error: {
+          code: 'ENTITY_ACCESS_DENIED',
+          message: 'You do not own this office.',
+        },
+      })
+    }
+
+    try {
+      const result = await executeGrowthRecommendation(
+        getRegionalGrowthRepository(app),
+        getRegionalSignalsRepository(app),
+        {
+          tenantId: String(auth.tenantId),
+          entityId,
+          signalId,
+        },
+      )
+
+      return reply.status(201).send({
+        status: 'ready' as const,
+        entityId,
+        campaign: result.campaign,
+        target: result.target,
+      })
+    } catch (error) {
+      if (error instanceof GrowthRecommendationExecutionError) {
+        const statusCode = error.code === 'GROWTH_SIGNAL_NOT_FOUND' ? 404 : 500
+        return reply.status(statusCode).send({
+          status: 'failed',
+          error: {
+            code: error.code,
+            message: error.message,
+          },
+        })
+      }
+
+      throw error
     }
   })
 
