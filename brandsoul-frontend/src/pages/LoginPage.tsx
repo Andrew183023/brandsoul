@@ -78,7 +78,7 @@ export default function LoginPage() {
             <button type="submit" className="persona-submit" disabled={isSubmitting}>
               {isSubmitting ? 'Entrando...' : 'Entrar'}
             </button>
-            <button type="button" className="chat-header-button subtle" onClick={() => navigateTo('/register')}>
+            <button type="button" className="chat-header-button subtle" onClick={() => navigateTo('/onboarding/escritorio/conta')}>
               Criar conta
             </button>
           </div>
