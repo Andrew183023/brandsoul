@@ -7,7 +7,11 @@ import SurfaceCard from '../components/SurfaceCard'
 import { navigateTo } from '../lib/navigation'
 
 function readOfficeName(office: AdminOfficeListItem) {
-  const record = office.office as Record<string, unknown>
+  const record =
+    office.office && typeof office.office === 'object'
+      ? office.office as Record<string, unknown>
+      : {}
+
   return typeof record.officeName === 'string'
     ? record.officeName
     : typeof record.name === 'string'
