@@ -32,6 +32,7 @@ import AdminOfficeLayout from '../components/AdminOfficeLayout'
 import FeedbackBanner from '../components/FeedbackBanner'
 import StatusChip from '../components/StatusChip'
 import SurfaceCard from '../components/SurfaceCard'
+import { resolvePublicAssetUrl } from '../lib/publicAssetUrl'
 import { buildProfessionalReadinessSnapshot } from '../lib/professionalReadiness'
 import { evaluatePublicationQualityScore } from '../lib/publicationQualityScore'
 
@@ -231,6 +232,12 @@ function normalizeFirstName(value: string | undefined) {
   }
 
   return firstToken
+}
+
+function buildProfessionalInitials(name: string) {
+  const parts = name.trim().split(/\s+/).slice(0, 2)
+  const initials = parts.map((part) => part[0]?.toUpperCase() ?? '').join('')
+  return initials || 'BS'
 }
 
 const EMPTY_PROFESSIONAL_DRAFT: ProfessionalDraft = {
@@ -501,6 +508,7 @@ export default function AdminOfficeCabinPage({ officeId, section }: AdminOfficeC
   const [isSaving, setIsSaving] = useState(false)
   const [isUploadingMedia, setIsUploadingMedia] = useState(false)
   const [isUploadingInstitutionalVideo, setIsUploadingInstitutionalVideo] = useState(false)
+  const [isUploadingProfessionalPhoto, setIsUploadingProfessionalPhoto] = useState(false)
   const [officeCases, setOfficeCases] = useState<AdminLegalCase[]>([])
   const [officeProfessionals, setOfficeProfessionals] = useState<OfficeProfessional[]>([])
   const [officeProfessionalsLoaded, setOfficeProfessionalsLoaded] = useState(false)
@@ -651,6 +659,40 @@ export default function AdminOfficeCabinPage({ officeId, section }: AdminOfficeC
       ...current,
       [name]: value,
     }))
+  }
+
+  async function handleProfessionalPhotoUpload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    if (!file) {
+      return
+    }
+
+    try {
+      setIsUploadingProfessionalPhoto(true)
+      setError(null)
+      setSuccessMessage(null)
+
+      const [dataUrl] = await readFilesAsDataUrls([file], 1)
+      if (!dataUrl) {
+        throw new Error('Não foi possível ler esta imagem.')
+      }
+
+      const payload = await uploadOfficeMedia(officeId, {
+        fileName: file.name,
+        dataUrl,
+      })
+
+      setProfessionalDraft((current) => ({
+        ...current,
+        photoUrl: payload.media.url,
+      }))
+      setSuccessMessage('Foto do profissional enviada com sucesso.')
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : 'Não foi possível enviar a foto agora.')
+    } finally {
+      setIsUploadingProfessionalPhoto(false)
+      event.target.value = ''
+    }
   }
 
   async function handleOfficeMediaUpload(event: ChangeEvent<HTMLInputElement>) {
@@ -1123,7 +1165,33 @@ export default function AdminOfficeCabinPage({ officeId, section }: AdminOfficeC
                 {officeProfessionals.length > 0 ? officeProfessionals.map((professional) => (
                   <article key={professional.id} className="admin-diagnosis-section admin-form-section">
                     <div className="admin-card-header">
-                      <h3>{professional.displayName}</h3>
+                      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                        <div
+                          aria-hidden="true"
+                          style={{
+                            width: '3rem',
+                            height: '3rem',
+                            borderRadius: '999px',
+                            overflow: 'hidden',
+                            display: 'grid',
+                            placeItems: 'center',
+                            background: 'rgba(255,255,255,0.08)',
+                            color: 'inherit',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {resolvePublicAssetUrl(professional.photoUrl) ? (
+                            <img
+                              src={resolvePublicAssetUrl(professional.photoUrl)}
+                              alt=""
+                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            />
+                          ) : (
+                            <span>{buildProfessionalInitials(professional.displayName)}</span>
+                          )}
+                        </div>
+                        <h3>{professional.displayName}</h3>
+                      </div>
                       <StatusChip tone={professional.status === 'active' ? 'success' : 'warning'}>
                         {professional.status === 'active' ? 'Ativo' : 'Inativo'}
                       </StatusChip>
@@ -1192,6 +1260,54 @@ export default function AdminOfficeCabinPage({ officeId, section }: AdminOfficeC
                     <input name="specialties" value={professionalDraft.specialties} onChange={handleProfessionalDraftField} placeholder="Direito do Trabalho, Previdenciário" />
                   </label>
                 </div>
+                <div className="admin-form-grid">
+                  <label className="admin-field">
+                    <span>Enviar foto pública</span>
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      onChange={(event) => void handleProfessionalPhotoUpload(event)}
+                      disabled={isUploadingProfessionalPhoto}
+                    />
+                  </label>
+                  <div className="admin-field">
+                    <span>Preview</span>
+                    <div
+                      aria-live="polite"
+                      style={{
+                        width: '4.5rem',
+                        height: '4.5rem',
+                        borderRadius: '999px',
+                        overflow: 'hidden',
+                        display: 'grid',
+                        placeItems: 'center',
+                        background: 'rgba(255,255,255,0.08)',
+                        color: 'inherit',
+                      }}
+                    >
+                      {resolvePublicAssetUrl(professionalDraft.photoUrl) ? (
+                        <img
+                          src={resolvePublicAssetUrl(professionalDraft.photoUrl)}
+                          alt=""
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      ) : (
+                        <span>{buildProfessionalInitials(professionalDraft.displayName || 'BS')}</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                {professionalDraft.photoUrl ? (
+                  <div className="admin-actions">
+                    <button
+                      type="button"
+                      className="admin-button admin-button--ghost"
+                      onClick={() => setProfessionalDraft((current) => ({ ...current, photoUrl: '' }))}
+                    >
+                      Remover foto
+                    </button>
+                  </div>
+                ) : null}
                 <label className="admin-field">
                   <span>Bio</span>
                   <textarea name="bio" value={professionalDraft.bio} onChange={handleProfessionalDraftField} rows={3} placeholder="Apresentação breve do profissional." />
@@ -1219,7 +1335,7 @@ export default function AdminOfficeCabinPage({ officeId, section }: AdminOfficeC
                   </label>
                 </div>
                 <div className="admin-actions">
-                  <button type="submit" className="admin-button" disabled={isSavingProfessional}>
+                  <button type="submit" className="admin-button" disabled={isSavingProfessional || isUploadingProfessionalPhoto}>
                     {isSavingProfessional ? 'Salvando profissional...' : editingProfessionalId ? 'Salvar profissional' : 'Adicionar profissional'}
                   </button>
                 </div>
