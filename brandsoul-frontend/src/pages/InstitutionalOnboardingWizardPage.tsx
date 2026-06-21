@@ -387,11 +387,18 @@ export default function InstitutionalOnboardingWizardPage() {
     setErrorMessage('')
 
     try {
-      const officeId = draft.officeId ?? (await createAdminOffice({
-        name: officeName,
-        category: 'legal-services',
-        primaryColor: '#1f6feb',
-      })).officeId
+      const createdOffice = draft.officeId
+        ? null
+        : await createAdminOffice({
+          name: officeName,
+          category: 'legal-services',
+          primaryColor: '#1f6feb',
+        })
+
+      const officeId = draft.officeId ?? createdOffice?.officeId
+      if (!officeId) {
+        throw new Error('O escritório foi criado, mas o identificador não foi retornado pelo servidor.')
+      }
 
       await saveOfficeBusinessConfig(officeId, buildBusinessConfigFromFastTrack(draft))
       await ensureFastTrackProfessional(officeId, draft)
@@ -450,11 +457,18 @@ export default function InstitutionalOnboardingWizardPage() {
         throw new Error('Informe o nome oficial do escritório para seguir com a publicação.')
       }
 
-      const officeId = draft.officeId ?? (await createAdminOffice({
-        name: officeName,
-        category: 'legal-services',
-        primaryColor: '#1f6feb',
-      })).officeId
+      const createdOffice = draft.officeId
+        ? null
+        : await createAdminOffice({
+          name: officeName,
+          category: 'legal-services',
+          primaryColor: '#1f6feb',
+        })
+
+      const officeId = draft.officeId ?? createdOffice?.officeId
+      if (!officeId) {
+        throw new Error('O escritório foi criado, mas o identificador não foi retornado pelo servidor.')
+      }
 
       await saveOfficeBusinessConfig(officeId, buildBusinessConfigFromDraft(draft))
       await upsertOfficeProfessionalsFromDraft(officeId, draft)
