@@ -392,6 +392,7 @@ async function updateOfficeConfigurationThroughAuthorityBoundary(args: {
   const now = new Date().toISOString()
   const nextProfile = writeEntityBusinessConfig(office.entityProfile as EntityProfile, args.businessConfig)
   const previousBusinessConfig = readEntityBusinessConfig(office.entityProfile as EntityProfile)
+  const previousBusinessConfigFingerprint = buildSemanticFingerprint(previousBusinessConfig ?? null)
   const changedFields = Object.keys(args.businessConfig).length > 0
     ? ['entity_business_config', 'entity_profile', ...Object.keys(args.businessConfig).map((field) => `business_config.${field}`)]
     : ['entity_business_config', 'entity_profile']
@@ -399,7 +400,7 @@ async function updateOfficeConfigurationThroughAuthorityBoundary(args: {
   const { result } = await getSemanticMutationExecutor().executeSemanticMutation({
     authoritySource: 'backend/src/api/routes/legalBetaPublicOfficeRoutes.ts#updateOfficeConfiguration',
     intent: {
-      intentId: `legal-office-configure:${office.id}:${args.auth.userId}:${args.auth.tenantId}`,
+      intentId: `legal-office-configure:${office.id}:${args.auth.userId}:${args.auth.tenantId}:${previousBusinessConfigFingerprint}`,
       intentType: 'legal.office.configure',
       domain: 'entity',
       actor: 'admin',
@@ -421,7 +422,6 @@ async function updateOfficeConfigurationThroughAuthorityBoundary(args: {
       ownerUserId: office.ownerUserId,
       ownerTenantId: office.ownerTenantId,
       businessConfig: previousBusinessConfig,
-      updatedAt: office.updatedAt,
     }),
     executePersistence: async () => {
       const updated = await args.repository.updateEntity<EntityProfile>({
@@ -438,7 +438,6 @@ async function updateOfficeConfigurationThroughAuthorityBoundary(args: {
       ownerUserId: persisted.ownerUserId,
       ownerTenantId: persisted.ownerTenantId,
       businessConfig: readEntityBusinessConfig(persisted.entityProfile as EntityProfile),
-      updatedAt: persisted.updatedAt,
     }),
     deriveEffect: ({ intent, beforeState, afterState, sovereignAttestation }) => ({
       effectId: `${intent.intentId}:effect`,
