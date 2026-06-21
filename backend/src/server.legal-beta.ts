@@ -36,6 +36,7 @@ export async function buildLegalBetaServer() {
   const allowedCorsOrigins = new Set(getCorsOrigins())
   const app = Fastify({
     logger: true,
+    bodyLimit: 15 * 1024 * 1024,
   })
 
   app.addHook('onRequest', async (request, reply) => {

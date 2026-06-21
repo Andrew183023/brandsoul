@@ -1304,7 +1304,7 @@ export default function AdminOfficeCabinPage({ officeId, section }: AdminOfficeC
                       className="admin-button admin-button--ghost"
                       onClick={() => setProfessionalDraft((current) => ({ ...current, photoUrl: '' }))}
                     >
-                      Remover foto
+                      Apagar foto
                     </button>
                   </div>
                 ) : null}
