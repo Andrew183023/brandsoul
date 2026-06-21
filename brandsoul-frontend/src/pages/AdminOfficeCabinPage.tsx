@@ -14,6 +14,7 @@ import {
   uploadOfficeInstitutionalVideo,
   uploadOfficeMedia,
   type AdminLegalCase,
+  type OfficeBusinessConfig,
   type OfficeMediaItem,
   type OfficeProfessional,
   type OfficeProfessionalPayload,
@@ -283,6 +284,23 @@ function mapDraftToProfessionalPayload(draft: ProfessionalDraft): OfficeProfessi
   }
 }
 
+function buildScopedOfficeBusinessConfig(
+  formState: BusinessConfigFormState,
+  scope: BusinessConfigFormScope | null,
+): OfficeBusinessConfig {
+  const nextConfig = mapFormStateToConfig(formState)
+  if (scope !== 'team') {
+    delete nextConfig.team
+    delete nextConfig.responsibleProfessional
+  }
+
+  return nextConfig
+}
+
+function serializeOfficeBusinessConfig(config: OfficeBusinessConfig) {
+  return JSON.stringify(config)
+}
+
 function buildTrustEvidenceCandidates(cases: AdminLegalCase[], approvedCaseIds: string[]): TrustEvidenceCandidate[] {
   const approved = new Set(approvedCaseIds)
 
@@ -515,6 +533,7 @@ export default function AdminOfficeCabinPage({ officeId, section }: AdminOfficeC
   const [professionalDraft, setProfessionalDraft] = useState<ProfessionalDraft>(EMPTY_PROFESSIONAL_DRAFT)
   const [editingProfessionalId, setEditingProfessionalId] = useState<string | null>(null)
   const [isSavingProfessional, setIsSavingProfessional] = useState(false)
+  const [originalConfigSnapshot, setOriginalConfigSnapshot] = useState<string | null>(null)
 
   useEffect(() => {
     async function loadBusinessConfig() {
@@ -528,13 +547,16 @@ export default function AdminOfficeCabinPage({ officeId, section }: AdminOfficeC
           section === 'publicacao' ? listOfficeCases(officeId) : Promise.resolve({ cases: [] as AdminLegalCase[] }),
           listOfficeProfessionals(officeId).catch(() => null),
         ])
-        setFormState(mapConfigToFormState(payload.businessConfig))
+        const mappedFormState = mapConfigToFormState(payload.businessConfig)
+        setFormState(mappedFormState)
+        setOriginalConfigSnapshot(serializeOfficeBusinessConfig(buildScopedOfficeBusinessConfig(mappedFormState, meta.scope)))
         setOfficeCases(casesPayload.cases)
         setOfficeProfessionals(professionalsPayload?.professionals ?? [])
         setOfficeProfessionalsLoaded(Boolean(professionalsPayload))
         setUiState(payload.businessConfig ? 'ready' : 'empty')
       } catch (nextError) {
         setError(nextError instanceof Error ? nextError.message : 'Não foi possível carregar esta seção agora.')
+        setOriginalConfigSnapshot(null)
         setUiState('error')
       }
     }
@@ -870,14 +892,18 @@ export default function AdminOfficeCabinPage({ officeId, section }: AdminOfficeC
       setError(null)
       setSuccessMessage(null)
 
-      const nextConfig = mapFormStateToConfig(formState)
-      if (meta.scope !== 'team') {
-        delete nextConfig.team
-        delete nextConfig.responsibleProfessional
+      const nextConfig = buildScopedOfficeBusinessConfig(formState, meta.scope)
+      const nextConfigSnapshot = serializeOfficeBusinessConfig(nextConfig)
+
+      if (originalConfigSnapshot === nextConfigSnapshot) {
+        setSuccessMessage('Nenhuma alteração para salvar.')
+        return
       }
 
       const payload = await saveOfficeBusinessConfig(officeId, nextConfig)
-      setFormState(mapConfigToFormState(payload.businessConfig))
+      const mappedFormState = mapConfigToFormState(payload.businessConfig)
+      setFormState(mappedFormState)
+      setOriginalConfigSnapshot(serializeOfficeBusinessConfig(buildScopedOfficeBusinessConfig(mappedFormState, meta.scope)))
       setUiState('ready')
       setSuccessMessage('A seção foi atualizada com sucesso.')
     } catch (nextError) {
