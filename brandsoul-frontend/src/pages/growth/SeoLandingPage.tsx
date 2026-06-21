@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { getSeoLandingPage, type SeoLandingPage } from '../../backend-bridge/api/seoLandingApi'
 import { trackLandingVisit } from '../../backend-bridge/api/leadAttributionApi'
 import { createRegionalLead, type RegionalLeadUrgency } from '../../backend-bridge/api/regionalLeadApi'
+import { LEGAL_ROUTES } from '../../app/routes/legalRoutes'
 import PublicShell from '../../app/shells/PublicShell'
 import '../../styles/entityPublicPage.css'
 
@@ -146,6 +147,9 @@ export default function SeoLandingPage({ city, specialty }: SeoLandingPageProps)
     )
   }
 
+  const officeProfileUrl = LEGAL_ROUTES.public.escritorioPerfil(page.entityId)
+  const officeTriageUrl = `${officeProfileUrl}#office-public-triagem`
+
   async function handleLeadSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!page) {
@@ -205,10 +209,10 @@ export default function SeoLandingPage({ city, specialty }: SeoLandingPageProps)
           </div>
 
           <div className="office-profile-header__actions">
-            <a className="office-button office-button--primary" href={`/escritorios/${page.entityId}/perfil#office-public-triagem`}>
+            <a className="office-button office-button--primary" href={officeTriageUrl}>
               Fazer triagem segura
             </a>
-            <a className="office-button office-button--secondary" href={`/escritorios/${page.entityId}/perfil`}>
+            <a className="office-button office-button--secondary" href={officeProfileUrl}>
               Ver escritório
             </a>
           </div>
@@ -313,7 +317,7 @@ export default function SeoLandingPage({ city, specialty }: SeoLandingPageProps)
               <button className="office-button office-button--primary" type="submit" disabled={isSubmittingLead}>
                 {isSubmittingLead ? 'Enviando triagem...' : 'Enviar triagem'}
               </button>
-              <a className="office-button office-button--secondary" href={`/escritorios/${page.entityId}/perfil`}>
+              <a className="office-button office-button--secondary" href={officeProfileUrl}>
                 Ver escritório
               </a>
             </div>

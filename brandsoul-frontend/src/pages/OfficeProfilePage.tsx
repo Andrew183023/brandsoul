@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import PublicShell from '../app/shells/PublicShell'
 import {
   PublicOfficeInteractionApiError,
+  requestPublicEntityInteraction,
   requestPublicOfficeInteraction,
 } from '../backend-bridge/api/publicEntityInteractionApi'
 import {
@@ -1634,8 +1635,8 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
     const backendBudgetMs = 1_200
     const businessContext = buildCanonicalInteractionBusinessContext(canonicalProjection)
     const backendAttempt = await settleWithinBudget(
-      requestPublicOfficeInteraction({
-        officeId,
+      requestPublicEntityInteraction({
+        entityId: officeId,
         request: {
           requestId,
           userMessage: cleanMessage,

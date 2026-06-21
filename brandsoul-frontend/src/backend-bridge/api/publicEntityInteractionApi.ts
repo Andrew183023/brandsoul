@@ -5,6 +5,26 @@ import type {
 import { buildOptionalBackendAuthHeaders } from './authHeaders'
 import { readBackendBridgeBaseUrl } from '../../lib/api'
 
+export type PublicOfficeTriageResponse = {
+  status: 'ready'
+  entityId: string
+  requestId: string
+  actionResult: {
+    actionType: 'create_legal_case'
+    status: 'created'
+    caseId: string
+    case?: {
+      id: string
+      status: string
+    }
+    portalUrl?: string
+    portalAccess?: {
+      issuedAt: string
+      expiresAt: string
+    }
+  }
+}
+
 function getBackendBaseUrl() {
   return readBackendBridgeBaseUrl()
 }
@@ -34,6 +54,35 @@ function isDecisionResponseCandidate(value: unknown): value is PublicEntityDecis
     && typeof fallback?.source === 'string'
     && typeof telemetry?.evaluatedAt === 'string'
     && typeof telemetry?.latencyMs === 'number'
+}
+
+function isPublicOfficeTriageResponseCandidate(value: unknown): value is PublicOfficeTriageResponse {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const record = value as Record<string, unknown>
+  const actionResult = record.actionResult as Record<string, unknown> | undefined
+  const legalCase = actionResult?.case as Record<string, unknown> | undefined
+  const portalAccess = actionResult?.portalAccess as Record<string, unknown> | undefined
+
+  return record.status === 'ready'
+    && typeof record.entityId === 'string'
+    && typeof record.requestId === 'string'
+    && typeof actionResult?.actionType === 'string'
+    && actionResult.actionType === 'create_legal_case'
+    && typeof actionResult.status === 'string'
+    && actionResult.status === 'created'
+    && typeof actionResult.caseId === 'string'
+    && (legalCase === undefined || (
+      typeof legalCase.id === 'string'
+      && typeof legalCase.status === 'string'
+    ))
+    && (actionResult.portalUrl === undefined || typeof actionResult.portalUrl === 'string')
+    && (portalAccess === undefined || (
+      typeof portalAccess.issuedAt === 'string'
+      && typeof portalAccess.expiresAt === 'string'
+    ))
 }
 
 export class PublicEntityInteractionApiError extends Error {
@@ -105,7 +154,7 @@ export async function requestPublicEntityInteraction(args: {
 export async function requestPublicOfficeInteraction(args: {
   officeId: string
   request: PublicEntityInteractionRequest
-}, baseUrl = getBackendBaseUrl()): Promise<PublicEntityDecisionResponse> {
+}, baseUrl = getBackendBaseUrl()): Promise<PublicOfficeTriageResponse> {
   const response = await fetch(`${baseUrl}/public/escritorios/${encodeURIComponent(args.officeId)}/triagem`, {
     method: 'POST',
     headers: await buildOptionalBackendAuthHeaders({
@@ -142,7 +191,7 @@ export async function requestPublicOfficeInteraction(args: {
   }
 
   const payload = await response.json() as unknown
-  if (!isDecisionResponseCandidate(payload)) {
+  if (!isPublicOfficeTriageResponseCandidate(payload)) {
     throw new PublicEntityInteractionApiError('Invalid public office triage response.', {
       status: 502,
       code: 'INVALID_PUBLIC_OFFICE_TRIAGE_RESPONSE',
