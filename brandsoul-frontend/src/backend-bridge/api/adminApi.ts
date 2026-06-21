@@ -408,41 +408,6 @@ async function logCaseActionConflictInDev(args: {
   }
 }
 
-function buildCreateEntityPayload(input: CreateAdminEntityInput) {
-  const trimmedName = input.name.trim()
-  const trimmedCategory = input.category.trim() || 'general'
-  const primaryColor = input.primaryColor.trim() || '#1f6feb'
-
-  return {
-    entityInput: {
-      brand: {
-        name: trimmedName,
-      },
-      context: {
-        brandCategory: trimmedCategory,
-        styleAnswers: {
-          brandStyle: 'clean',
-          languageStyle: 'balanced',
-          actionStyle: 'helpful',
-          tagline: `${trimmedName} pronto para operar.`,
-        },
-      },
-      palette: {
-        primary: primaryColor,
-        secondary: primaryColor,
-        contrast: 'medium',
-      },
-      manifestation: {
-        mode: 'brand-avatar',
-      },
-    },
-    manifestation: {
-      intensity: 'balanced',
-    },
-    runtimeControl: {},
-  }
-}
-
 export async function listAdminEntities(baseUrl = getBackendBaseUrl()): Promise<AdminEntityListResponse> {
   const response = await fetch(`${baseUrl}/me/entities`, {
     headers: await buildRequiredBackendAuthHeaders(),
@@ -488,7 +453,11 @@ export async function createAdminOffice(
     headers: await buildRequiredBackendAuthHeaders({
       'Content-Type': 'application/json',
     }),
-    body: JSON.stringify(buildCreateEntityPayload(input)),
+    body: JSON.stringify({
+      name: input.name,
+      category: input.category,
+      primaryColor: input.primaryColor,
+    }),
   })
 
   if (!response.ok) {
