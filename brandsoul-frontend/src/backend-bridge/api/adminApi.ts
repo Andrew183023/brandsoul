@@ -475,11 +475,20 @@ export async function createAdminOffice(
     throw new Error(message)
   }
 
-  const payload = await response.json() as CreateAdminEntityResponse
+  const payload = await response.json() as {
+    status: string
+    officeId: string
+    officeName?: string
+    office?: JsonRecord
+    createdAt?: string
+    updatedAt?: string
+    requestId?: string
+  }
+
   return {
     status: payload.status,
-    officeId: payload.entityId,
-    office: payload.entity,
+    officeId: payload.officeId,
+    office: payload.office ?? { officeName: payload.officeName ?? input.name },
     createdAt: payload.createdAt,
     updatedAt: payload.updatedAt,
     requestId: payload.requestId,
