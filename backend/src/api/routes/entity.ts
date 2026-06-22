@@ -106,6 +106,7 @@ import { buildRuntimeSceneProjection } from '../../orchestrator/runtimeSceneProj
 import { createCaseRepository } from '../../modules/legalCases/caseRepository.js'
 import type { CaseMessageRecord, CasePriority, CaseRecord, CaseTimelineEventRecord } from '../../modules/legalCases/caseTypes.js'
 import { createCaseService } from '../../modules/legalCases/caseService.js'
+import { createLegalBetaCaseService } from '../../modules/legalCases/legalBetaCaseService.js'
 
 type BackendContext = {
   backendContext: {
@@ -339,6 +340,10 @@ function getLegalCaseRepository(app: FastifyInstance) {
 
 function getLegalCaseService(app: FastifyInstance) {
   return createCaseService(getConnection(app))
+}
+
+function getLegalBetaCaseService(app: FastifyInstance) {
+  return createLegalBetaCaseService(getConnection(app))
 }
 
 function createRequestId() {
@@ -3142,66 +3147,51 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
     }
 
-    const createdByUserId = getRequestAuth(request)?.userId
     const requestId = triageRequest.requestId ?? createRequestId()
-    const triageMessage = buildStructuredPublicTriageMessage(request.body)
 
     try {
-      const legalCase = await getLegalCaseService(app).createCase({
-        tenantId: ownerTenantId,
+      const created = await getLegalBetaCaseService(app).createPublicTriageCase({
         entityId: request.params.id,
         requestId,
-        createdByUserId: Number.isInteger(createdByUserId) ? Number(createdByUserId) : undefined,
-        title: buildStructuredPublicTriageTitle(request.body),
-        description: triageRequest.triage.context.trim(),
-        priority: resolvePublicTriagePriority(triageRequest.triage.urgency),
-        practiceArea: triageRequest.triage.practiceArea?.trim() || undefined,
-        source: 'public-interaction',
-        autoDispatch: false,
-        metadata: {
-          source: 'public-interaction',
-          publicTriage: {
-            requestId,
-            urgency: triageRequest.triage.urgency,
-            objective: triageRequest.triage.objective.trim(),
-            contactPreference: triageRequest.triage.contactPreference.trim(),
-            contactValue: triageRequest.triage.contactValue.trim(),
-            city: triageRequest.triage.city?.trim() || undefined,
-            practiceArea: triageRequest.triage.practiceArea?.trim() || undefined,
-          },
+        userMessage: request.body.userMessage,
+        triage: {
+          context: triageRequest.triage.context.trim(),
+          urgency: triageRequest.triage.urgency,
+          objective: triageRequest.triage.objective.trim(),
+          contactPreference: triageRequest.triage.contactPreference.trim(),
+          contactValue: triageRequest.triage.contactValue.trim(),
+          city: triageRequest.triage.city?.trim() || undefined,
+          practiceArea: triageRequest.triage.practiceArea?.trim() || undefined,
         },
-        initialMessage: {
-          body: triageMessage,
-          direction: 'inbound',
-          messageType: 'chat',
-          messageStatus: 'sent',
-          channel: 'public-triage',
-          sentAt: new Date().toISOString(),
+        businessContext: {
+          officeName: triageRequest.businessContext?.officeName?.trim() || undefined,
         },
       })
 
-      const portalAccess = await issueCasePortalAccessToken({
-        app,
-        tenantId: ownerTenantId,
-        caseId: legalCase.id,
-      })
+      if (!created) {
+        throw new Error(`Public triage office "${request.params.id}" became unavailable during creation.`)
+      }
 
       return reply.status(201).send({
         status: 'ready',
         entityId: request.params.id,
         requestId,
+        leadId: created.leadRecord.leadId,
+        intakeId: created.intakeRecord.intakeId,
+        caseId: created.caseRecord.id,
+        portalUrl: created.portalAccess.portalUrl,
         actionResult: {
           actionType: 'create_legal_case',
           status: 'created',
-          caseId: legalCase.id,
+          caseId: created.caseRecord.id,
           case: {
-            id: legalCase.id,
-            status: legalCase.status,
+            id: created.caseRecord.id,
+            status: created.caseRecord.status,
           },
-          portalUrl: portalAccess.portalUrl,
+          portalUrl: created.portalAccess.portalUrl,
           portalAccess: {
-            issuedAt: portalAccess.issuedAt,
-            expiresAt: portalAccess.expiresAt,
+            issuedAt: created.portalAccess.issuedAt,
+            expiresAt: created.portalAccess.expiresAt,
           },
         },
       })

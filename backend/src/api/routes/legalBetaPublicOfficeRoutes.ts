@@ -1185,6 +1185,10 @@ export async function registerLegalBetaPublicOfficeRoutes(app: FastifyInstance) 
       status: 'ready',
       entityId: request.params.id,
       requestId,
+      leadId: created.leadRecord.leadId,
+      intakeId: created.intakeRecord.intakeId,
+      caseId: created.caseRecord.id,
+      portalUrl: created.portalAccess.portalUrl,
       decision: {
         responseText: 'Recebemos sua triagem inicial. O escritório pode continuar o atendimento pelo portal do caso.',
         decision: {
@@ -1204,6 +1208,10 @@ export async function registerLegalBetaPublicOfficeRoutes(app: FastifyInstance) 
         actionType: 'create_legal_case',
         status: 'created',
         caseId: created.caseRecord.id,
+        case: {
+          id: created.caseRecord.id,
+          status: created.caseRecord.status,
+        },
         portalUrl: created.portalAccess.portalUrl,
         portalAccess: {
           issuedAt: created.portalAccess.issuedAt,

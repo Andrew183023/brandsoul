@@ -275,13 +275,29 @@ test('public triage, portal projection and lifecycle transitions stay canonical'
 
     assert.equal(triageResponse.statusCode, 201)
     const triageBody = triageResponse.json() as {
+      requestId: string
+      leadId: string
+      intakeId: string
+      caseId: string
+      portalUrl: string
       actionResult: {
         caseId: string
+        case: {
+          id: string
+          status: string
+        }
         portalUrl: string
         portalAccess: { issuedAt: string; expiresAt: string }
       }
     }
+    assert.equal(triageBody.requestId, 'triage-a')
+    assert.ok(triageBody.leadId)
+    assert.ok(triageBody.intakeId)
+    assert.equal(triageBody.caseId, triageBody.actionResult.caseId)
+    assert.equal(triageBody.portalUrl, triageBody.actionResult.portalUrl)
     assert.ok(triageBody.actionResult.caseId)
+    assert.equal(triageBody.actionResult.case.id, triageBody.actionResult.caseId)
+    assert.equal(triageBody.actionResult.case.status, 'open')
     assert.match(triageBody.actionResult.portalUrl, new RegExp(`^/portal/${triageBody.actionResult.caseId}/`))
     assert.ok(triageBody.actionResult.portalAccess.issuedAt)
     assert.ok(triageBody.actionResult.portalAccess.expiresAt)
@@ -292,6 +308,35 @@ test('public triage, portal projection and lifecycle transitions stay canonical'
       triageBody.actionResult.caseId,
     )
     assert.equal(createdCase?.status, 'open')
+
+    const linkedCase = await harness.app.backendContext.connection.get<{
+      leadId?: string
+      intakeId?: string
+    }>(
+      `
+        SELECT
+          json_extract(metadata, '$.leadId') AS leadId,
+          json_extract(metadata, '$.intakeId') AS intakeId
+        FROM cases
+        WHERE id = ?
+      `,
+      triageBody.actionResult.caseId,
+    )
+    assert.equal(linkedCase?.leadId, triageBody.leadId)
+    assert.equal(linkedCase?.intakeId, triageBody.intakeId)
+
+    const leadCount = await harness.app.backendContext.connection.get<{ total: number }>(
+      `SELECT COUNT(*) AS total FROM entity_portfolio_lead WHERE lead_id = ? AND entity_id = ?`,
+      triageBody.leadId,
+      'office-real-1',
+    )
+    const intakeCount = await harness.app.backendContext.connection.get<{ total: number }>(
+      `SELECT COUNT(*) AS total FROM entity_portfolio_lead_intake WHERE intake_id = ? AND lead_id = ?`,
+      triageBody.intakeId,
+      triageBody.leadId,
+    )
+    assert.equal(Number(leadCount?.total ?? 0), 1)
+    assert.equal(Number(intakeCount?.total ?? 0), 1)
 
     const assignmentCount = await harness.app.backendContext.connection.get<{ total: number }>(
       `SELECT COUNT(*) AS total FROM case_assignments WHERE case_id = ?`,
@@ -323,6 +368,66 @@ test('public triage, portal projection and lifecycle transitions stay canonical'
       url: `/client/portal/${triageBody.actionResult.caseId}/wrong-token`,
     })
     assert.ok([403, 404].includes(wrongPortalTokenResponse.statusCode))
+
+    const replayResponse = await harness.app.inject({
+      method: 'POST',
+      url: '/public/escritorios/office-real-1/triagem',
+      headers: {
+        'content-type': 'application/json',
+      },
+      payload: {
+        requestId: 'triage-a',
+        userMessage: 'Preciso de ajuda com verbas rescisorias.',
+        businessContext: {
+          businessType: 'legal',
+          officeName: 'Ana Rocha Advocacia',
+        },
+        triage: {
+          context: 'Fui desligado sem pagamento correto.',
+          urgency: 'planned',
+          objective: 'Entender meus direitos.',
+          contactPreference: 'WhatsApp',
+          contactValue: '11999990000',
+          city: 'Sao Paulo',
+          practiceArea: 'Direito Trabalhista',
+        },
+      },
+    })
+    assert.equal(replayResponse.statusCode, 201)
+    const replayBody = replayResponse.json() as {
+      leadId: string
+      intakeId: string
+      caseId: string
+      portalUrl: string
+    }
+    assert.equal(replayBody.leadId, triageBody.leadId)
+    assert.equal(replayBody.intakeId, triageBody.intakeId)
+    assert.equal(replayBody.caseId, triageBody.caseId)
+    assert.match(replayBody.portalUrl, new RegExp(`^/portal/${triageBody.caseId}/`))
+
+    const replayLeadCount = await harness.app.backendContext.connection.get<{ total: number }>(
+      `SELECT COUNT(*) AS total FROM entity_portfolio_lead WHERE lead_id = ?`,
+      triageBody.leadId,
+    )
+    const replayIntakeCount = await harness.app.backendContext.connection.get<{ total: number }>(
+      `SELECT COUNT(*) AS total FROM entity_portfolio_lead_intake WHERE intake_id = ?`,
+      triageBody.intakeId,
+    )
+    const replayCaseCount = await harness.app.backendContext.connection.get<{ total: number }>(
+      `
+        SELECT COUNT(*) AS total
+        FROM cases
+        WHERE tenant_id = ?
+          AND entity_id = ?
+          AND json_extract(metadata, '$.publicTriage.requestId') = ?
+      `,
+      11,
+      'office-real-1',
+      'triage-a',
+    )
+    assert.equal(Number(replayLeadCount?.total ?? 0), 1)
+    assert.equal(Number(replayIntakeCount?.total ?? 0), 1)
+    assert.equal(Number(replayCaseCount?.total ?? 0), 1)
 
     const assignResponse = await harness.app.inject({
       method: 'POST',

@@ -1,5 +1,8 @@
 import type { BackendDatabase } from '../../db/index.js'
 import { createEntityRepository } from '../../repositories/entityRepository.js'
+import { createPortfolioLeadIntakeRepository } from '../../repositories/portfolioLeadIntakeRepository.js'
+import { createPortfolioLeadRepository } from '../../repositories/portfolioLeadRepository.js'
+import { createPortfolioLeadSignalRepository } from '../../repositories/portfolioLeadSignalRepository.js'
 import type { EntityProfile } from '../../brain/domain/entity/contracts/EntityProfile.js'
 
 import { createCaseRepository } from './caseRepository.js'
@@ -17,6 +20,27 @@ import {
   resolvePublicTriagePriority,
   safeJsonObject,
 } from '../../api/routes/legalBetaSupport.js'
+
+function normalizePublicTriageIdPart(value: string) {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+
+  return normalized || 'unknown'
+}
+
+function buildPublicTriageReferenceId(prefix: string, entityId: string, requestId: string) {
+  return `${prefix}:${normalizePublicTriageIdPart(entityId)}:${normalizePublicTriageIdPart(requestId)}`.slice(0, 128)
+}
+
+function resolvePublicTriageSignalUrgency(urgency: 'critical' | 'priority' | 'planned') {
+  if (urgency === 'critical') return 'critical' as const
+  if (urgency === 'priority') return 'high' as const
+  return 'medium' as const
+}
 
 export class LegalBetaCaseService {
   constructor(private readonly db: BackendDatabase) {}
@@ -234,84 +258,197 @@ export class LegalBetaCaseService {
     if (!entity || typeof entity.ownerTenantId !== 'number') {
       return null
     }
+    const tenantId = entity.ownerTenantId
 
-    const existing = await this.db.get<{ id: string }>(
-      `
-        SELECT id
-        FROM cases
-        WHERE tenant_id = ?
-          AND entity_id = ?
-          AND json_extract(metadata, '$.publicTriage.requestId') = ?
-        ORDER BY created_at DESC
-        LIMIT 1
-      `,
-      entity.ownerTenantId,
-      args.entityId,
-      args.requestId,
-    ).catch(() => null)
+    const now = new Date().toISOString()
+    const signalId = buildPublicTriageReferenceId('public-triage-signal', args.entityId, args.requestId)
+    const leadId = buildPublicTriageReferenceId('public-triage-lead', args.entityId, args.requestId)
+    const intakeId = buildPublicTriageReferenceId('public-triage-intake', args.entityId, args.requestId)
+    const attributedCommandId = buildPublicTriageReferenceId('public-triage-command', args.entityId, args.requestId)
 
-    if (existing?.id) {
-      const existingCase = await this.caseRepository.getCaseById(entity.ownerTenantId, existing.id)
-      if (existingCase) {
+    const persisted = await this.db.transaction(async (tx) => {
+      const signalRepository = createPortfolioLeadSignalRepository(tx)
+      const leadRepository = createPortfolioLeadRepository(tx)
+      const intakeRepository = createPortfolioLeadIntakeRepository(tx)
+      const caseRepository = createCaseRepository(tx)
+
+      await signalRepository.save({
+        signalId,
+        entityId: args.entityId,
+        market: 'legal',
+        source: 'public-triage',
+        intent: args.triage?.practiceArea?.trim() || 'public-triage',
+        urgency: resolvePublicTriageSignalUrgency(args.triage?.urgency ?? 'planned'),
+        estimatedValue: 0,
+        confidence: 1,
+        recommendedAction: 'create_intake_and_case',
+        payload: {
+          requestId: args.requestId,
+          userMessage: args.userMessage.trim(),
+          city: args.triage?.city?.trim() || undefined,
+          practiceArea: args.triage?.practiceArea?.trim() || undefined,
+          contactPreference: args.triage?.contactPreference?.trim() || undefined,
+          contactValue: args.triage?.contactValue?.trim() || undefined,
+        },
+        detectedAt: now,
+      })
+
+      const lead = await leadRepository.save({
+        leadId,
+        entityId: args.entityId,
+        signalId,
+        source: 'public-triage',
+        timestamp: now,
+        routingStatus: 'intake_requested',
+        status: 'routed',
+        qualifiedAt: null,
+        contactedAt: null,
+        convertedAt: null,
+        lostAt: null,
+        revenueAmount: null,
+        lostReason: null,
+        attributedCommandId,
+        attribution: {
+          requestId: args.requestId,
+          tenantId: entity.ownerTenantId,
+        },
+        payload: {
+          requestId: args.requestId,
+          city: args.triage?.city?.trim() || undefined,
+          practiceArea: args.triage?.practiceArea?.trim() || undefined,
+          contactPreference: args.triage?.contactPreference?.trim() || undefined,
+          contactValue: args.triage?.contactValue?.trim() || undefined,
+          source: 'public-triage',
+        },
+      })
+
+      const intake = await intakeRepository.save({
+        intakeId,
+        leadId,
+        entityId: args.entityId,
+        signalId,
+        source: 'public-triage',
+        timestamp: now,
+        attributedCommandId,
+        payload: {
+          requestId: args.requestId,
+          context: args.triage?.context?.trim() || '',
+          objective: args.triage?.objective?.trim() || '',
+          urgency: args.triage?.urgency ?? 'planned',
+          fullNarrative: args.userMessage.trim(),
+        },
+      })
+
+      const existing = await tx.get<{ id: string }>(
+        `
+          SELECT id
+          FROM cases
+          WHERE tenant_id = ?
+            AND entity_id = ?
+            AND json_extract(metadata, '$.publicTriage.requestId') = ?
+          ORDER BY created_at DESC
+          LIMIT 1
+        `,
+        tenantId,
+        args.entityId,
+        args.requestId,
+      ).catch(() => null)
+
+      if (existing?.id) {
+        const existingCase = await caseRepository.getCaseById(tenantId, existing.id)
+        if (!existingCase) {
+          throw new Error(`Public triage case "${existing.id}" could not be reloaded.`)
+        }
+
+        const nextMetadata = safeJsonObject(existingCase.metadata)
+        nextMetadata.source = 'public-triage'
+        nextMetadata.leadId = lead.record.leadId
+        nextMetadata.intakeId = intake.record.intakeId
+        nextMetadata.contact = args.triage?.contactValue?.trim() || nextMetadata.contact
+        nextMetadata.city = args.triage?.city?.trim() || nextMetadata.city
+        nextMetadata.publicTriage = {
+          ...safeJsonObject(nextMetadata.publicTriage),
+          requestId: args.requestId,
+          city: args.triage?.city?.trim() || undefined,
+          contactPreference: args.triage?.contactPreference?.trim() || undefined,
+          contactValue: args.triage?.contactValue?.trim() || undefined,
+          urgency: args.triage?.urgency ?? 'planned',
+          leadId: lead.record.leadId,
+          intakeId: intake.record.intakeId,
+        }
+
+        await caseRepository.updateCaseMetadata(tenantId, existingCase.id, nextMetadata)
+
         return {
-          caseRecord: existingCase,
-          portalAccess: await issueCasePortalAccessToken({
-            db: this.db,
-            tenantId: entity.ownerTenantId,
-            caseId: existingCase.id,
-          }),
-          entity,
+          caseRecord: (await caseRepository.getCaseById(tenantId, existingCase.id)) ?? existingCase,
+          leadRecord: lead.record,
+          intakeRecord: intake.record,
         }
       }
-    }
 
-    const caseRecord = await this.caseRepository.createCase({
-      tenantId: entity.ownerTenantId,
-      entityId: args.entityId,
-      requestId: args.requestId,
-      title: buildStructuredPublicTriageTitle(args),
-      description: buildStructuredPublicTriageMessage(args),
-      status: 'open',
-      priority: resolvePublicTriagePriority(args.triage?.urgency ?? 'planned'),
-      practiceArea: args.triage?.practiceArea,
-      source: 'public-interaction',
-      autoDispatch: false,
-      metadata: {
-        publicTriage: {
-          requestId: args.requestId,
-          city: args.triage?.city,
-          contactPreference: args.triage?.contactPreference,
-          contactValue: args.triage?.contactValue,
-          urgency: args.triage?.urgency,
+      const caseRecord = await caseRepository.createCase({
+        tenantId,
+        entityId: args.entityId,
+        requestId: args.requestId,
+        title: buildStructuredPublicTriageTitle(args),
+        description: buildStructuredPublicTriageMessage(args),
+        status: 'open',
+        priority: resolvePublicTriagePriority(args.triage?.urgency ?? 'planned'),
+        practiceArea: args.triage?.practiceArea,
+        source: 'public-interaction',
+        autoDispatch: false,
+        metadata: {
+          source: 'public-triage',
+          leadId: lead.record.leadId,
+          intakeId: intake.record.intakeId,
+          publicTriage: {
+            requestId: args.requestId,
+            city: args.triage?.city?.trim() || undefined,
+            contactPreference: args.triage?.contactPreference?.trim() || undefined,
+            contactValue: args.triage?.contactValue?.trim() || undefined,
+            urgency: args.triage?.urgency ?? 'planned',
+            leadId: lead.record.leadId,
+            intakeId: intake.record.intakeId,
+          },
+          city: args.triage?.city?.trim() || undefined,
+          contact: args.triage?.contactValue?.trim() || undefined,
         },
-        city: args.triage?.city,
-        contact: args.triage?.contactValue,
-      },
-      initialMessage: {
-        body: args.userMessage.trim(),
-        direction: 'inbound',
-        messageType: 'note',
-        messageStatus: 'sent',
-      },
-    })
+        initialMessage: {
+          body: args.userMessage.trim(),
+          direction: 'inbound',
+          messageType: 'note',
+          messageStatus: 'sent',
+        },
+      })
 
-    await this.caseRepository.addTimelineEvent({
-      tenantId: entity.ownerTenantId,
-      caseId: caseRecord.id,
-      eventType: 'created',
-      payload: {
-        source: 'public-triage',
-      },
+      await caseRepository.addTimelineEvent({
+        tenantId,
+        caseId: caseRecord.id,
+        eventType: 'created',
+        payload: {
+          source: 'public-triage',
+          leadId: lead.record.leadId,
+          intakeId: intake.record.intakeId,
+        },
+      })
+
+      return {
+        caseRecord,
+        leadRecord: lead.record,
+        intakeRecord: intake.record,
+      }
     })
 
     const portalAccess = await issueCasePortalAccessToken({
       db: this.db,
-      tenantId: entity.ownerTenantId,
-      caseId: caseRecord.id,
+      tenantId,
+      caseId: persisted.caseRecord.id,
     })
 
     return {
-      caseRecord,
+      caseRecord: persisted.caseRecord,
+      leadRecord: persisted.leadRecord,
+      intakeRecord: persisted.intakeRecord,
       portalAccess,
       entity,
     }
