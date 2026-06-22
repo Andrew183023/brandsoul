@@ -201,9 +201,18 @@ async function ensureFastTrackProfessional(officeId: string, draft: Institutiona
     return
   }
 
+  const responsibleDraft = draft.team.professionals.find((professional) => {
+    if (professional.isResponsible) {
+      return true
+    }
+
+    return professional.displayName.trim() === displayName
+  })
+
   const payload: OfficeProfessionalPayload = {
     displayName,
     email: draft.account.institutionalEmail.trim() || undefined,
+    photoUrl: responsibleDraft?.photoUrl.trim() || undefined,
     specialties: splitSpecialtiesCsv(draft.fastTrack.mainSpecialty),
     isResponsible: true,
     isPublic: true,
