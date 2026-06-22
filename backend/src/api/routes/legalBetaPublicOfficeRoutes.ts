@@ -637,6 +637,7 @@ export async function registerLegalBetaPublicOfficeRoutes(app: FastifyInstance) 
       status: 'ready',
       officeId: request.params.id,
       publicProfile: buildPublicOfficeProfile(request.params.id, entity.entityProfile as EntityProfile),
+      businessConfig: readEntityBusinessConfig(entity.entityProfile as EntityProfile) ?? null,
     }
   })
 
