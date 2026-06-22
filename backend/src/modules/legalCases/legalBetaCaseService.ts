@@ -34,6 +34,12 @@ function buildPublicTriageReferenceId(prefix: string, entityId: string, requestI
   return `${prefix}:${normalizePublicTriageIdPart(entityId)}:${normalizePublicTriageIdPart(requestId)}`.slice(0, 128)
 }
 
+function buildPublicTriageRequestIdWhereClause(db: BackendDatabase) {
+  return db.dialect === 'postgres'
+    ? "metadata #>> '{publicTriage,requestId}' = ?"
+    : "json_extract(metadata, '$.publicTriage.requestId') = ?"
+}
+
 export class LegalBetaCaseService {
   constructor(
     private readonly db: BackendDatabase,
@@ -276,6 +282,7 @@ export class LegalBetaCaseService {
 
     const persisted = await this.db.transaction(async (tx) => {
       const caseRepository = createCaseRepository(tx)
+      const publicTriageRequestIdWhereClause = buildPublicTriageRequestIdWhereClause(tx)
 
       const existing = await tx.get<{ id: string }>(
         `
@@ -283,14 +290,14 @@ export class LegalBetaCaseService {
           FROM cases
           WHERE tenant_id = ?
             AND entity_id = ?
-            AND json_extract(metadata, '$.publicTriage.requestId') = ?
+            AND ${publicTriageRequestIdWhereClause}
           ORDER BY created_at DESC
           LIMIT 1
         `,
         tenantId,
         args.entityId,
         args.requestId,
-      ).catch(() => null)
+      )
 
       if (existing?.id) {
         const existingCase = await caseRepository.getCaseById(tenantId, existing.id)
