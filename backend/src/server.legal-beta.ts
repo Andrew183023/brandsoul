@@ -20,6 +20,8 @@ import { createDatabaseConnection, getDatabaseConfig, initializeDatabase } from 
 import { createEntityRepository } from './repositories/entityRepository.js'
 import { createAssetStorageService, getAssetStorageConfig } from './services/assetStorageService.js'
 import { createObservabilityService } from './services/observabilityService.js'
+import { createRuntimeGovernanceService } from './services/runtimeGovernanceService.js'
+import { createInstitutionalContinuityGovernanceService } from './services/institutionalContinuityGovernanceService.js'
 import {
   createInstitutionalSovereignMutationGate,
   installInstitutionalSovereignMutationGate,
@@ -29,6 +31,7 @@ import {
   installSemanticMutationExecutor,
 } from './sovereignty/semanticMutationExecutor.js'
 import { setSovereignMutationBoundaryEnforcement } from './sovereignty/authorityBoundary.js'
+import { createSovereignMutationCommandService } from './orchestrator/sovereignMutationCommandService.js'
 
 export async function buildLegalBetaServer() {
   validateRuntimeConfig()
@@ -58,6 +61,13 @@ export async function buildLegalBetaServer() {
   const connection = await createDatabaseConnection(getDatabaseConfig())
   await initializeDatabase(connection)
   const observability = createObservabilityService()
+  const runtimeGovernance = createRuntimeGovernanceService({ observability })
+  const institutionalContinuityGovernance = createInstitutionalContinuityGovernanceService({
+    db: connection,
+    observability,
+    logger: app.log,
+  })
+  await institutionalContinuityGovernance.initialize()
   const authConfig = getAuthConfig()
   const legacyAuthStoreRepository = createLegacyAuthStoreRepository(authConfig.legacyAuthDbPath)
   const backendNativeAuthStoreRepository = createBackendNativeAuthStoreRepository(connection)
@@ -109,6 +119,11 @@ export async function buildLegalBetaServer() {
     logger: app.log,
   }))
   setSovereignMutationBoundaryEnforcement(true)
+  const sovereignMutationCommandService = createSovereignMutationCommandService({
+    connection,
+    runtimeGovernance,
+    continuityGovernance: institutionalContinuityGovernance,
+  })
 
   const entityRepository = createEntityRepository(connection)
   const assetStorageService = createAssetStorageService(getAssetStorageConfig(process.cwd()))
@@ -117,6 +132,9 @@ export async function buildLegalBetaServer() {
     connection,
     db: { provider: 'legal-beta' as const },
     observability,
+    runtimeGovernance,
+    institutionalContinuityGovernance,
+    sovereignMutationCommandService,
     entityRepository,
     assetStorageService,
     auth: {

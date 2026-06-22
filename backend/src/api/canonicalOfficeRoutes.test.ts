@@ -429,6 +429,17 @@ test('public triage, portal projection and lifecycle transitions stay canonical'
     assert.equal(Number(replayIntakeCount?.total ?? 0), 1)
     assert.equal(Number(replayCaseCount?.total ?? 0), 1)
 
+    const sovereignAttestationCount = await harness.app.backendContext.connection.get<{ total: number }>(
+      `
+        SELECT COUNT(*) AS total
+        FROM flowmind_sovereign_mutation_attestation
+        WHERE mutation_type = 'portfolio.public-triage.capture'
+          AND mutation_id = ?
+      `,
+      'public-triage-command:office-real-1:triage-a',
+    )
+    assert.equal(Number(sovereignAttestationCount?.total ?? 0) >= 1, true)
+
     const assignResponse = await harness.app.inject({
       method: 'POST',
       url: `/cases/${triageBody.actionResult.caseId}/assign`,

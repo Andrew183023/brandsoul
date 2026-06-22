@@ -11,6 +11,7 @@ import { buildSemanticFingerprint, getSemanticMutationExecutor } from '../../sov
 import { getRequestAuth, optionalAuth, requireAuth } from '../middleware/requireAuth.js'
 import { createRateLimit } from '../middleware/rateLimit.js'
 import { createCaseRepository } from '../../modules/legalCases/caseRepository.js'
+import type { SovereignMutationCommandService } from '../../orchestrator/sovereignMutationCommandService.js'
 import { createLegalBetaCaseService } from '../../modules/legalCases/legalBetaCaseService.js'
 import {
   buildOfficeBusinessConfigProjection,
@@ -30,6 +31,7 @@ type BackendContext = {
     connection: BackendDatabase
     entityRepository: EntityRepository
     assetStorageService: AssetStorageService
+    sovereignMutationCommandService: SovereignMutationCommandService
     auth: {
       backendNativeAuthStoreRepository: {
         findUserById(userId: number): Promise<{ id: number; isActive: boolean } | null>
@@ -124,7 +126,7 @@ function getCaseRepository(app: FastifyInstance) {
 }
 
 function getCaseService(app: FastifyInstance) {
-  return createLegalBetaCaseService(getConnection(app))
+  return createLegalBetaCaseService(getConnection(app), (app as FastifyInstance & BackendContext).backendContext.sovereignMutationCommandService)
 }
 
 function buildLegacyOwnerId(userId: number, tenantId: number) {

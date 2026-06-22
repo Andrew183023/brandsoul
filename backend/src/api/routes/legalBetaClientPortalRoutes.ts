@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 
 import type { BackendDatabase } from '../../db/index.js'
+import type { SovereignMutationCommandService } from '../../orchestrator/sovereignMutationCommandService.js'
 import { createRateLimit } from '../middleware/rateLimit.js'
 import { createLegalBetaCaseService } from '../../modules/legalCases/legalBetaCaseService.js'
 import type { CasePortalAccessTokenRecord } from './legalBetaSupport.js'
@@ -9,6 +10,7 @@ import { hashCasePortalAccessToken } from './legalBetaSupport.js'
 type BackendContext = {
   backendContext: {
     connection: BackendDatabase
+    sovereignMutationCommandService: SovereignMutationCommandService
   }
 }
 
@@ -17,7 +19,10 @@ function getConnection(app: FastifyInstance) {
 }
 
 function getCaseService(app: FastifyInstance) {
-  return createLegalBetaCaseService(getConnection(app))
+  return createLegalBetaCaseService(
+    getConnection(app),
+    (app as FastifyInstance & BackendContext).backendContext.sovereignMutationCommandService,
+  )
 }
 
 const publicReadRateLimit = createRateLimit({

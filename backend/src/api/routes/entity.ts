@@ -343,7 +343,7 @@ function getLegalCaseService(app: FastifyInstance) {
 }
 
 function getLegalBetaCaseService(app: FastifyInstance) {
-  return createLegalBetaCaseService(getConnection(app))
+  return createLegalBetaCaseService(getConnection(app), getSovereignMutationCommandService(app))
 }
 
 function createRequestId() {

@@ -1,8 +1,6 @@
 import type { BackendDatabase } from '../../db/index.js'
 import { createEntityRepository } from '../../repositories/entityRepository.js'
-import { createPortfolioLeadIntakeRepository } from '../../repositories/portfolioLeadIntakeRepository.js'
-import { createPortfolioLeadRepository } from '../../repositories/portfolioLeadRepository.js'
-import { createPortfolioLeadSignalRepository } from '../../repositories/portfolioLeadSignalRepository.js'
+import type { SovereignMutationCommandService } from '../../orchestrator/sovereignMutationCommandService.js'
 import type { EntityProfile } from '../../brain/domain/entity/contracts/EntityProfile.js'
 
 import { createCaseRepository } from './caseRepository.js'
@@ -36,14 +34,11 @@ function buildPublicTriageReferenceId(prefix: string, entityId: string, requestI
   return `${prefix}:${normalizePublicTriageIdPart(entityId)}:${normalizePublicTriageIdPart(requestId)}`.slice(0, 128)
 }
 
-function resolvePublicTriageSignalUrgency(urgency: 'critical' | 'priority' | 'planned') {
-  if (urgency === 'critical') return 'critical' as const
-  if (urgency === 'priority') return 'high' as const
-  return 'medium' as const
-}
-
 export class LegalBetaCaseService {
-  constructor(private readonly db: BackendDatabase) {}
+  constructor(
+    private readonly db: BackendDatabase,
+    private readonly sovereignMutationCommandService: SovereignMutationCommandService,
+  ) {}
 
   private get caseRepository() {
     return createCaseRepository(this.db)
@@ -260,84 +255,27 @@ export class LegalBetaCaseService {
     }
     const tenantId = entity.ownerTenantId
 
-    const now = new Date().toISOString()
-    const signalId = buildPublicTriageReferenceId('public-triage-signal', args.entityId, args.requestId)
-    const leadId = buildPublicTriageReferenceId('public-triage-lead', args.entityId, args.requestId)
-    const intakeId = buildPublicTriageReferenceId('public-triage-intake', args.entityId, args.requestId)
-    const attributedCommandId = buildPublicTriageReferenceId('public-triage-command', args.entityId, args.requestId)
+    const portfolioCapture = await this.sovereignMutationCommandService.submitCommand({
+      type: 'portfolio.public-triage.capture',
+      commandId: buildPublicTriageReferenceId('public-triage-command', args.entityId, args.requestId),
+      entityId: args.entityId,
+      tenantId,
+      requestId: args.requestId,
+      userMessage: args.userMessage.trim(),
+      city: args.triage?.city?.trim() || undefined,
+      practiceArea: args.triage?.practiceArea?.trim() || undefined,
+      urgency: args.triage?.urgency ?? 'planned',
+      objective: args.triage?.objective?.trim() || undefined,
+      contactPreference: args.triage?.contactPreference?.trim() || undefined,
+      contactValue: args.triage?.contactValue?.trim() || undefined,
+    }) as {
+      signalId: string
+      leadId: string
+      intakeId: string
+    }
 
     const persisted = await this.db.transaction(async (tx) => {
-      const signalRepository = createPortfolioLeadSignalRepository(tx)
-      const leadRepository = createPortfolioLeadRepository(tx)
-      const intakeRepository = createPortfolioLeadIntakeRepository(tx)
       const caseRepository = createCaseRepository(tx)
-
-      await signalRepository.save({
-        signalId,
-        entityId: args.entityId,
-        market: 'legal',
-        source: 'public-triage',
-        intent: args.triage?.practiceArea?.trim() || 'public-triage',
-        urgency: resolvePublicTriageSignalUrgency(args.triage?.urgency ?? 'planned'),
-        estimatedValue: 0,
-        confidence: 1,
-        recommendedAction: 'create_intake_and_case',
-        payload: {
-          requestId: args.requestId,
-          userMessage: args.userMessage.trim(),
-          city: args.triage?.city?.trim() || undefined,
-          practiceArea: args.triage?.practiceArea?.trim() || undefined,
-          contactPreference: args.triage?.contactPreference?.trim() || undefined,
-          contactValue: args.triage?.contactValue?.trim() || undefined,
-        },
-        detectedAt: now,
-      })
-
-      const lead = await leadRepository.save({
-        leadId,
-        entityId: args.entityId,
-        signalId,
-        source: 'public-triage',
-        timestamp: now,
-        routingStatus: 'intake_requested',
-        status: 'routed',
-        qualifiedAt: null,
-        contactedAt: null,
-        convertedAt: null,
-        lostAt: null,
-        revenueAmount: null,
-        lostReason: null,
-        attributedCommandId,
-        attribution: {
-          requestId: args.requestId,
-          tenantId: entity.ownerTenantId,
-        },
-        payload: {
-          requestId: args.requestId,
-          city: args.triage?.city?.trim() || undefined,
-          practiceArea: args.triage?.practiceArea?.trim() || undefined,
-          contactPreference: args.triage?.contactPreference?.trim() || undefined,
-          contactValue: args.triage?.contactValue?.trim() || undefined,
-          source: 'public-triage',
-        },
-      })
-
-      const intake = await intakeRepository.save({
-        intakeId,
-        leadId,
-        entityId: args.entityId,
-        signalId,
-        source: 'public-triage',
-        timestamp: now,
-        attributedCommandId,
-        payload: {
-          requestId: args.requestId,
-          context: args.triage?.context?.trim() || '',
-          objective: args.triage?.objective?.trim() || '',
-          urgency: args.triage?.urgency ?? 'planned',
-          fullNarrative: args.userMessage.trim(),
-        },
-      })
 
       const existing = await tx.get<{ id: string }>(
         `
@@ -362,8 +300,8 @@ export class LegalBetaCaseService {
 
         const nextMetadata = safeJsonObject(existingCase.metadata)
         nextMetadata.source = 'public-triage'
-        nextMetadata.leadId = lead.record.leadId
-        nextMetadata.intakeId = intake.record.intakeId
+        nextMetadata.leadId = portfolioCapture.leadId
+        nextMetadata.intakeId = portfolioCapture.intakeId
         nextMetadata.contact = args.triage?.contactValue?.trim() || nextMetadata.contact
         nextMetadata.city = args.triage?.city?.trim() || nextMetadata.city
         nextMetadata.publicTriage = {
@@ -373,16 +311,16 @@ export class LegalBetaCaseService {
           contactPreference: args.triage?.contactPreference?.trim() || undefined,
           contactValue: args.triage?.contactValue?.trim() || undefined,
           urgency: args.triage?.urgency ?? 'planned',
-          leadId: lead.record.leadId,
-          intakeId: intake.record.intakeId,
+          leadId: portfolioCapture.leadId,
+          intakeId: portfolioCapture.intakeId,
         }
 
         await caseRepository.updateCaseMetadata(tenantId, existingCase.id, nextMetadata)
 
         return {
           caseRecord: (await caseRepository.getCaseById(tenantId, existingCase.id)) ?? existingCase,
-          leadRecord: lead.record,
-          intakeRecord: intake.record,
+          leadId: portfolioCapture.leadId,
+          intakeId: portfolioCapture.intakeId,
         }
       }
 
@@ -399,16 +337,16 @@ export class LegalBetaCaseService {
         autoDispatch: false,
         metadata: {
           source: 'public-triage',
-          leadId: lead.record.leadId,
-          intakeId: intake.record.intakeId,
+          leadId: portfolioCapture.leadId,
+          intakeId: portfolioCapture.intakeId,
           publicTriage: {
             requestId: args.requestId,
             city: args.triage?.city?.trim() || undefined,
             contactPreference: args.triage?.contactPreference?.trim() || undefined,
             contactValue: args.triage?.contactValue?.trim() || undefined,
             urgency: args.triage?.urgency ?? 'planned',
-            leadId: lead.record.leadId,
-            intakeId: intake.record.intakeId,
+            leadId: portfolioCapture.leadId,
+            intakeId: portfolioCapture.intakeId,
           },
           city: args.triage?.city?.trim() || undefined,
           contact: args.triage?.contactValue?.trim() || undefined,
@@ -427,15 +365,15 @@ export class LegalBetaCaseService {
         eventType: 'created',
         payload: {
           source: 'public-triage',
-          leadId: lead.record.leadId,
-          intakeId: intake.record.intakeId,
+          leadId: portfolioCapture.leadId,
+          intakeId: portfolioCapture.intakeId,
         },
       })
 
       return {
         caseRecord,
-        leadRecord: lead.record,
-        intakeRecord: intake.record,
+        leadId: portfolioCapture.leadId,
+        intakeId: portfolioCapture.intakeId,
       }
     })
 
@@ -447,8 +385,12 @@ export class LegalBetaCaseService {
 
     return {
       caseRecord: persisted.caseRecord,
-      leadRecord: persisted.leadRecord,
-      intakeRecord: persisted.intakeRecord,
+      leadRecord: {
+        leadId: persisted.leadId,
+      },
+      intakeRecord: {
+        intakeId: persisted.intakeId,
+      },
       portalAccess,
       entity,
     }
@@ -560,6 +502,6 @@ export class LegalBetaCaseService {
   }
 }
 
-export function createLegalBetaCaseService(db: BackendDatabase) {
-  return new LegalBetaCaseService(db)
+export function createLegalBetaCaseService(db: BackendDatabase, sovereignMutationCommandService: SovereignMutationCommandService) {
+  return new LegalBetaCaseService(db, sovereignMutationCommandService)
 }

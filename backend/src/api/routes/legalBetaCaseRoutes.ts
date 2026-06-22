@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 
 import type { EntityProfile } from '../../brain/domain/entity/contracts/EntityProfile.js'
 import type { BackendDatabase } from '../../db/index.js'
+import type { SovereignMutationCommandService } from '../../orchestrator/sovereignMutationCommandService.js'
 import type { EntityRepository } from '../../repositories/entityRepository.js'
 import { createRateLimit } from '../../api/middleware/rateLimit.js'
 import { getRequestAuth, requireAuth } from '../../api/middleware/requireAuth.js'
@@ -12,6 +13,7 @@ type BackendContext = {
   backendContext: {
     connection: BackendDatabase
     entityRepository: EntityRepository
+    sovereignMutationCommandService: SovereignMutationCommandService
   }
 }
 
@@ -52,7 +54,10 @@ function getCaseRepository(app: FastifyInstance) {
 }
 
 function getCaseService(app: FastifyInstance) {
-  return createLegalBetaCaseService(getConnection(app))
+  return createLegalBetaCaseService(
+    getConnection(app),
+    (app as FastifyInstance & BackendContext).backendContext.sovereignMutationCommandService,
+  )
 }
 
 function buildLegacyOwnerId(userId: number, tenantId: number) {

@@ -85,6 +85,7 @@ type SovereignCommandAction =
   | 'lead.mark_lost'
   | 'lead.qualify'
   | 'orchestrator.command.execute'
+  | 'portfolio.public-triage.capture'
   | 'portfolio.lead.route'
   | 'portfolio.scan'
   | 'portfolio.proposal.transition'
@@ -235,6 +236,21 @@ type PortfolioLeadRouteCommand = {
   metadata?: Record<string, unknown>
 }
 
+type PortfolioPublicTriageCaptureCommand = {
+  type: 'portfolio.public-triage.capture'
+  commandId: string
+  entityId: string
+  tenantId: number
+  requestId: string
+  userMessage: string
+  city?: string
+  practiceArea?: string
+  urgency: 'critical' | 'priority' | 'planned'
+  objective?: string
+  contactPreference?: string
+  contactValue?: string
+}
+
 type LeadQualifyCommand = {
   type: 'lead.qualify'
   commandId: string
@@ -359,6 +375,7 @@ export type SovereignMutationCommand =
   | LeadMarkLostCommand
   | LeadQualifyCommand
   | OrchestratorCommandExecuteCommand
+  | PortfolioPublicTriageCaptureCommand
   | PortfolioLeadRouteCommand
   | PortfolioScanCommand
   | PortfolioProposalTransitionCommand
@@ -437,6 +454,13 @@ export type PortfolioLeadRouteResult = {
   blockedReason?: 'signal_not_found'
 }
 
+export type PortfolioPublicTriageCaptureResult = {
+  signalId: string
+  leadId: string
+  intakeId: string
+  changed: boolean
+}
+
 type PortfolioLeadExternalExecutionResult = {
   action: 'trigger_intake' | 'trigger_outreach'
   status: 'created' | 'enqueued' | 'replayed'
@@ -461,6 +485,7 @@ export type SovereignMutationCommandResult =
   | ApprovalResolveResult
   | OrchestratorCommandExecuteResult
   | PortfolioLeadLifecycleResult
+  | PortfolioPublicTriageCaptureResult
   | PortfolioLeadRouteResult
   | PortfolioProposalCommandResult
   | PortfolioScanResult
@@ -529,6 +554,28 @@ function createLeadIntakeId(leadId: string) {
 
 function createLeadOutreachJobId(leadId: string) {
   return ['lead-outreach', normalizeIdPart(leadId)].join('-').slice(0, 128)
+}
+
+function createPublicTriageSignalId(entityId: string, requestId: string) {
+  return `public-triage-signal:${entityId}:${requestId}`.slice(0, 128)
+}
+
+function createPublicTriageLeadId(entityId: string, requestId: string) {
+  return `public-triage-lead:${entityId}:${requestId}`.slice(0, 128)
+}
+
+function createPublicTriageIntakeId(entityId: string, requestId: string) {
+  return `public-triage-intake:${entityId}:${requestId}`.slice(0, 128)
+}
+
+function resolvePublicTriageSignalUrgency(urgency: 'critical' | 'priority' | 'planned') {
+  if (urgency === 'critical') {
+    return 'critical' as const
+  }
+  if (urgency === 'priority') {
+    return 'high' as const
+  }
+  return 'medium' as const
 }
 
 function createProposalId(entityId: string, proposalType: string, now: string) {
@@ -1216,6 +1263,7 @@ export class SovereignMutationCommandService {
       || type === 'lead.contact'
       || type === 'lead.convert'
       || type === 'lead.mark_lost'
+      || type === 'portfolio.public-triage.capture'
       || type === 'portfolio.lead.route'
       || type === 'portfolio.scan'
       || type === 'portfolio.proposal.transition'
@@ -1497,6 +1545,9 @@ export class SovereignMutationCommandService {
           break
         case 'portfolio.lead.route':
           result = await this.executePortfolioLeadRoute(command)
+          break
+        case 'portfolio.public-triage.capture':
+          result = await this.executePortfolioPublicTriageCapture(command)
           break
         case 'portfolio.scan':
           result = await this.executePortfolioScan(command)
@@ -3222,6 +3273,171 @@ export class SovereignMutationCommandService {
       })
       throw error
     }
+  }
+
+  private async executePortfolioPublicTriageCapture(
+    command: PortfolioPublicTriageCaptureCommand,
+    database: BackendDatabase = this.dependencies.connection,
+    transactionBoundaryActive = false,
+  ): Promise<PortfolioPublicTriageCaptureResult> {
+    const signalId = createPublicTriageSignalId(command.entityId, command.requestId)
+    const leadId = createPublicTriageLeadId(command.entityId, command.requestId)
+    const intakeId = createPublicTriageIntakeId(command.entityId, command.requestId)
+    const rootLedger = new FlowMindExecutionLedgerRepository(database)
+    const existingLedger = await rootLedger.getByCommandId(command.commandId)
+
+    const readExisting = async (db: BackendDatabase) => {
+      const signalRepository = new PortfolioLeadSignalRepository(db)
+      const leadRepository = new PortfolioLeadRepository(db)
+      const intakeRepository = new PortfolioLeadIntakeRepository(db)
+
+      const [signal, lead, intake] = await Promise.all([
+        signalRepository.getById(signalId),
+        leadRepository.getById(leadId),
+        intakeRepository.getById(intakeId),
+      ])
+
+      return { signal, lead, intake }
+    }
+
+    if (existingLedger?.status === 'committed') {
+      const existing = await readExisting(database)
+      if (existing.signal && existing.lead && existing.intake) {
+        return {
+          signalId: existing.signal.signalId,
+          leadId: existing.lead.leadId,
+          intakeId: existing.intake.intakeId,
+          changed: false,
+        }
+      }
+    }
+
+    const executeWithin = async (tx: BackendDatabase): Promise<PortfolioPublicTriageCaptureResult> => {
+      const ledger = new FlowMindExecutionLedgerRepository(tx)
+      const signalRepository = new PortfolioLeadSignalRepository(tx)
+      const leadRepository = new PortfolioLeadRepository(tx)
+      const intakeRepository = new PortfolioLeadIntakeRepository(tx)
+      const existing = await readExisting(tx)
+
+      await ledger.save({
+        commandId: command.commandId,
+        entityId: command.entityId,
+        decisionHash: hashFlowMindValue({
+          type: command.type,
+          entityId: command.entityId,
+          requestId: command.requestId,
+        }),
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      })
+
+      const signal = await signalRepository.save({
+        signalId,
+        entityId: command.entityId,
+        market: 'legal',
+        source: 'public-triage',
+        intent: command.practiceArea?.trim() || 'public-triage',
+        urgency: resolvePublicTriageSignalUrgency(command.urgency),
+        estimatedValue: 0,
+        confidence: 1,
+        recommendedAction: 'create_intake_and_case',
+        payload: {
+          requestId: command.requestId,
+          tenantId: command.tenantId,
+          userMessage: command.userMessage.trim(),
+          city: command.city?.trim() || undefined,
+          practiceArea: command.practiceArea?.trim() || undefined,
+          contactPreference: command.contactPreference?.trim() || undefined,
+          contactValue: command.contactValue?.trim() || undefined,
+        },
+        detectedAt: new Date().toISOString(),
+      })
+
+      const lead = await leadRepository.save({
+        leadId,
+        entityId: command.entityId,
+        signalId,
+        source: 'public-triage',
+        timestamp: new Date().toISOString(),
+        routingStatus: 'intake_requested',
+        status: 'routed',
+        qualifiedAt: null,
+        contactedAt: null,
+        convertedAt: null,
+        lostAt: null,
+        revenueAmount: null,
+        lostReason: null,
+        attributedCommandId: command.commandId,
+        attribution: {
+          requestId: command.requestId,
+          tenantId: command.tenantId,
+          lifecycle: {
+            lastTransition: 'routed',
+            lastCommandId: command.commandId,
+            commandIds: {
+              routed: command.commandId,
+            },
+          },
+        },
+        payload: {
+          requestId: command.requestId,
+          city: command.city?.trim() || undefined,
+          practiceArea: command.practiceArea?.trim() || undefined,
+          contactPreference: command.contactPreference?.trim() || undefined,
+          contactValue: command.contactValue?.trim() || undefined,
+          source: 'public-triage',
+        },
+      })
+
+      const intake = await intakeRepository.save({
+        intakeId,
+        leadId,
+        entityId: command.entityId,
+        signalId,
+        source: 'public-triage',
+        timestamp: new Date().toISOString(),
+        attributedCommandId: command.commandId,
+        payload: {
+          requestId: command.requestId,
+          context: command.userMessage.trim(),
+          objective: command.objective?.trim() || '',
+          urgency: command.urgency,
+          fullNarrative: command.userMessage.trim(),
+          city: command.city?.trim() || undefined,
+          practiceArea: command.practiceArea?.trim() || undefined,
+          contactPreference: command.contactPreference?.trim() || undefined,
+          contactValue: command.contactValue?.trim() || undefined,
+        },
+      })
+
+      const changed = !existing.signal || !existing.lead || !existing.intake || signal.created || lead.created || intake.created
+      const committedAt = new Date().toISOString()
+      await ledger.save({
+        commandId: command.commandId,
+        entityId: command.entityId,
+        decisionHash: hashFlowMindValue({
+          type: command.type,
+          entityId: command.entityId,
+          requestId: command.requestId,
+        }),
+        status: 'committed',
+        committedAt,
+        createdAt: committedAt,
+        updatedAt: committedAt,
+      })
+
+      return {
+        signalId: signal.record.signalId,
+        leadId: lead.record.leadId,
+        intakeId: intake.record.intakeId,
+        changed,
+      }
+    }
+
+    return transactionBoundaryActive
+      ? executeWithin(database)
+      : database.transaction(async (tx) => executeWithin(tx))
   }
 
   private async executePortfolioScan(command: PortfolioScanCommand): Promise<PortfolioScanResult> {
