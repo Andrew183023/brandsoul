@@ -388,8 +388,24 @@ export function validateRuntimeConfig() {
     )
   }
 
-  if (assetStorageProvider && assetStorageProvider !== 'local') {
-    throw new Error(`ASSET_STORAGE_PROVIDER="${assetStorageProvider}" is not supported yet. Only "local" is wired right now.`)
+  if (assetStorageProvider && assetStorageProvider !== 'local' && assetStorageProvider !== 's3' && assetStorageProvider !== 'r2') {
+    throw new Error(`ASSET_STORAGE_PROVIDER="${assetStorageProvider}" is not supported yet. Only "local", "s3", and "r2" are wired right now.`)
+  }
+
+  if (assetStorageProvider === 's3' || assetStorageProvider === 'r2') {
+    const requiredAssetEnvKeys = [
+      'ASSET_STORAGE_BUCKET',
+      'ASSET_STORAGE_REGION',
+      'ASSET_STORAGE_ENDPOINT',
+      'ASSET_STORAGE_ACCESS_KEY_ID',
+      'ASSET_STORAGE_SECRET_ACCESS_KEY',
+    ] as const
+    const missingAssetEnvKeys = requiredAssetEnvKeys.filter((key) => readTrimmedEnv(key).length === 0)
+    if (missingAssetEnvKeys.length > 0) {
+      throw new Error(
+        `ASSET_STORAGE_PROVIDER="${assetStorageProvider}" requires ${missingAssetEnvKeys.join(', ')}.`,
+      )
+    }
   }
 
   const resendApiKey = getResendApiKey()

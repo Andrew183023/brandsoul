@@ -1,5 +1,13 @@
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
+import {
+  GetObjectCommand,
+  HeadBucketCommand,
+  NoSuchKey,
+  PutObjectCommand,
+  S3Client,
+  S3ServiceException,
+} from '@aws-sdk/client-s3'
 
 export type AssetStorageProvider = 'local' | string
 
@@ -7,6 +15,12 @@ export type AssetStorageConfig = {
   provider: AssetStorageProvider
   localDir: string
   publicBasePath: string
+  publicBaseUrl?: string
+  bucket?: string
+  region?: string
+  endpoint?: string
+  accessKeyId?: string
+  secretAccessKey?: string
 }
 
 export type AssetStorageHealth = {
@@ -115,8 +129,76 @@ function isImageContentType(contentType?: string) {
   return Boolean(contentType && contentType.startsWith('image/'))
 }
 
+function shouldUseRemoteStorage(provider: AssetStorageProvider) {
+  return provider === 'r2' || provider === 's3'
+}
+
+function trimOptionalEnv(value: string | undefined) {
+  const trimmed = value?.trim()
+  return trimmed ? trimmed : undefined
+}
+
+async function toBuffer(body: unknown) {
+  if (!body || typeof body !== 'object') {
+    return null
+  }
+
+  if (typeof (body as { transformToByteArray?: () => Promise<Uint8Array> }).transformToByteArray === 'function') {
+    const bytes = await (body as { transformToByteArray: () => Promise<Uint8Array> }).transformToByteArray()
+    return Buffer.from(bytes)
+  }
+
+  if (typeof (body as { transformToWebStream?: () => ReadableStream<Uint8Array> }).transformToWebStream === 'function') {
+    const stream = (body as { transformToWebStream: () => ReadableStream<Uint8Array> }).transformToWebStream()
+    const reader = stream.getReader()
+    const chunks: Uint8Array[] = []
+    let totalLength = 0
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) {
+        break
+      }
+      if (!value) {
+        continue
+      }
+      chunks.push(value)
+      totalLength += value.byteLength
+    }
+
+    return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)), totalLength)
+  }
+
+  if (Symbol.asyncIterator in body) {
+    const chunks: Buffer[] = []
+    for await (const chunk of body as AsyncIterable<Uint8Array | Buffer | string>) {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+    }
+    return Buffer.concat(chunks)
+  }
+
+  return null
+}
+
 export class AssetStorageService {
-  constructor(private readonly config: AssetStorageConfig) {}
+  private remoteClient: S3Client | null
+
+  constructor(private readonly config: AssetStorageConfig) {
+    this.remoteClient = shouldUseRemoteStorage(config.provider)
+      ? new S3Client({
+          region: config.region,
+          endpoint: config.endpoint,
+          credentials:
+            config.accessKeyId && config.secretAccessKey
+              ? {
+                  accessKeyId: config.accessKeyId,
+                  secretAccessKey: config.secretAccessKey,
+                }
+              : undefined,
+          forcePathStyle: config.provider === 'r2',
+        })
+      : null
+  }
 
   getProvider() {
     return this.config.provider
@@ -131,6 +213,9 @@ export class AssetStorageService {
     if (baseUrl) {
       return `${baseUrl.replace(/\/+$/, '')}${this.config.publicBasePath}/${normalizedKey}`
     }
+    if (this.config.publicBaseUrl) {
+      return `${this.config.publicBaseUrl.replace(/\/+$/, '')}${this.config.publicBasePath}/${normalizedKey}`
+    }
     return `${this.config.publicBasePath}/${normalizedKey}`
   }
 
@@ -139,11 +224,29 @@ export class AssetStorageService {
   }
 
   async healthCheck(): Promise<AssetStorageHealth> {
-    if (this.config.provider !== 'local') {
-      return {
-        ready: false,
-        provider: this.config.provider,
-        detail: 'Remote provider not wired yet.',
+    if (shouldUseRemoteStorage(this.config.provider)) {
+      if (!this.remoteClient || !this.config.bucket || !this.config.region || !this.config.endpoint) {
+        return {
+          ready: false,
+          provider: this.config.provider,
+          detail: 'Remote asset storage is missing required configuration.',
+        }
+      }
+
+      try {
+        await this.remoteClient.send(new HeadBucketCommand({ Bucket: this.config.bucket }))
+        return {
+          ready: true,
+          provider: this.config.provider,
+          detail: `Bucket "${this.config.bucket}" reachable.`,
+        }
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : 'Unable to reach remote asset bucket.'
+        return {
+          ready: false,
+          provider: this.config.provider,
+          detail,
+        }
       }
     }
 
@@ -156,10 +259,6 @@ export class AssetStorageService {
   }
 
   async uploadExportAsset(input: UploadExportAssetInput, baseUrl?: string): Promise<UploadExportAssetResult> {
-    if (this.config.provider !== 'local') {
-      throw new Error(`Storage provider "${this.config.provider}" is not wired yet.`)
-    }
-
     const extension = inferExtension(input.contentType, input.fileName)
     const fileStem = slugifySegment(
       (input.fileName ?? `${input.exportId}-${input.kind ?? 'original'}`).replace(/\.[^.]+$/, ''),
@@ -170,15 +269,38 @@ export class AssetStorageService {
       slugifySegment(input.exportId),
       `${slugifySegment(input.kind ?? 'original')}-${fileStem}.${extension}`,
     )
-    const filePath = this.getLocalFilePath(key)
+    const contentType = input.contentType?.trim() || inferContentType(key)
 
+    if (shouldUseRemoteStorage(this.config.provider)) {
+      if (!this.remoteClient || !this.config.bucket) {
+        throw new Error(`Storage provider "${this.config.provider}" is missing remote bucket configuration.`)
+      }
+
+      await this.remoteClient.send(
+        new PutObjectCommand({
+          Bucket: this.config.bucket,
+          Key: key,
+          Body: input.content,
+          ContentType: contentType,
+        }),
+      )
+
+      return {
+        key,
+        url: this.getAssetUrl(key, baseUrl),
+        contentType,
+        size: input.content.byteLength,
+      }
+    }
+
+    const filePath = this.getLocalFilePath(key)
     await mkdir(path.dirname(filePath), { recursive: true })
     await writeFile(filePath, input.content)
 
     return {
       key,
       url: this.getAssetUrl(key, baseUrl),
-      contentType: input.contentType?.trim() || inferContentType(key),
+      contentType,
       size: input.content.byteLength,
     }
   }
@@ -220,7 +342,7 @@ export class AssetStorageService {
   }
 
   async deleteAsset(key: string) {
-    if (this.config.provider !== 'local') {
+    if (shouldUseRemoteStorage(this.config.provider)) {
       return false
     }
 
@@ -229,8 +351,37 @@ export class AssetStorageService {
   }
 
   async readAsset(key: string): Promise<ReadAssetResult | null> {
-    if (this.config.provider !== 'local') {
-      return null
+    if (shouldUseRemoteStorage(this.config.provider)) {
+      if (!this.remoteClient || !this.config.bucket) {
+        return null
+      }
+
+      try {
+        const response = await this.remoteClient.send(
+          new GetObjectCommand({
+            Bucket: this.config.bucket,
+            Key: key,
+          }),
+        )
+        const buffer = await toBuffer(response.Body)
+        if (!buffer) {
+          return null
+        }
+
+        return {
+          key,
+          buffer,
+          contentType: response.ContentType?.trim() || inferContentType(key),
+        }
+      } catch (error) {
+        if (error instanceof NoSuchKey) {
+          return null
+        }
+        if (error instanceof S3ServiceException && error.name === 'NoSuchKey') {
+          return null
+        }
+        throw error
+      }
     }
 
     try {
@@ -251,6 +402,12 @@ export function getAssetStorageConfig(rootDir: string): AssetStorageConfig {
     provider: process.env.ASSET_STORAGE_PROVIDER?.trim().toLowerCase() ?? 'local',
     localDir: process.env.ASSET_STORAGE_DIR?.trim() || path.join(rootDir, 'data', 'assets'),
     publicBasePath: normalizeBasePath(process.env.ASSET_PUBLIC_BASE_PATH ?? '/assets'),
+    publicBaseUrl: trimOptionalEnv(process.env.ASSET_STORAGE_PUBLIC_BASE_URL),
+    bucket: trimOptionalEnv(process.env.ASSET_STORAGE_BUCKET),
+    region: trimOptionalEnv(process.env.ASSET_STORAGE_REGION),
+    endpoint: trimOptionalEnv(process.env.ASSET_STORAGE_ENDPOINT),
+    accessKeyId: trimOptionalEnv(process.env.ASSET_STORAGE_ACCESS_KEY_ID),
+    secretAccessKey: trimOptionalEnv(process.env.ASSET_STORAGE_SECRET_ACCESS_KEY),
   }
 }
 
