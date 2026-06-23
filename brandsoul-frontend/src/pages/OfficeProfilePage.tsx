@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 
+import brandsoulLogo from '../assets/brandsoul-logo-original.jpeg'
 import PublicShell from '../app/shells/PublicShell'
 import {
   PublicOfficeInteractionApiError,
@@ -187,6 +188,209 @@ const PUBLIC_PRESENCE_RETRY_POLICY = {
   maxBackoffMs: 1_800,
   multiplier: 2,
 } as const
+
+type HeadTagDescriptor = {
+  selector: string
+  tagName: 'meta' | 'link'
+  attributes: Record<string, string>
+}
+
+type OfficeSeoPayload = {
+  title: string
+  description: string
+  canonicalUrl: string
+  imageUrl: string
+  legalServiceJsonLd: Record<string, unknown>
+  faqJsonLd: Record<string, unknown>
+}
+
+function trimAndCollapseWhitespace(value: string | undefined) {
+  return value?.replace(/\s+/g, ' ').trim() ?? ''
+}
+
+function truncateSeoDescription(value: string, minLength = 120, maxLength = 160) {
+  const normalized = trimAndCollapseWhitespace(value)
+  if (normalized.length < minLength) {
+    return normalized
+  }
+  if (normalized.length <= maxLength) {
+    return normalized
+  }
+
+  const truncated = normalized.slice(0, maxLength - 1)
+  const lastSentenceBreak = Math.max(truncated.lastIndexOf('. '), truncated.lastIndexOf('; '), truncated.lastIndexOf(', '))
+  if (lastSentenceBreak >= minLength - 1) {
+    return `${truncated.slice(0, lastSentenceBreak).trimEnd()}.`
+  }
+
+  const lastWordBreak = truncated.lastIndexOf(' ')
+  const safeSlice = lastWordBreak >= minLength - 1 ? truncated.slice(0, lastWordBreak) : truncated
+  return `${safeSlice.trimEnd()}...`
+}
+
+function toAbsoluteUrl(value: string, origin: string) {
+  if (value.startsWith('http://') || value.startsWith('https://')) {
+    return value
+  }
+
+  return `${origin}${value.startsWith('/') ? value : `/${value}`}`
+}
+
+function formatPrimaryAreaForSeo(value: string | undefined) {
+  const normalized = trimAndCollapseWhitespace(value)
+  if (!normalized) {
+    return 'Advogado'
+  }
+
+  if (normalized.startsWith('Direito ')) {
+    return `Advogado ${normalized.slice('Direito '.length)}`
+  }
+
+  return normalized
+}
+
+function buildOfficeSeoPayload(args: {
+  officeId: string
+  officeName: string
+  primaryArea?: string
+  primaryCity?: string
+  institutionalDescription?: string
+  legalAreas: string[]
+  servedCities: string[]
+  address?: string
+  phone?: string
+  email?: string
+  imageUrl?: string
+  responseWindowLabel?: string
+  availabilityLabel?: string
+  canonicalTagline?: string
+  origin: string
+}) {
+  const officeName = trimAndCollapseWhitespace(args.officeName) || 'Escritório jurídico'
+  const primaryArea = formatPrimaryAreaForSeo(args.primaryArea || args.legalAreas[0])
+  const primaryCity = trimAndCollapseWhitespace(args.primaryCity) || trimAndCollapseWhitespace(args.servedCities[0])
+  const title = primaryCity
+    ? `${officeName} | ${primaryArea} em ${primaryCity}`
+    : `${officeName} | ${primaryArea}`
+  const descriptionSource = [
+    trimAndCollapseWhitespace(args.institutionalDescription) || trimAndCollapseWhitespace(args.canonicalTagline),
+    args.legalAreas.length > 0 ? `Atuação em ${args.legalAreas.slice(0, 3).join(', ')}.` : undefined,
+    args.servedCities.length > 0 ? `Atende ${args.servedCities.slice(0, 3).join(', ')}.` : undefined,
+  ].filter(Boolean).join(' ')
+  const fallbackDescription = `${officeName} recebe triagem jurídica inicial com informações públicas sobre atuação, cidades atendidas e primeiro contato.`
+  const description = truncateSeoDescription(
+    descriptionSource.length >= 120 ? descriptionSource : `${descriptionSource} ${fallbackDescription}`.trim() || fallbackDescription,
+  )
+  const canonicalUrl = `${args.origin}${LEGAL_ROUTES.public.escritorioPerfil(args.officeId)}`
+  const imageUrl = toAbsoluteUrl(args.imageUrl || brandsoulLogo, args.origin)
+
+  const legalServiceJsonLd: Record<string, unknown> = {
+    '@context': 'https://schema.org',
+    '@type': 'LegalService',
+    name: officeName,
+    serviceType: args.legalAreas,
+    areaServed: args.servedCities,
+    url: canonicalUrl,
+  }
+  if (args.address) {
+    legalServiceJsonLd.address = args.address
+  }
+  if (args.phone) {
+    legalServiceJsonLd.telephone = args.phone
+  }
+  if (args.email) {
+    legalServiceJsonLd.email = args.email
+  }
+  if (imageUrl) {
+    legalServiceJsonLd.image = imageUrl
+  }
+
+  const faqJsonLd: Record<string, unknown> = {
+    '@context': 'https://schema.org',
+    '@type': 'FAQPage',
+    mainEntity: [
+      {
+        '@type': 'Question',
+        name: 'Como esse escritório atua?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: trimAndCollapseWhitespace(args.institutionalDescription)
+            || trimAndCollapseWhitespace(args.canonicalTagline)
+            || `${officeName} mantém perfil público para triagem inicial e retorno jurídico organizado.`,
+        },
+      },
+      {
+        '@type': 'Question',
+        name: 'Quais áreas jurídicas este escritório atende?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: args.legalAreas.length > 0
+            ? `Atuação principal em ${args.legalAreas.join(', ')}.`
+            : 'As áreas jurídicas ainda estão sendo atualizadas neste perfil público.',
+        },
+      },
+      {
+        '@type': 'Question',
+        name: 'Como funciona o primeiro contato?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: trimAndCollapseWhitespace([args.availabilityLabel, args.responseWindowLabel].filter(Boolean).join('. '))
+            || 'A triagem pública organiza o primeiro contato e o escritório responde pelo canal informado neste perfil.',
+        },
+      },
+      {
+        '@type': 'Question',
+        name: 'Em quais cidades este escritório atende?',
+        acceptedAnswer: {
+          '@type': 'Answer',
+          text: args.servedCities.length > 0
+            ? `Atendimento informado para ${args.servedCities.join(', ')}.`
+            : 'A cobertura regional ainda está sendo atualizada neste perfil público.',
+        },
+      },
+    ],
+  }
+
+  return {
+    title,
+    description,
+    canonicalUrl,
+    imageUrl,
+    legalServiceJsonLd,
+    faqJsonLd,
+  } satisfies OfficeSeoPayload
+}
+
+function upsertHeadTag(descriptor: HeadTagDescriptor) {
+  const existing = document.head.querySelector(descriptor.selector)
+  const element = existing instanceof HTMLElement
+    ? existing
+    : document.createElement(descriptor.tagName)
+
+  for (const [attribute, value] of Object.entries(descriptor.attributes)) {
+    element.setAttribute(attribute, value)
+  }
+
+  if (!existing) {
+    document.head.appendChild(element)
+  }
+}
+
+function upsertStructuredData(id: string, payload: Record<string, unknown>) {
+  const selector = `script[data-office-seo="${id}"]`
+  const existing = document.head.querySelector(selector)
+  const script = existing instanceof HTMLScriptElement
+    ? existing
+    : document.createElement('script')
+
+  script.type = 'application/ld+json'
+  script.setAttribute('data-office-seo', id)
+  script.textContent = JSON.stringify(payload)
+
+  if (!existing) {
+    document.head.appendChild(script)
+  }
+}
 
 function parseRuntimeModeFromUrl(): RuntimeMode {
   const mode = new URLSearchParams(window.location.search).get('mode')
@@ -1554,6 +1758,116 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
     }),
     [availabilityLabel, canonicalProjection.operational.responseWindowLabel, coverage, intakeExpectationLabel, runtimeMode, socialState],
   )
+  const seoPayload = useMemo(() => {
+    if (typeof window === 'undefined' || !presence) {
+      return null
+    }
+
+    const publicImageUrl = resolvePublicAssetUrl(
+      officeGallery.find((item) => item.isCover)?.url
+      ?? officeGallery[0]?.url
+      ?? responsibleProfessionalProjection?.photoUrl,
+    ) ?? undefined
+
+    return buildOfficeSeoPayload({
+      officeId,
+      officeName: presence.entity.name,
+      primaryArea: specialties[0],
+      primaryCity: coverage[0]?.label,
+      institutionalDescription: canonicalProjection.profile.institutionalDescription,
+      legalAreas: specialties,
+      servedCities: coverage.map((item) => item.label),
+      address: businessConfig?.channels?.address,
+      phone: businessConfig?.channels?.phone ?? businessConfig?.channels?.whatsapp,
+      email: businessConfig?.channels?.email,
+      imageUrl: publicImageUrl,
+      responseWindowLabel: canonicalProjection.operational.responseWindowLabel,
+      availabilityLabel,
+      canonicalTagline: presence.entity.tagline,
+      origin: window.location.origin,
+    })
+  }, [
+    availabilityLabel,
+    businessConfig,
+    canonicalProjection.operational.responseWindowLabel,
+    canonicalProjection.profile.institutionalDescription,
+    coverage,
+    officeGallery,
+    officeId,
+    presence,
+    responsibleProfessionalProjection?.photoUrl,
+    specialties,
+  ])
+
+  useEffect(() => {
+    if (!seoPayload) {
+      return
+    }
+
+    document.title = seoPayload.title
+
+    const headTags: HeadTagDescriptor[] = [
+      {
+        selector: 'meta[name="description"]',
+        tagName: 'meta',
+        attributes: { name: 'description', content: seoPayload.description },
+      },
+      {
+        selector: 'link[rel="canonical"]',
+        tagName: 'link',
+        attributes: { rel: 'canonical', href: seoPayload.canonicalUrl },
+      },
+      {
+        selector: 'meta[property="og:title"]',
+        tagName: 'meta',
+        attributes: { property: 'og:title', content: seoPayload.title },
+      },
+      {
+        selector: 'meta[property="og:description"]',
+        tagName: 'meta',
+        attributes: { property: 'og:description', content: seoPayload.description },
+      },
+      {
+        selector: 'meta[property="og:image"]',
+        tagName: 'meta',
+        attributes: { property: 'og:image', content: seoPayload.imageUrl },
+      },
+      {
+        selector: 'meta[property="og:type"]',
+        tagName: 'meta',
+        attributes: { property: 'og:type', content: 'website' },
+      },
+      {
+        selector: 'meta[property="og:url"]',
+        tagName: 'meta',
+        attributes: { property: 'og:url', content: seoPayload.canonicalUrl },
+      },
+      {
+        selector: 'meta[name="twitter:card"]',
+        tagName: 'meta',
+        attributes: { name: 'twitter:card', content: 'summary_large_image' },
+      },
+      {
+        selector: 'meta[name="twitter:title"]',
+        tagName: 'meta',
+        attributes: { name: 'twitter:title', content: seoPayload.title },
+      },
+      {
+        selector: 'meta[name="twitter:description"]',
+        tagName: 'meta',
+        attributes: { name: 'twitter:description', content: seoPayload.description },
+      },
+      {
+        selector: 'meta[name="twitter:image"]',
+        tagName: 'meta',
+        attributes: { name: 'twitter:image', content: seoPayload.imageUrl },
+      },
+    ]
+
+    headTags.forEach(upsertHeadTag)
+    upsertStructuredData('legal-service', seoPayload.legalServiceJsonLd)
+    upsertStructuredData('faq', seoPayload.faqJsonLd)
+  }, [seoPayload])
 
   const handleFollow = async () => {
     if (!presence || socialState?.viewerState.followed) {
