@@ -203,6 +203,7 @@ type OfficeSeoPayload = {
   legalServiceJsonLd: Record<string, unknown>
   faqJsonLd: Record<string, unknown>
   breadcrumbJsonLd: Record<string, unknown>
+  localBusinessJsonLd: Record<string, unknown>
 }
 
 function trimAndCollapseWhitespace(value: string | undefined) {
@@ -371,6 +372,27 @@ function buildOfficeSeoPayload(args: {
     ],
   }
 
+  const localBusinessJsonLd: Record<string, unknown> = {
+    '@context': 'https://schema.org',
+    '@type': 'LocalBusiness',
+    name: officeName,
+    url: canonicalUrl,
+    image: imageUrl,
+    areaServed: args.servedCities,
+  }
+  if (args.phone) {
+    localBusinessJsonLd.telephone = args.phone
+  }
+  if (args.email) {
+    localBusinessJsonLd.email = args.email
+  }
+  if (args.address) {
+    localBusinessJsonLd.address = {
+      '@type': 'PostalAddress',
+      streetAddress: args.address,
+    }
+  }
+
   return {
     title,
     description,
@@ -379,6 +401,7 @@ function buildOfficeSeoPayload(args: {
     legalServiceJsonLd,
     faqJsonLd,
     breadcrumbJsonLd,
+    localBusinessJsonLd,
   } satisfies OfficeSeoPayload
 }
 
@@ -1889,6 +1912,7 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
     upsertStructuredData('legal-service', seoPayload.legalServiceJsonLd)
     upsertStructuredData('faq', seoPayload.faqJsonLd)
     upsertStructuredData('breadcrumb', seoPayload.breadcrumbJsonLd)
+    upsertStructuredData('local-business', seoPayload.localBusinessJsonLd)
   }, [seoPayload])
 
   const handleFollow = async () => {
