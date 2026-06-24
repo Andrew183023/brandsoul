@@ -17,6 +17,7 @@ import {
 } from '../backend-bridge/api/publicEntityApi'
 import {
   getOfficeBusinessConfig,
+  getUnifiedPublicOfficeProfile,
   type PublicOfficeBusinessConfig,
 } from '../backend-bridge/api/publicOfficeBusinessConfigApi'
 import {
@@ -1591,22 +1592,31 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
 
     let presenceResult: Awaited<ReturnType<typeof getOfficePublicPresenceLoadResult>> | undefined
     let lastLoadError: unknown
+    const unifiedProfile = await getUnifiedPublicOfficeProfile(officeId).catch(() => undefined)
 
-    for (let attempt = 0; attempt < PUBLIC_PRESENCE_RETRY_POLICY.maxAttempts; attempt += 1) {
-      try {
-        setLoadRetryCount(attempt)
-        presenceResult = await getOfficePublicPresenceLoadResult(officeId)
-        break
-      } catch (error) {
-        lastLoadError = error
-
-        const canRetry = shouldRetryPublicPresenceLoad(error)
-        const hasRemainingAttempts = attempt < PUBLIC_PRESENCE_RETRY_POLICY.maxAttempts - 1
-        if (!canRetry || !hasRemainingAttempts) {
+    if (unifiedProfile?.presence) {
+      presenceResult = {
+        status: 'ready',
+        presence: unifiedProfile.presence,
+      }
+      setLoadRetryCount(0)
+    } else {
+      for (let attempt = 0; attempt < PUBLIC_PRESENCE_RETRY_POLICY.maxAttempts; attempt += 1) {
+        try {
+          setLoadRetryCount(attempt)
+          presenceResult = await getOfficePublicPresenceLoadResult(officeId)
           break
-        }
+        } catch (error) {
+          lastLoadError = error
 
-        await sleep(computePresenceRetryBackoffMs(attempt))
+          const canRetry = shouldRetryPublicPresenceLoad(error)
+          const hasRemainingAttempts = attempt < PUBLIC_PRESENCE_RETRY_POLICY.maxAttempts - 1
+          if (!canRetry || !hasRemainingAttempts) {
+            break
+          }
+
+          await sleep(computePresenceRetryBackoffMs(attempt))
+        }
       }
     }
 
@@ -1620,12 +1630,44 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
       return
     }
 
-    const [nextBusinessConfig, nextSocialState, nextTrustEvidence, nextProfessionalsProjection] = await Promise.all([
-      getOfficeBusinessConfig(officeId).catch(() => undefined),
+    const shouldLoadLegacyProfessionals = !unifiedProfile
+      || (typeof unifiedProfile.responsible === 'undefined' && unifiedProfile.professionals.length === 0)
+    const shouldLoadLegacyTrustEvidence = !unifiedProfile
+      || unifiedProfile.socialProof.length === 0
+
+    const [legacyBusinessConfig, nextSocialState, legacyTrustEvidence, legacyProfessionalsProjection] = await Promise.all([
+      typeof unifiedProfile?.businessConfig === 'undefined'
+        ? getOfficeBusinessConfig(officeId).catch(() => undefined)
+        : Promise.resolve(undefined),
       getOfficeSocialState(officeId).catch(() => undefined),
-      getOfficeTrustEvidence(officeId).catch(() => []),
-      getOfficePublicProfessionals(officeId).catch(() => undefined),
+      shouldLoadLegacyTrustEvidence
+        ? getOfficeTrustEvidence(officeId).catch(() => [])
+        : Promise.resolve([]),
+      shouldLoadLegacyProfessionals
+        ? getOfficePublicProfessionals(officeId).catch(() => undefined)
+        : Promise.resolve(undefined),
     ])
+
+    const nextBusinessConfig = unifiedProfile?.businessConfig ?? legacyBusinessConfig
+    const nextTrustEvidence = unifiedProfile?.socialProof.length
+      ? unifiedProfile.socialProof
+      : legacyTrustEvidence
+    const nextProfessionalsProjection = {
+      responsible: unifiedProfile?.responsible ?? legacyProfessionalsProjection?.responsible,
+      professionals: unifiedProfile?.professionals.length
+        ? unifiedProfile.professionals
+        : legacyProfessionalsProjection?.professionals ?? [],
+    }
+
+    if (import.meta.env.DEV) {
+      console.info('office-public-unified-profile-loaded', {
+        hasBusinessConfig: typeof unifiedProfile?.businessConfig !== 'undefined',
+        hasPresence: typeof unifiedProfile?.presence !== 'undefined',
+        hasResponsible: typeof unifiedProfile?.responsible !== 'undefined',
+        professionalsCount: unifiedProfile?.professionals.length ?? 0,
+        socialProofCount: unifiedProfile?.socialProof.length ?? 0,
+      })
+    }
 
     void registerOfficeSignal({
       officeId,
