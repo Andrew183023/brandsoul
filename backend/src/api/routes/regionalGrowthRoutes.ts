@@ -184,6 +184,10 @@ function isPublishedLegalOfficeEntity(entity: { entityProfile: EntityProfile }) 
   return businessConfig?.businessType === 'legal'
 }
 
+function getPublicSiteBaseUrl() {
+  return (process.env.PUBLIC_SITE_URL ?? 'https://brandsoul-legal-platform.onrender.com').replace(/\/+$/, '')
+}
+
 
 export async function registerRegionalGrowthRoutes(app: FastifyInstance) {
   app.post<{
@@ -925,7 +929,7 @@ export async function registerRegionalGrowthRoutes(app: FastifyInstance) {
   app.get('/sitemap.xml', async (_, reply) => {
     const pages = await getRegionalGrowthRepository(app).listPublishedSeoLandingPages()
     const entities = await getEntityRepository(app).listEntities<EntityProfile>(2_000)
-    const baseUrl = (process.env.PUBLIC_SITE_URL ?? 'https://brandsoul-legal-platform.onrender.com').replace(/\/+$/, '')
+    const baseUrl = getPublicSiteBaseUrl()
     const officePaths = entities
       .filter(isPublishedLegalOfficeEntity)
       .map((entity) => `/escritorios/${encodeURIComponent(entity.id)}`)
@@ -954,6 +958,20 @@ ${urls}
     return reply
       .header('Content-Type', 'application/xml; charset=utf-8')
       .send(xml)
+  })
+
+  app.get('/robots.txt', async (_, reply) => {
+    const baseUrl = getPublicSiteBaseUrl()
+    const body = [
+      'User-agent: *',
+      'Allow: /',
+      '',
+      `Sitemap: ${baseUrl}/sitemap.xml`,
+    ].join('\n')
+
+    return reply
+      .header('Content-Type', 'text/plain; charset=utf-8')
+      .send(body)
   })
 
   app.get<{ Params: { city: string; specialty: string } }>('/p/:city/:specialty', { preHandler: [privateReadRateLimit] }, async (request, reply) => {

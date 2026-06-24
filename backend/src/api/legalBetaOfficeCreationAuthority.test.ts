@@ -225,6 +225,20 @@ test('legal beta office creation uses authority boundary and lists the created o
 
     const uniqueLocations = Array.from(sitemapXml.matchAll(/<loc>([^<]+)<\/loc>/g)).map((match) => match[1])
     assert.equal(uniqueLocations.length, new Set(uniqueLocations).size)
+
+    const robotsResponse = await harness.app.inject({
+      method: 'GET',
+      url: '/robots.txt',
+    })
+    assert.equal(robotsResponse.statusCode, 200)
+    assert.match(String(robotsResponse.headers['content-type'] ?? ''), /^text\/plain\b/)
+    assert.match(robotsResponse.body, /^User-agent: \*$/m)
+    assert.match(robotsResponse.body, /^Allow: \/$/m)
+    assert.match(robotsResponse.body, /^Sitemap:/m)
+    assert.match(
+      robotsResponse.body,
+      /^Sitemap: https:\/\/brandsoul-legal-platform\.onrender\.com\/sitemap\.xml$/m,
+    )
   } finally {
     await harness.close()
   }
