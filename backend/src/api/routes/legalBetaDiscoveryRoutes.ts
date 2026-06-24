@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyRequest } from 'fastify'
+import type { FastifyInstance } from 'fastify'
 
 import type { EntityProfile } from '../../brain/domain/entity/contracts/EntityProfile.js'
 import type { EntityRepository } from '../../repositories/entityRepository.js'
@@ -21,33 +21,6 @@ const publicDiscoveryRateLimit = createRateLimit({
   windowMs: 60_000,
   key: 'ip',
 })
-
-function isPublishedLegalOfficeEntity(entity: { id: string; entityProfile: EntityProfile }) {
-  const businessConfig = readEntityBusinessConfig(entity.entityProfile as EntityProfile)
-  return businessConfig?.businessType === 'legal'
-}
-
-function escapeXml(value: string) {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;')
-}
-
-function resolvePublicBaseUrl(request: FastifyRequest) {
-  const forwardedProto = request.headers['x-forwarded-proto']
-  const forwardedHost = request.headers['x-forwarded-host']
-  const protocol = typeof forwardedProto === 'string'
-    ? forwardedProto.split(',')[0]?.trim() || request.protocol
-    : request.protocol
-  const host = typeof forwardedHost === 'string'
-    ? forwardedHost.split(',')[0]?.trim()
-    : request.headers.host?.trim()
-
-  return `${protocol}://${host || 'localhost'}`
-}
 
 export async function registerLegalBetaDiscoveryRoutes(app: FastifyInstance) {
   app.get<{

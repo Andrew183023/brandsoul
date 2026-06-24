@@ -17,6 +17,7 @@ import { buildGrowthEconomicSummary } from '../../modules/growth/regionalGrowthE
 import { createEntityRepository } from '../../repositories/entityRepository.js'
 import { createCaseService } from '../../modules/legalCases/caseService.js'
 import type { CasePriority } from '../../modules/legalCases/caseTypes.js'
+import { readEntityBusinessConfig } from './legalBetaSupport.js'
 import type {
   PopulationDensity,
   RegionalCampaignTargetChannel,
@@ -167,6 +168,20 @@ function mapLeadUrgencyToCasePriority(urgency: RegionalLeadUrgency): CasePriorit
   }
 
   return 'normal'
+}
+
+function escapeXml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+function isPublishedLegalOfficeEntity(entity: { entityProfile: EntityProfile }) {
+  const businessConfig = readEntityBusinessConfig(entity.entityProfile)
+  return businessConfig?.businessType === 'legal'
 }
 
 
@@ -909,15 +924,24 @@ export async function registerRegionalGrowthRoutes(app: FastifyInstance) {
 
   app.get('/sitemap.xml', async (_, reply) => {
     const pages = await getRegionalGrowthRepository(app).listPublishedSeoLandingPages()
+    const entities = await getEntityRepository(app).listEntities<EntityProfile>(2_000)
     const baseUrl = (process.env.PUBLIC_SITE_URL ?? 'https://brandsoul-legal-platform.onrender.com').replace(/\/+$/, '')
+    const officePaths = entities
+      .filter(isPublishedLegalOfficeEntity)
+      .map((entity) => `/escritorios/${encodeURIComponent(entity.id)}`)
+    const uniqueUrls = Array.from(new Set([
+      '/',
+      ...pages.map((page) => page.slug),
+      ...officePaths,
+    ]))
 
-    const urls = pages.map((page) => {
-      const updatedAt = page.updatedAt.slice(0, 10)
+    const urls = uniqueUrls.map((url) => {
+      const page = pages.find((item) => item.slug === url)
+      const lastmod = page?.updatedAt ? `\n    <lastmod>${page.updatedAt.slice(0, 10)}</lastmod>` : ''
+      const changefreq = page ? '\n    <changefreq>weekly</changefreq>' : ''
+      const priority = page ? '\n    <priority>0.7</priority>' : ''
       return `  <url>
-    <loc>${baseUrl}${page.slug}</loc>
-    <lastmod>${updatedAt}</lastmod>
-    <changefreq>weekly</changefreq>
-    <priority>0.7</priority>
+    <loc>${escapeXml(`${baseUrl}${url}`)}</loc>${lastmod}${changefreq}${priority}
   </url>`
     }).join('\n')
 

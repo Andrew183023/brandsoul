@@ -172,6 +172,28 @@ test('legal beta office creation uses authority boundary and lists the created o
       officeId: string
     }
 
+    await harness.app.backendContext.connection.run(
+      `
+        INSERT INTO seo_landing_pages (
+          id, campaign_id, tenant_id, entity_id, slug, city, specialty,
+          title, meta_desc, content_html, published, leads_received,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, ?, ?)
+      `,
+      'seo-landing-bh-previdenciario',
+      'campaign-bh-previdenciario',
+      String(storedOffice?.ownerTenantId ?? 0),
+      createBody.officeId,
+      '/p/belo-horizonte/advogado-previdenciario',
+      'Belo Horizonte',
+      'advogado-previdenciario',
+      'Advogado Previdenciário em Belo Horizonte | Atendimento Online e Presencial',
+      'Precisa de advogado previdenciário em Belo Horizonte? Faça uma triagem segura e receba orientação inicial.',
+      '<h1>Landing SEO</h1>',
+      '2026-06-24T12:00:00.000Z',
+      '2026-06-24T12:00:00.000Z',
+    )
+
     const sitemapResponse = await harness.app.inject({
       method: 'GET',
       url: '/sitemap.xml',
@@ -188,6 +210,10 @@ test('legal beta office creation uses authority boundary and lists the created o
     assert.match(sitemapXml, /^\<\?xml version="1\.0" encoding="UTF-8"\?\>/)
     assert.match(sitemapXml, /<urlset xmlns="http:\/\/www\.sitemaps\.org\/schemas\/sitemap\/0\.9">/)
     assert.match(sitemapXml, /<loc>https:\/\/brandsoul-legal-platform\.onrender\.com\/<\/loc>/)
+    assert.match(
+      sitemapXml,
+      /<loc>https:\/\/brandsoul-legal-platform\.onrender\.com\/p\/belo-horizonte\/advogado-previdenciario<\/loc>/,
+    )
     assert.match(
       sitemapXml,
       new RegExp(`<loc>https://brandsoul-legal-platform\\.onrender\\.com/escritorios/${createBody.officeId}</loc>`),
