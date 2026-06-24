@@ -157,6 +157,48 @@ test('legal beta office creation uses authority boundary and lists the created o
     assert.equal(listBody.status, 'ready')
     assert.equal(listBody.offices.some((office) => office.officeId === createBody.officeId), true)
     assert.equal(listBody.offices.some((office) => office.officeName === 'Rocha & Lima Legal'), true)
+
+    const secondCreateResponse = await harness.app.inject({
+      method: 'POST',
+      url: '/escritorios/criar',
+      headers: authHeaders(accessToken),
+      payload: {
+        name: 'Ferreira Rocha Advocacia',
+      },
+    })
+
+    assert.equal(secondCreateResponse.statusCode, 201)
+    const secondCreateBody = secondCreateResponse.json() as {
+      officeId: string
+    }
+
+    const sitemapResponse = await harness.app.inject({
+      method: 'GET',
+      url: '/sitemap.xml',
+      headers: {
+        host: 'brandsoul-legal-platform.onrender.com',
+        'x-forwarded-proto': 'https',
+      },
+    })
+
+    assert.equal(sitemapResponse.statusCode, 200)
+    assert.match(String(sitemapResponse.headers['content-type'] ?? ''), /^application\/xml\b/)
+
+    const sitemapXml = sitemapResponse.body
+    assert.match(sitemapXml, /^\<\?xml version="1\.0" encoding="UTF-8"\?\>/)
+    assert.match(sitemapXml, /<urlset xmlns="http:\/\/www\.sitemaps\.org\/schemas\/sitemap\/0\.9">/)
+    assert.match(sitemapXml, /<loc>https:\/\/brandsoul-legal-platform\.onrender\.com\/<\/loc>/)
+    assert.match(
+      sitemapXml,
+      new RegExp(`<loc>https://brandsoul-legal-platform\\.onrender\\.com/escritorios/${createBody.officeId}</loc>`),
+    )
+    assert.match(
+      sitemapXml,
+      new RegExp(`<loc>https://brandsoul-legal-platform\\.onrender\\.com/escritorios/${secondCreateBody.officeId}</loc>`),
+    )
+
+    const uniqueLocations = Array.from(sitemapXml.matchAll(/<loc>([^<]+)<\/loc>/g)).map((match) => match[1])
+    assert.equal(uniqueLocations.length, new Set(uniqueLocations).size)
   } finally {
     await harness.close()
   }
