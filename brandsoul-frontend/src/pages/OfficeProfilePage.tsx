@@ -202,6 +202,7 @@ type OfficeSeoPayload = {
   imageUrl: string
   legalServiceJsonLd: Record<string, unknown>
   faqJsonLd: Record<string, unknown>
+  breadcrumbJsonLd: Record<string, unknown>
 }
 
 function trimAndCollapseWhitespace(value: string | undefined) {
@@ -351,6 +352,25 @@ function buildOfficeSeoPayload(args: {
     ],
   }
 
+  const breadcrumbJsonLd: Record<string, unknown> = {
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      {
+        '@type': 'ListItem',
+        position: 1,
+        name: 'Escritórios',
+        item: `${args.origin}/escritorios`,
+      },
+      {
+        '@type': 'ListItem',
+        position: 2,
+        name: officeName,
+        item: canonicalUrl,
+      },
+    ],
+  }
+
   return {
     title,
     description,
@@ -358,6 +378,7 @@ function buildOfficeSeoPayload(args: {
     imageUrl,
     legalServiceJsonLd,
     faqJsonLd,
+    breadcrumbJsonLd,
   } satisfies OfficeSeoPayload
 }
 
@@ -1867,6 +1888,7 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
     headTags.forEach(upsertHeadTag)
     upsertStructuredData('legal-service', seoPayload.legalServiceJsonLd)
     upsertStructuredData('faq', seoPayload.faqJsonLd)
+    upsertStructuredData('breadcrumb', seoPayload.breadcrumbJsonLd)
   }, [seoPayload])
 
   const handleFollow = async () => {
