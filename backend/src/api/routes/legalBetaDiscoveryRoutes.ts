@@ -91,24 +91,5 @@ export async function registerLegalBetaDiscoveryRoutes(app: FastifyInstance) {
     }
   })
 
-  app.get('/sitemap.xml', { preHandler: [publicDiscoveryRateLimit] }, async (request, reply) => {
-    const entities = await getRepository(app).listEntities<EntityProfile>(2_000)
-    const baseUrl = resolvePublicBaseUrl(request)
-    const publicOfficePaths = Array.from(new Set(
-      entities
-        .filter(isPublishedLegalOfficeEntity)
-        .map((entity) => `/escritorios/${encodeURIComponent(entity.id)}`),
-    ))
-    const urls = ['/', ...publicOfficePaths]
-    const xml = [
-      '<?xml version="1.0" encoding="UTF-8"?>',
-      '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
-      ...urls.map((url) => `  <url><loc>${escapeXml(`${baseUrl}${url}`)}</loc></url>`),
-      '</urlset>',
-    ].join('')
 
-    return reply
-      .header('Content-Type', 'application/xml')
-      .send(xml)
-  })
 }
