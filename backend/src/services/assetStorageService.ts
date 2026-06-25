@@ -26,9 +26,11 @@ export type AssetStorageConfig = {
 
 export type AssetStorageHealth = {
   ready: boolean
+  status: 'ready' | 'degraded' | 'failed'
   provider?: string
   localDir?: string
   detail?: string
+  warning?: string
 }
 
 export type ExportAssetKind = 'original' | 'preview' | 'thumbnail' | 'avatar'
@@ -321,6 +323,7 @@ export class AssetStorageService {
       if (!this.remoteClient || !this.config.bucket || !this.config.region || !this.config.endpoint) {
         return {
           ready: false,
+          status: 'failed',
           provider: this.config.provider,
           detail: 'Remote asset storage is missing required configuration.',
         }
@@ -330,6 +333,7 @@ export class AssetStorageService {
         await this.remoteClient.send(new HeadBucketCommand({ Bucket: this.config.bucket }))
         return {
           ready: true,
+          status: 'ready',
           provider: this.config.provider,
           detail: `Bucket "${this.config.bucket}" reachable.`,
         }
@@ -337,8 +341,10 @@ export class AssetStorageService {
         const detail = error instanceof Error ? error.message : 'Unable to reach remote asset bucket.'
         return {
           ready: true,
+          status: 'degraded',
           provider: this.config.provider,
-          detail: `Remote asset storage configured, but HeadBucket warning: ${detail}`,
+          detail: 'Remote asset storage is configured and runtime operations may still succeed.',
+          warning: `HeadBucket warning: ${detail}`,
         }
       }
     }
@@ -346,8 +352,10 @@ export class AssetStorageService {
     await mkdir(this.config.localDir, { recursive: true })
     return {
       ready: true,
+      status: 'ready',
       provider: this.config.provider,
       localDir: this.config.localDir,
+      detail: `Local asset storage directory "${this.config.localDir}" is ready.`,
     }
   }
 

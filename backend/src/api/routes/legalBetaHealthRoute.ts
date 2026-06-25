@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 
 import type { AssetStorageService } from '../../services/assetStorageService.js'
+import type { AssetStorageHealth } from '../../services/assetStorageService.js'
 import type { BackendDatabase } from '../../db/index.js'
 
 type BackendContext = {
@@ -21,7 +22,11 @@ function getAssetStorageService(app: FastifyInstance) {
 export async function registerLegalBetaHealthRoute(app: FastifyInstance) {
   app.get('/health', async () => {
     let dbReady = false
-    let storageReady = false
+    let storage: AssetStorageHealth = {
+      ready: false,
+      status: 'failed',
+      detail: 'Storage health check did not run.',
+    }
 
     try {
       const row = await getConnection(app).get<{ ok: number }>('SELECT 1 AS ok')
@@ -31,19 +36,30 @@ export async function registerLegalBetaHealthRoute(app: FastifyInstance) {
     }
 
     try {
-      const result = await getAssetStorageService(app).healthCheck()
-      storageReady = result.ready
-    } catch {
-      storageReady = false
+      storage = await getAssetStorageService(app).healthCheck()
+    } catch (error) {
+      storage = {
+        ready: false,
+        status: 'failed',
+        detail: error instanceof Error ? error.message : 'Unknown storage health error.',
+      }
     }
 
+    const status = !dbReady
+      ? 'degraded'
+      : storage.status === 'failed'
+        ? 'failed'
+        : storage.status === 'degraded'
+          ? 'degraded'
+          : 'ok'
+
     return {
-      status: dbReady ? 'ok' : 'degraded',
+      status,
       service: 'brandsoul-legal-beta-backend',
       timestamp: new Date().toISOString(),
       components: {
         db: { ready: dbReady },
-        storage: { ready: storageReady },
+        storage,
       },
     }
   })

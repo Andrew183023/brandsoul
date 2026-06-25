@@ -32,6 +32,7 @@ export async function registerHealthRoute(app: FastifyInstance) {
     } catch (error) {
       storage = {
         ready: false,
+        status: 'failed' as const,
         detail: error instanceof Error ? error.message : 'Unknown storage health error.',
       }
     }
