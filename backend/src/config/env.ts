@@ -408,6 +408,41 @@ export function validateRuntimeConfig() {
     }
   }
 
+  if (assetStorageProvider === 'r2') {
+    const endpoint = readTrimmedEnv('ASSET_STORAGE_ENDPOINT')
+    if (endpoint.includes('<') || endpoint.includes('>')) {
+      throw new Error('ASSET_STORAGE_ENDPOINT for provider "r2" cannot contain placeholder markers like <ACCOUNT_ID>.')
+    }
+    if (!endpoint.startsWith('https://')) {
+      throw new Error('ASSET_STORAGE_ENDPOINT for provider "r2" must start with https://.')
+    }
+
+    let parsedEndpoint: URL
+    try {
+      parsedEndpoint = new URL(endpoint)
+    } catch {
+      throw new Error('ASSET_STORAGE_ENDPOINT for provider "r2" must be a valid URL.')
+    }
+
+    const hostname = parsedEndpoint.hostname.toLowerCase()
+    if (!/^[a-z0-9-]+(?:\.[a-z0-9-]+)?\.r2\.cloudflarestorage\.com$/.test(hostname)) {
+      throw new Error(
+        'ASSET_STORAGE_ENDPOINT for provider "r2" must match https://ACCOUNT_ID.r2.cloudflarestorage.com or a jurisdiction variant.',
+      )
+    }
+    if ((parsedEndpoint.pathname && parsedEndpoint.pathname !== '/') || parsedEndpoint.search || parsedEndpoint.hash) {
+      throw new Error('ASSET_STORAGE_ENDPOINT for provider "r2" cannot contain path, query, or hash fragments.')
+    }
+    if (hostname.split('.').length > 5) {
+      throw new Error('ASSET_STORAGE_ENDPOINT for provider "r2" appears to include an embedded bucket hostname.')
+    }
+
+    const region = readTrimmedEnv('ASSET_STORAGE_REGION')
+    if (region && region.toLowerCase() !== 'auto') {
+      throw new Error('ASSET_STORAGE_REGION for provider "r2" must be "auto" or omitted.')
+    }
+  }
+
   const resendApiKey = getResendApiKey()
   const emailFrom = getEmailFrom()
   if (Boolean(resendApiKey) !== Boolean(emailFrom)) {

@@ -21,6 +21,7 @@ export type AssetStorageConfig = {
   endpoint?: string
   accessKeyId?: string
   secretAccessKey?: string
+  forcePathStyle?: boolean
 }
 
 export type AssetStorageHealth = {
@@ -138,6 +139,98 @@ function trimOptionalEnv(value: string | undefined) {
   return trimmed ? trimmed : undefined
 }
 
+function normalizeRemoteAssetEndpoint(provider: AssetStorageProvider, endpoint: string | undefined) {
+  const trimmedEndpoint = trimOptionalEnv(endpoint)
+  if (!trimmedEndpoint) {
+    return undefined
+  }
+
+  let parsed: URL
+  try {
+    parsed = new URL(trimmedEndpoint)
+  } catch {
+    throw new Error(`Invalid asset storage endpoint for provider "${provider}".`)
+  }
+
+  if ((provider === 'r2' || provider === 's3') && parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new Error(`ASSET_STORAGE_ENDPOINT for provider "${provider}" must use http or https.`)
+  }
+
+  parsed.pathname = ''
+  parsed.search = ''
+  parsed.hash = ''
+
+  const normalizedEndpoint = parsed.toString().replace(/\/+$/, '')
+  if (provider !== 'r2') {
+    return normalizedEndpoint
+  }
+
+  if (parsed.protocol !== 'https:') {
+    throw new Error('ASSET_STORAGE_ENDPOINT for provider "r2" must start with https://.')
+  }
+
+  if (trimmedEndpoint.includes('<') || trimmedEndpoint.includes('>')) {
+    throw new Error('ASSET_STORAGE_ENDPOINT for provider "r2" cannot contain placeholder markers like <ACCOUNT_ID>.')
+  }
+
+  if (parsed.pathname && parsed.pathname !== '/') {
+    throw new Error('ASSET_STORAGE_ENDPOINT for provider "r2" cannot contain a path.')
+  }
+  if (parsed.search || parsed.hash) {
+    throw new Error('ASSET_STORAGE_ENDPOINT for provider "r2" cannot contain query or hash fragments.')
+  }
+
+  const hostname = parsed.hostname.toLowerCase()
+  const hostPattern = /^[a-z0-9-]+(?:\.[a-z0-9-]+)?\.r2\.cloudflarestorage\.com$/
+  if (!hostPattern.test(hostname)) {
+    throw new Error(
+      'ASSET_STORAGE_ENDPOINT for provider "r2" must match https://ACCOUNT_ID.r2.cloudflarestorage.com or a jurisdiction variant.',
+    )
+  }
+
+  const hostLabels = hostname.split('.')
+  if (hostLabels.length < 4) {
+    throw new Error('ASSET_STORAGE_ENDPOINT for provider "r2" is malformed.')
+  }
+
+  const accountIdLabel = hostLabels[0] ?? ''
+  if (!accountIdLabel || accountIdLabel === 'bucket') {
+    throw new Error('ASSET_STORAGE_ENDPOINT for provider "r2" must start with the Cloudflare account id.')
+  }
+
+  if (hostLabels.length > 5) {
+    throw new Error('ASSET_STORAGE_ENDPOINT for provider "r2" appears to include an embedded bucket hostname.')
+  }
+
+  return normalizedEndpoint
+}
+
+function normalizeAssetStorageRegion(provider: AssetStorageProvider, region: string | undefined) {
+  const trimmedRegion = trimOptionalEnv(region)
+  if (provider === 'r2') {
+    return 'auto'
+  }
+
+  return trimmedRegion
+}
+
+function readForcePathStyleEnv(provider: AssetStorageProvider) {
+  const rawValue = trimOptionalEnv(process.env.ASSET_STORAGE_FORCE_PATH_STYLE)
+  if (!rawValue) {
+    return undefined
+  }
+
+  const normalizedValue = rawValue.toLowerCase()
+  if (normalizedValue === 'true') {
+    return true
+  }
+  if (normalizedValue === 'false') {
+    return false
+  }
+
+  throw new Error(`ASSET_STORAGE_FORCE_PATH_STYLE must be "true" or "false" when provider "${provider}" uses remote storage.`)
+}
+
 async function toBuffer(body: unknown) {
   if (!body || typeof body !== 'object') {
     return null
@@ -195,7 +288,7 @@ export class AssetStorageService {
                   secretAccessKey: config.secretAccessKey,
                 }
               : undefined,
-          forcePathStyle: config.provider === 'r2',
+          forcePathStyle: config.forcePathStyle,
         })
       : null
   }
@@ -243,9 +336,9 @@ export class AssetStorageService {
       } catch (error) {
         const detail = error instanceof Error ? error.message : 'Unable to reach remote asset bucket.'
         return {
-          ready: false,
+          ready: true,
           provider: this.config.provider,
-          detail,
+          detail: `Remote asset storage configured, but HeadBucket warning: ${detail}`,
         }
       }
     }
@@ -398,16 +491,18 @@ export class AssetStorageService {
 }
 
 export function getAssetStorageConfig(rootDir: string): AssetStorageConfig {
+  const provider = process.env.ASSET_STORAGE_PROVIDER?.trim().toLowerCase() ?? 'local'
   return {
-    provider: process.env.ASSET_STORAGE_PROVIDER?.trim().toLowerCase() ?? 'local',
+    provider,
     localDir: process.env.ASSET_STORAGE_DIR?.trim() || path.join(rootDir, 'data', 'assets'),
     publicBasePath: normalizeBasePath(process.env.ASSET_PUBLIC_BASE_PATH ?? '/assets'),
     publicBaseUrl: trimOptionalEnv(process.env.ASSET_STORAGE_PUBLIC_BASE_URL),
     bucket: trimOptionalEnv(process.env.ASSET_STORAGE_BUCKET),
-    region: trimOptionalEnv(process.env.ASSET_STORAGE_REGION),
-    endpoint: trimOptionalEnv(process.env.ASSET_STORAGE_ENDPOINT),
+    region: normalizeAssetStorageRegion(provider, process.env.ASSET_STORAGE_REGION),
+    endpoint: normalizeRemoteAssetEndpoint(provider, process.env.ASSET_STORAGE_ENDPOINT),
     accessKeyId: trimOptionalEnv(process.env.ASSET_STORAGE_ACCESS_KEY_ID),
     secretAccessKey: trimOptionalEnv(process.env.ASSET_STORAGE_SECRET_ACCESS_KEY),
+    forcePathStyle: shouldUseRemoteStorage(provider) ? readForcePathStyleEnv(provider) : undefined,
   }
 }
 

@@ -253,6 +253,97 @@ async function buildPublicOfficeProfessionalsPayload(app: FastifyInstance, offic
   }
 }
 
+async function buildPublicOfficeSocialProofPayload(
+  app: FastifyInstance,
+  officeId: string,
+  entity: StoredEntityProfile<EntityProfile>,
+) {
+  if (typeof entity.ownerTenantId !== 'number') {
+    return {
+      status: 'ready' as const,
+      officeId,
+      items: [],
+    }
+  }
+
+  const businessConfig = readEntityBusinessConfig(entity.entityProfile as EntityProfile)
+  const approvedCaseIds = new Set((businessConfig?.trustEvidence?.approvedCaseIds ?? []).filter(Boolean))
+  if (businessConfig?.trustEvidence?.enabled !== true || approvedCaseIds.size === 0) {
+    return {
+      status: 'ready' as const,
+      officeId,
+      items: [],
+    }
+  }
+
+  const cases = await getCaseService(app).listCasesByEntity(entity.ownerTenantId, officeId)
+  const items = cases
+    .filter((caseRecord) => approvedCaseIds.has(caseRecord.id))
+    .filter((caseRecord) => caseRecord.outcome?.verifiedClientFeedback === true && typeof caseRecord.outcome?.feedback === 'string')
+    .map((caseRecord) => ({
+      caseId: caseRecord.id,
+      firstName: caseRecord.outcome?.firstName,
+      city: caseRecord.city,
+      serviceType: caseRecord.practiceArea,
+      review: caseRecord.outcome?.feedback,
+      rating: caseRecord.outcome?.rating,
+    }))
+
+  return {
+    status: 'ready' as const,
+    officeId,
+    items,
+  }
+}
+
+function buildPublicOfficeAvailabilityPayload(entityProfile: EntityProfile) {
+  const businessConfig = readEntityBusinessConfig(entityProfile)
+  const message = businessConfig?.publicMessages?.availabilityMessage?.trim() || undefined
+  const responseWindowLabel = businessConfig?.serviceRules?.responseWindowLabel?.trim() || undefined
+  const operatingHours = businessConfig?.operatingHours?.trim() || undefined
+
+  if (!message && !responseWindowLabel && !operatingHours) {
+    return null
+  }
+
+  return {
+    message,
+    responseWindowLabel,
+    operatingHours,
+  }
+}
+
+async function buildUnifiedPublicOfficePayload(
+  app: FastifyInstance,
+  officeId: string,
+  entity: StoredEntityProfile<EntityProfile>,
+) {
+  const entityProfile = entity.entityProfile as EntityProfile
+  const [professionalsPayload, socialProofPayload] = await Promise.all([
+    typeof entity.ownerTenantId === 'number'
+      ? buildPublicOfficeProfessionalsPayload(app, officeId, entity.ownerTenantId)
+      : Promise.resolve({
+          status: 'ready' as const,
+          officeId,
+          responsible: undefined,
+          professionals: [],
+        }),
+    buildPublicOfficeSocialProofPayload(app, officeId, entity),
+  ])
+
+  return {
+    status: 'ready' as const,
+    officeId,
+    publicProfile: buildPublicOfficeProfile(officeId, entityProfile),
+    businessConfig: readEntityBusinessConfig(entityProfile) ?? null,
+    responsible: professionalsPayload.responsible,
+    professionals: professionalsPayload.professionals,
+    presence: buildPublicPresencePayload(officeId, entityProfile),
+    socialProof: socialProofPayload.items,
+    availability: buildPublicOfficeAvailabilityPayload(entityProfile),
+  }
+}
+
 function createRequestId() {
   return `req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
@@ -635,12 +726,7 @@ export async function registerLegalBetaPublicOfficeRoutes(app: FastifyInstance) 
       })
     }
 
-    return {
-      status: 'ready',
-      officeId: request.params.id,
-      publicProfile: buildPublicOfficeProfile(request.params.id, entity.entityProfile as EntityProfile),
-      businessConfig: readEntityBusinessConfig(entity.entityProfile as EntityProfile) ?? null,
-    }
+    return buildUnifiedPublicOfficePayload(app, request.params.id, entity)
   })
 
   app.get<{ Params: { id: string } }>('/escritorios/:id/configuracao', { preHandler: [requireAuth, publicReadRateLimit] }, async (request, reply) => {
@@ -1024,34 +1110,7 @@ export async function registerLegalBetaPublicOfficeRoutes(app: FastifyInstance) 
       })
     }
 
-    const businessConfig = readEntityBusinessConfig(entity.entityProfile as EntityProfile)
-    const approvedCaseIds = new Set((businessConfig?.trustEvidence?.approvedCaseIds ?? []).filter(Boolean))
-    if (businessConfig?.trustEvidence?.enabled !== true || approvedCaseIds.size === 0) {
-      return {
-        status: 'ready',
-        officeId: request.params.id,
-        items: [],
-      }
-    }
-
-    const cases = await getCaseService(app).listCasesByEntity(entity.ownerTenantId, request.params.id)
-    const items = cases
-      .filter((caseRecord) => approvedCaseIds.has(caseRecord.id))
-      .filter((caseRecord) => caseRecord.outcome?.verifiedClientFeedback === true && typeof caseRecord.outcome?.feedback === 'string')
-      .map((caseRecord) => ({
-        caseId: caseRecord.id,
-        firstName: caseRecord.outcome?.firstName,
-        city: caseRecord.city,
-        serviceType: caseRecord.practiceArea,
-        review: caseRecord.outcome?.feedback,
-        rating: caseRecord.outcome?.rating,
-      }))
-
-    return {
-      status: 'ready',
-      officeId: request.params.id,
-      items,
-    }
+    return buildPublicOfficeSocialProofPayload(app, request.params.id, entity)
   })
 
   app.get<{ Params: { id: string } }>('/escritorios/:id/sinais', { preHandler: [optionalAuth, publicReadRateLimit] }, async (request) => {

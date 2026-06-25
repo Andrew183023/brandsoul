@@ -248,6 +248,72 @@ test('public triage, portal projection and lifecycle transitions stay canonical'
     await seedOfficeRuntime(harness)
     const ownerToken = await createAccessToken(100, 11, 'owner', harness.privateKeyPem, harness.configuredKid)
 
+    const publicOfficeResponse = await harness.app.inject({
+      method: 'GET',
+      url: '/escritorios/office-real-1/publico',
+    })
+    assert.equal(publicOfficeResponse.statusCode, 200)
+    const publicOfficeBody = publicOfficeResponse.json() as {
+      status: 'ready'
+      officeId: string
+      publicProfile: { id: string; name: string }
+      businessConfig: { officeName?: string } | null
+      responsible?: { id: string; fullName: string; specialties: string[] }
+      professionals: Array<{ id: string }>
+      presence: { entity: { id: string; name: string } }
+      socialProof: Array<{ caseId: string }>
+      availability: null | {
+        message?: string
+        responseWindowLabel?: string
+        operatingHours?: string
+      }
+    }
+    assert.equal(publicOfficeBody.status, 'ready')
+    assert.equal(publicOfficeBody.officeId, 'office-real-1')
+    assert.equal(publicOfficeBody.publicProfile.id, 'office-real-1')
+    assert.equal(publicOfficeBody.publicProfile.name, 'Ana Rocha Advocacia')
+    assert.equal(publicOfficeBody.businessConfig?.officeName, 'Ana Rocha Advocacia')
+    assert.equal(publicOfficeBody.responsible?.id, 'prof-owner-1')
+    assert.equal(publicOfficeBody.responsible?.fullName, 'Dra. Ana Rocha')
+    assert.deepEqual(publicOfficeBody.responsible?.specialties, ['Direito Trabalhista'])
+    assert.deepEqual(publicOfficeBody.professionals, [])
+    assert.equal(publicOfficeBody.presence.entity.id, 'office-real-1')
+    assert.equal(publicOfficeBody.presence.entity.name, 'Ana Rocha Advocacia')
+    assert.deepEqual(publicOfficeBody.socialProof, [])
+    assert.equal(publicOfficeBody.availability, null)
+
+    const [publicProfessionalsResponse, publicPresenceResponse, publicSocialProofResponse] = await Promise.all([
+      harness.app.inject({
+        method: 'GET',
+        url: '/public/escritorios/office-real-1/profissionais',
+      }),
+      harness.app.inject({
+        method: 'GET',
+        url: '/public/escritorios/office-real-1/presenca',
+      }),
+      harness.app.inject({
+        method: 'GET',
+        url: '/public/escritorios/office-real-1/prova-social',
+      }),
+    ])
+    assert.equal(publicProfessionalsResponse.statusCode, 200)
+    assert.equal(publicPresenceResponse.statusCode, 200)
+    assert.equal(publicSocialProofResponse.statusCode, 200)
+    const publicProfessionalsBody = publicProfessionalsResponse.json() as {
+      responsible?: { id: string; fullName: string; specialties: string[] }
+      professionals: Array<{ id: string }>
+    }
+    const publicPresenceBody = publicPresenceResponse.json() as {
+      presence: { entity: { id: string; name: string } }
+    }
+    const publicSocialProofBody = publicSocialProofResponse.json() as {
+      items: Array<{ caseId: string }>
+    }
+    assert.deepEqual(publicOfficeBody.responsible, publicProfessionalsBody.responsible)
+    assert.deepEqual(publicOfficeBody.professionals, publicProfessionalsBody.professionals)
+    assert.deepEqual(publicOfficeBody.presence, publicPresenceBody.presence)
+    assert.deepEqual(publicOfficeBody.socialProof, publicSocialProofBody.items)
+
     const triageResponse = await harness.app.inject({
       method: 'POST',
       url: '/public/escritorios/office-real-1/triagem',
