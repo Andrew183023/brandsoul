@@ -107,6 +107,17 @@ function isPublicOfficeBusinessConfigCandidate(value: unknown): value is PublicO
   return value === null || isRecord(value)
 }
 
+function warnDiscardedUnifiedPublicOfficeBlock(block: 'presence' | 'responsible' | 'professionals' | 'socialProof' | 'availability') {
+  if (!import.meta.env.DEV) {
+    return
+  }
+
+  console.warn('office-public-unified-profile-block-discarded', {
+    event: 'office-public-unified-profile-block-discarded',
+    block,
+  })
+}
+
 function normalizeUnifiedPublicOfficeProfile(payload: unknown): UnifiedPublicOfficeProfile | undefined {
   if (!isRecord(payload)) {
     return undefined
@@ -124,35 +135,47 @@ function normalizeUnifiedPublicOfficeProfile(payload: unknown): UnifiedPublicOff
   }
 
   if (payload.presence !== undefined && !isPublicPresenceCandidate(payload.presence)) {
-    return undefined
+    warnDiscardedUnifiedPublicOfficeBlock('presence')
   }
 
   if (payload.responsible !== undefined && !isPublicOfficeProfessionalCandidate(payload.responsible)) {
-    return undefined
+    warnDiscardedUnifiedPublicOfficeBlock('responsible')
   }
 
   if (professionals !== undefined && (!Array.isArray(professionals) || !professionals.every(isPublicOfficeProfessionalCandidate))) {
-    return undefined
+    warnDiscardedUnifiedPublicOfficeBlock('professionals')
   }
 
   if (socialProof !== undefined && (!Array.isArray(socialProof) || !socialProof.every(isOfficeTrustEvidenceItemCandidate))) {
-    return undefined
+    warnDiscardedUnifiedPublicOfficeBlock('socialProof')
   }
 
   if (payload.availability !== undefined && !isAvailabilityCandidate(payload.availability)) {
-    return undefined
+    warnDiscardedUnifiedPublicOfficeBlock('availability')
   }
+
+  const normalizedPresence = isPublicPresenceCandidate(payload.presence) ? payload.presence : undefined
+  const normalizedResponsible = isPublicOfficeProfessionalCandidate(payload.responsible) ? payload.responsible : undefined
+  const normalizedProfessionals = Array.isArray(professionals) && professionals.every(isPublicOfficeProfessionalCandidate)
+    ? professionals
+    : []
+  const normalizedSocialProof = Array.isArray(socialProof) && socialProof.every(isOfficeTrustEvidenceItemCandidate)
+    ? socialProof
+    : []
+  const normalizedAvailability = isAvailabilityCandidate(payload.availability)
+    ? payload.availability
+    : undefined
 
   return {
     status: 'ready',
     officeId: payload.officeId,
     publicProfile: payload.publicProfile,
     businessConfig: payload.businessConfig,
-    presence: payload.presence,
-    responsible: payload.responsible,
-    professionals: Array.isArray(professionals) ? professionals : [],
-    socialProof: Array.isArray(socialProof) ? socialProof : [],
-    availability: payload.availability as UnifiedPublicOfficeAvailability | null | undefined,
+    presence: normalizedPresence,
+    responsible: normalizedResponsible,
+    professionals: normalizedProfessionals,
+    socialProof: normalizedSocialProof,
+    availability: normalizedAvailability,
   }
 }
 
