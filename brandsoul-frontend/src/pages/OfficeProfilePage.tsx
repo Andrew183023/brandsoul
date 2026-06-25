@@ -1633,7 +1633,6 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
     const shouldLoadLegacyProfessionals = !unifiedProfile
       || (typeof unifiedProfile.responsible === 'undefined' && unifiedProfile.professionals.length === 0)
     const shouldLoadLegacyTrustEvidence = !unifiedProfile
-      || unifiedProfile.socialProof.length === 0
 
     const [legacyBusinessConfig, nextSocialState, legacyTrustEvidence, legacyProfessionalsProjection] = await Promise.all([
       typeof unifiedProfile?.businessConfig === 'undefined'
@@ -1649,7 +1648,7 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
     ])
 
     const nextBusinessConfig = unifiedProfile?.businessConfig ?? legacyBusinessConfig
-    const nextTrustEvidence = unifiedProfile?.socialProof.length
+    const nextTrustEvidence = unifiedProfile
       ? unifiedProfile.socialProof
       : legacyTrustEvidence
     const nextProfessionalsProjection = {
