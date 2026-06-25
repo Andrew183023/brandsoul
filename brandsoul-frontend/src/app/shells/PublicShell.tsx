@@ -37,8 +37,12 @@ export default function PublicShell({ children, isAuthenticated = false }: Publi
 
       <footer className="public-shell__footer">
         <div className="public-shell__footer-inner">
-          <span>BrandSoul</span>
-          <span>presenca, relacao e operacao dentro da plataforma</span>
+          <strong className="public-shell__footer-brand">BrandSoul</strong>
+          <span className="public-shell__footer-subtitle">Entidades vivas em presença</span>
+          <p className="public-shell__footer-copy">
+            Plataforma que organiza transparência, triagem e relacionamento entre clientes e escritórios.
+          </p>
+          <small className="public-shell__footer-meta">© Flow Core Group</small>
         </div>
       </footer>
     </main>
