@@ -19,6 +19,258 @@
   animation-delay: calc(var(--motion-stagger-step, 36ms) * 2);
 }
 
+.seo-landing-page {
+  gap: 1.35rem;
+}
+
+.seo-landing-hero {
+  grid-template-columns: minmax(0, 1.18fr) minmax(320px, 0.82fr);
+  align-items: stretch;
+  gap: 1.35rem;
+}
+
+.seo-landing-hero__identity {
+  align-content: start;
+}
+
+.seo-landing-hero__tagline {
+  max-width: 56ch;
+}
+
+.seo-landing-hero__highlights {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.seo-landing-hero__pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.35rem 0.72rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, #ffffff 78%, #eadfce 22%);
+  color: var(--text-primary);
+  font-size: 0.84rem;
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--card-border) 34%, transparent 66%);
+}
+
+.seo-landing-hero__panel {
+  display: grid;
+  align-content: start;
+  gap: 0.8rem;
+}
+
+.seo-landing-hero__card {
+  display: grid;
+  gap: 0.45rem;
+  padding: 1rem;
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(249, 243, 235, 0.92)),
+    radial-gradient(circle at top right, rgba(195, 162, 124, 0.14), transparent 54%);
+  box-shadow: 0 12px 24px rgba(23, 34, 53, 0.05);
+}
+
+.seo-landing-hero__card h2,
+.seo-landing-hero__card p {
+  margin: 0;
+}
+
+.seo-landing-hero__card h2 {
+  font-family: var(--font-display);
+  font-size: clamp(1.28rem, 2.3vw, 1.6rem);
+  line-height: 1.08;
+}
+
+.seo-landing-hero__card p {
+  color: var(--text-secondary);
+  line-height: 1.62;
+}
+
+.seo-landing-hero__actions {
+  padding-top: 0;
+}
+
+.seo-landing-hero__actions .office-button--primary {
+  min-width: min(100%, 19rem);
+}
+
+.seo-landing-hero__secondary-link {
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--card-border) 72%, transparent 28%);
+  text-underline-offset: 0.18rem;
+}
+
+.seo-landing-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.seo-landing-main,
+.seo-landing-side {
+  display: grid;
+  gap: 1rem;
+}
+
+.seo-landing-region__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.seo-landing-region__card {
+  display: grid;
+  gap: 0.32rem;
+  padding: 0.95rem;
+  border-radius: 16px;
+  background: color-mix(in srgb, #ffffff 92%, #f3ebde 8%);
+  box-shadow: 0 10px 20px rgba(23, 34, 53, 0.04);
+}
+
+.seo-landing-region__card span {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.seo-landing-region__card strong,
+.seo-landing-region__card p {
+  margin: 0;
+}
+
+.seo-landing-region__card p {
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+
+.seo-landing-content {
+  display: grid;
+  gap: 0.95rem;
+  color: var(--text-primary);
+}
+
+.seo-landing-content > * {
+  margin: 0;
+}
+
+.seo-landing-content p,
+.seo-landing-content li,
+.seo-landing-content blockquote {
+  line-height: 1.72;
+}
+
+.seo-landing-content h2,
+.seo-landing-content h3,
+.seo-landing-content h4 {
+  margin: 0.3rem 0 0;
+  font-family: var(--font-display);
+  line-height: 1.14;
+}
+
+.seo-landing-content ul,
+.seo-landing-content ol {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.seo-landing-content blockquote {
+  padding-left: 0.9rem;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 42%, #d6c7b4 58%);
+  color: var(--text-secondary);
+}
+
+.seo-landing-content a {
+  color: var(--accent-strong);
+}
+
+.seo-landing-trust {
+  gap: 1rem;
+}
+
+.seo-landing-trust__entity {
+  display: grid;
+  gap: 0.16rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 14px;
+  background: color-mix(in srgb, #ffffff 90%, #efe6d9 10%);
+}
+
+.seo-landing-trust__entity span {
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.seo-landing-trust__entity strong {
+  line-height: 1.45;
+}
+
+.seo-landing-form-shell {
+  gap: 1rem;
+}
+
+.seo-landing-form {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.seo-landing-field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.seo-landing-field span {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.seo-landing-field input,
+.seo-landing-field select,
+.seo-landing-field textarea {
+  width: 100%;
+  border: 1px solid color-mix(in srgb, var(--card-border) 76%, #ffffff 24%);
+  border-radius: 12px;
+  padding: 0.78rem 0.82rem;
+  background: #ffffff;
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.seo-landing-field textarea {
+  resize: vertical;
+  min-height: 8rem;
+}
+
+.seo-landing-field input:focus,
+.seo-landing-field select:focus,
+.seo-landing-field textarea:focus {
+  outline: 2px solid color-mix(in srgb, var(--accent) 46%, #ffffff 54%);
+  outline-offset: 1px;
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--card-border) 66%);
+}
+
+.seo-landing-form__actions {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.seo-landing-form__actions .office-button {
+  width: 100%;
+}
+
 .office-profile-header {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -1211,6 +1463,8 @@
     width: calc(100vw - 1rem);
   }
 
+  .seo-landing-hero,
+  .seo-landing-grid,
   .office-profile-header__summary,
   .office-profile-header__availability,
   .office-profile-header__availability-meta,
@@ -1226,6 +1480,28 @@
     width: calc(100vw - 0.9rem);
     padding-bottom: calc(8.7rem + env(safe-area-inset-bottom, 0px));
     gap: 1.15rem;
+  }
+
+  .seo-landing-page {
+    gap: 1rem;
+  }
+
+  .seo-landing-side {
+    order: -1;
+  }
+
+  .seo-landing-hero__highlights {
+    gap: 0.45rem;
+  }
+
+  .seo-landing-hero__pill {
+    min-height: 1.84rem;
+    padding: 0.28rem 0.6rem;
+    font-size: 0.79rem;
+  }
+
+  .seo-landing-region__grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .office-loading-grid {
@@ -1388,6 +1664,14 @@
   .office-profile-header {
     padding: 1rem;
     gap: 0.95rem;
+  }
+
+  .seo-landing-hero__card {
+    padding: 0.9rem;
+  }
+
+  .seo-landing-content {
+    gap: 0.8rem;
   }
 
   .office-profile-header__actions,
