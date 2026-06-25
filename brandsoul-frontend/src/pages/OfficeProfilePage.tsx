@@ -119,6 +119,33 @@ type IntakeDraft = {
   contact: string
 }
 
+type PublicTriageAttribution = {
+  utmSource?: string
+  utmMedium?: string
+  utmCampaign?: string
+  utmTerm?: string
+  utmContent?: string
+  referrer?: string
+  currentUrl?: string
+  pathname?: string
+}
+
+type PersistedIntakeDraft = {
+  stepIndex: number
+  draft: IntakeDraft
+  requestId?: string
+  attribution?: PublicTriageAttribution
+  updatedAt: number
+}
+
+type PersistedLastPortalAccess = {
+  officeId: string
+  caseId?: string
+  portalUrl: string
+  createdAt: number
+  expiresAt?: string
+}
+
 type IntakeSubmissionState =
   | { status: 'idle' }
   | {
@@ -127,6 +154,12 @@ type IntakeSubmissionState =
       responseWindowLabel: string
       contactLabel: string
       caseId?: string
+      portalUrl?: string
+      portalAccess?: {
+        issuedAt: string
+        expiresAt: string
+      }
+      createdAt: number
     }
   | {
       status: 'error'
@@ -483,6 +516,80 @@ function resolveIntakeStorageKey(officeId: string) {
   return `brandsoul:intake:draft:${officeId}`
 }
 
+function resolveLastPortalStorageKey(officeId: string) {
+  return `public-office-last-portal:${officeId}`
+}
+
+function normalizeRelativePortalUrl(value: unknown) {
+  if (typeof value !== 'string') {
+    return undefined
+  }
+
+  const normalizedValue = value.trim()
+  if (!normalizedValue.startsWith('/portal/')) {
+    return undefined
+  }
+
+  return normalizedValue
+}
+
+function isPortalAccessExpired(entry: { createdAt: number; expiresAt?: string }) {
+  if (typeof entry.expiresAt === 'string' && entry.expiresAt.trim().length > 0) {
+    const expiresAtTimestamp = Date.parse(entry.expiresAt)
+    if (Number.isFinite(expiresAtTimestamp)) {
+      return expiresAtTimestamp <= Date.now()
+    }
+  }
+
+  return entry.createdAt <= Date.now() - (7 * 24 * 60 * 60 * 1000)
+}
+
+function parseLastPortalAccess(raw: string | null, officeId: string): PersistedLastPortalAccess | undefined {
+  if (!raw) {
+    return undefined
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as {
+      officeId?: unknown
+      caseId?: unknown
+      portalUrl?: unknown
+      createdAt?: unknown
+      expiresAt?: unknown
+    }
+
+    const normalizedPortalUrl = normalizeRelativePortalUrl(parsed.portalUrl)
+    const createdAt = typeof parsed.createdAt === 'number' && Number.isFinite(parsed.createdAt)
+      ? parsed.createdAt
+      : Number.NaN
+
+    if (parsed.officeId !== officeId || !normalizedPortalUrl || !Number.isFinite(createdAt)) {
+      return undefined
+    }
+
+    const nextEntry: PersistedLastPortalAccess = {
+      officeId,
+      caseId: typeof parsed.caseId === 'string' && parsed.caseId.trim().length > 0 ? parsed.caseId.trim() : undefined,
+      portalUrl: normalizedPortalUrl,
+      createdAt,
+      expiresAt: typeof parsed.expiresAt === 'string' && parsed.expiresAt.trim().length > 0 ? parsed.expiresAt.trim() : undefined,
+    }
+
+    return isPortalAccessExpired(nextEntry) ? undefined : nextEntry
+  } catch {
+    return undefined
+  }
+}
+
+function buildPortalCaseReference(caseId?: string) {
+  if (!caseId) {
+    return undefined
+  }
+
+  const compact = caseId.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
+  return `CASO-${compact.slice(0, 8) || 'LEGAL'}`
+}
+
 function resolveIntakeUrgencyLabel(value: IntakeUrgency | '') {
   if (value === 'critical') return 'Crítica (0-24h)'
   if (value === 'priority') return 'Prioritária (24-72h)'
@@ -567,7 +674,47 @@ function buildPublicTriageFailureMessage(error: unknown) {
   return 'Não conseguimos enviar sua triagem agora.'
 }
 
-function parseIntakeDraft(raw: string | null): { stepIndex: number; draft: IntakeDraft } | undefined {
+function normalizePublicTriageAttribution(value: unknown): PublicTriageAttribution | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined
+  }
+
+  const record = value as Record<string, unknown>
+  const nextAttribution: PublicTriageAttribution = {
+    utmSource: typeof record.utmSource === 'string' && record.utmSource.trim().length > 0 ? record.utmSource.trim() : undefined,
+    utmMedium: typeof record.utmMedium === 'string' && record.utmMedium.trim().length > 0 ? record.utmMedium.trim() : undefined,
+    utmCampaign: typeof record.utmCampaign === 'string' && record.utmCampaign.trim().length > 0 ? record.utmCampaign.trim() : undefined,
+    utmTerm: typeof record.utmTerm === 'string' && record.utmTerm.trim().length > 0 ? record.utmTerm.trim() : undefined,
+    utmContent: typeof record.utmContent === 'string' && record.utmContent.trim().length > 0 ? record.utmContent.trim() : undefined,
+    referrer: typeof record.referrer === 'string' && record.referrer.trim().length > 0 ? record.referrer.trim() : undefined,
+    currentUrl: typeof record.currentUrl === 'string' && record.currentUrl.trim().length > 0 ? record.currentUrl.trim() : undefined,
+    pathname: typeof record.pathname === 'string' && record.pathname.trim().length > 0 ? record.pathname.trim() : undefined,
+  }
+
+  return Object.values(nextAttribution).some((value) => typeof value === 'string' && value.length > 0)
+    ? nextAttribution
+    : undefined
+}
+
+function capturePublicTriageAttribution(): PublicTriageAttribution | undefined {
+  if (typeof window === 'undefined') {
+    return undefined
+  }
+
+  const searchParams = new URLSearchParams(window.location.search)
+  return normalizePublicTriageAttribution({
+    utmSource: searchParams.get('utm_source') ?? undefined,
+    utmMedium: searchParams.get('utm_medium') ?? undefined,
+    utmCampaign: searchParams.get('utm_campaign') ?? undefined,
+    utmTerm: searchParams.get('utm_term') ?? undefined,
+    utmContent: searchParams.get('utm_content') ?? undefined,
+    referrer: document.referrer || undefined,
+    currentUrl: window.location.href,
+    pathname: window.location.pathname,
+  })
+}
+
+function parseIntakeDraft(raw: string | null): { stepIndex: number; draft: IntakeDraft; requestId?: string; attribution?: PublicTriageAttribution } | undefined {
   if (!raw) {
     return undefined
   }
@@ -576,6 +723,8 @@ function parseIntakeDraft(raw: string | null): { stepIndex: number; draft: Intak
     const parsed = JSON.parse(raw) as {
       stepIndex?: number
       draft?: Partial<IntakeDraft>
+      requestId?: string
+      attribution?: unknown
     }
 
     const safeStepIndex = typeof parsed.stepIndex === 'number' && parsed.stepIndex >= 0
@@ -592,6 +741,10 @@ function parseIntakeDraft(raw: string | null): { stepIndex: number; draft: Intak
         objective: typeof parsed.draft?.objective === 'string' ? parsed.draft.objective : '',
         contact: typeof parsed.draft?.contact === 'string' ? parsed.draft.contact : '',
       },
+      requestId: typeof parsed.requestId === 'string' && parsed.requestId.trim().length > 0
+        ? parsed.requestId.trim()
+        : undefined,
+      attribution: normalizePublicTriageAttribution(parsed.attribution),
     }
   } catch {
     return undefined
@@ -600,6 +753,13 @@ function parseIntakeDraft(raw: string | null): { stepIndex: number; draft: Intak
 
 function createPublicShadowRequestId() {
   return `public-shadow-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function hasIntakeDraftContent(draft: IntakeDraft) {
+  return draft.situation.trim().length > 0
+    || draft.urgency.length > 0
+    || draft.objective.trim().length > 0
+    || draft.contact.trim().length > 0
 }
 
 function normalizeDecisionLabel(value: string) {
@@ -1528,12 +1688,35 @@ function PostSubmitExpectation(props: {
   submissionState: Extract<IntakeSubmissionState, { status: 'success' }>
 }) {
   const { submissionState } = props
+  const caseReference = buildPortalCaseReference(submissionState.caseId)
   return (
-    <section className="office-intake-post-submit" aria-live="polite">
+    <section className="office-intake-post-submit" aria-live="polite" role="status">
       <h3>Triagem enviada com sucesso.</h3>
       <p>{submissionState.message}</p>
+      {caseReference ? (
+        <p className="office-intake-post-submit__response">Identificador inicial: {caseReference}.</p>
+      ) : null}
       <p className="office-intake-post-submit__response">Prazo informado para o primeiro retorno: {submissionState.responseWindowLabel}.</p>
       <p className="office-intake-post-submit__response">Canal principal informado: {submissionState.contactLabel}.</p>
+      <p className="office-intake-post-submit__response">Você pode acompanhar esta solicitação neste dispositivo enquanto o acesso permanecer válido.</p>
+      <div className="office-intake-review-panel__actions">
+        {submissionState.portalUrl ? (
+          <a className="office-button office-button--primary" href={submissionState.portalUrl}>
+            Acompanhar solicitação
+          </a>
+        ) : null}
+        <button
+          type="button"
+          className="office-button office-button--secondary"
+          onClick={() =>
+            document
+              .getElementById('office-public-triagem')
+              ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          }
+        >
+          Continuar nesta página
+        </button>
+      </div>
     </section>
   )
 }
@@ -1600,9 +1783,12 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
   const [isInstitutionalVideoOpen, setIsInstitutionalVideoOpen] = useState(false)
   const [intakeDraft, setIntakeDraft] = useState<IntakeDraft>(EMPTY_INTAKE_DRAFT)
   const [intakeStepIndex, setIntakeStepIndex] = useState(0)
+  const [intakeRequestId, setIntakeRequestId] = useState<string | undefined>(undefined)
+  const [intakeAttribution, setIntakeAttribution] = useState<PublicTriageAttribution | undefined>(undefined)
   const [intakeDraftRecovered, setIntakeDraftRecovered] = useState(false)
   const [intakeSubmitting, setIntakeSubmitting] = useState(false)
   const [intakeSubmissionState, setIntakeSubmissionState] = useState<IntakeSubmissionState>({ status: 'idle' })
+  const [lastPortalAccess, setLastPortalAccess] = useState<PersistedLastPortalAccess | undefined>(undefined)
   const [showFloatingTriageCta, setShowFloatingTriageCta] = useState(false)
   const showVisualDebug = import.meta.env.DEV || new URLSearchParams(window.location.search).has('presenceDebug')
   const publicPresenceMemorySessionId = `public-presence:${officeId}:tenant:${authSession?.tenant.id ?? 'public'}:user:${authSession?.user.id ?? 'anonymous'}`
@@ -1749,23 +1935,62 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
     if (!parsed) {
       setIntakeDraft(EMPTY_INTAKE_DRAFT)
       setIntakeStepIndex(0)
+      setIntakeRequestId(undefined)
+      setIntakeAttribution(undefined)
       setIntakeDraftRecovered(false)
       return
     }
 
     setIntakeDraft(parsed.draft)
     setIntakeStepIndex(parsed.stepIndex)
+    setIntakeRequestId(parsed.requestId)
+    setIntakeAttribution(parsed.attribution)
     setIntakeDraftRecovered(true)
   }, [officeId])
 
   useEffect(() => {
-    const payload = {
+    const storageKey = resolveLastPortalStorageKey(officeId)
+    const parsed = parseLastPortalAccess(window.localStorage.getItem(storageKey), officeId)
+    if (!parsed) {
+      window.localStorage.removeItem(storageKey)
+      setLastPortalAccess(undefined)
+      return
+    }
+
+    setLastPortalAccess(parsed)
+  }, [officeId])
+
+  useEffect(() => {
+    if (!hasIntakeDraftContent(intakeDraft) && intakeStepIndex === 0 && !intakeRequestId) {
+      window.localStorage.removeItem(resolveIntakeStorageKey(officeId))
+      return
+    }
+
+    const payload: PersistedIntakeDraft = {
       stepIndex: intakeStepIndex,
       draft: intakeDraft,
+      requestId: intakeRequestId,
+      attribution: intakeAttribution,
       updatedAt: Date.now(),
     }
     window.localStorage.setItem(resolveIntakeStorageKey(officeId), JSON.stringify(payload))
-  }, [officeId, intakeDraft, intakeStepIndex])
+  }, [officeId, intakeAttribution, intakeDraft, intakeRequestId, intakeStepIndex])
+
+  useEffect(() => {
+    if (!hasIntakeDraftContent(intakeDraft) || intakeRequestId) {
+      return
+    }
+
+    setIntakeRequestId(createPublicShadowRequestId())
+  }, [intakeDraft, intakeRequestId])
+
+  useEffect(() => {
+    if (!hasIntakeDraftContent(intakeDraft) || intakeAttribution) {
+      return
+    }
+
+    setIntakeAttribution(capturePublicTriageAttribution())
+  }, [intakeAttribution, intakeDraft])
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -2202,6 +2427,15 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
       return
     }
 
+    const stableRequestId = intakeRequestId ?? createPublicShadowRequestId()
+    const stableAttribution = intakeAttribution ?? capturePublicTriageAttribution()
+    if (!intakeRequestId) {
+      setIntakeRequestId(stableRequestId)
+    }
+    if (!intakeAttribution && stableAttribution) {
+      setIntakeAttribution(stableAttribution)
+    }
+
     setIntakeSubmitting(true)
     setIntakeSubmissionState({ status: 'idle' })
     const payload = buildStructuredTriageRequest({
@@ -2222,12 +2456,13 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
       const triageResponse = await requestPublicOfficeInteraction({
         officeId,
         request: {
-          requestId: createPublicShadowRequestId(),
+          requestId: stableRequestId,
           ...payload,
           context: {
             sessionId: publicPresenceMemorySessionId,
             allowDebug: showVisualDebug,
             clientRenderVersion: 'office-profile-page-triage-submit',
+            attribution: stableAttribution,
           },
         },
       })
@@ -2241,14 +2476,33 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
       setLegalCaseState(triageResponse.actionResult)
       setActionError(undefined)
       setIntakeDraftRecovered(false)
+      setIntakeRequestId(undefined)
+      setIntakeAttribution(undefined)
       setIntakeSubmissionState({
         status: 'success',
         message: 'Agora o escritório recebeu suas informações iniciais para avaliar o próximo passo.',
         responseWindowLabel: canonicalProjection.operational.responseWindowLabel,
         contactLabel: contactOption ? `${contactOption.label}: ${contactOption.value}` : 'Triagem inicial pela plataforma',
         caseId: triageResponse.actionResult?.caseId,
+        portalUrl: triageResponse.actionResult?.portalUrl,
+        portalAccess: triageResponse.actionResult?.portalAccess,
+        createdAt: Date.now(),
       })
       window.localStorage.removeItem(resolveIntakeStorageKey(officeId))
+      if (triageResponse.actionResult?.portalUrl) {
+        const nextPortalAccess: PersistedLastPortalAccess = {
+          officeId,
+          caseId: triageResponse.actionResult.caseId,
+          portalUrl: triageResponse.actionResult.portalUrl,
+          createdAt: Date.now(),
+          expiresAt: triageResponse.actionResult.portalAccess?.expiresAt,
+        }
+        window.localStorage.setItem(resolveLastPortalStorageKey(officeId), JSON.stringify(nextPortalAccess))
+        setLastPortalAccess(nextPortalAccess)
+      } else {
+        window.localStorage.removeItem(resolveLastPortalStorageKey(officeId))
+        setLastPortalAccess(undefined)
+      }
     } catch (error) {
       setLegalCaseState(undefined)
       setIntakeSubmissionState({
@@ -2261,6 +2515,11 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
     }
 
     setIntakeSubmitting(false)
+  }
+
+  function clearLastPortalAccess() {
+    window.localStorage.removeItem(resolveLastPortalStorageKey(officeId))
+    setLastPortalAccess(undefined)
   }
 
   function handleIntakeMobilePrimaryAction() {
@@ -2619,6 +2878,30 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
             </p>
           </div>
 
+          {lastPortalAccess && intakeSubmissionState.status !== 'success' ? (
+            <article className="office-state-banner office-state-banner--info" role="status" aria-live="polite">
+              <strong>Continuar acompanhamento</strong>
+              <p>
+                {buildPortalCaseReference(lastPortalAccess.caseId)
+                  ? `Você já iniciou ${buildPortalCaseReference(lastPortalAccess.caseId)} neste dispositivo.`
+                  : 'Você já iniciou uma solicitação neste dispositivo.'}
+              </p>
+              <p>Se o acesso ainda estiver válido, você pode retomar o acompanhamento sem reenviar a triagem.</p>
+              <div className="office-intake-review-panel__actions">
+                <a className="office-button office-button--primary" href={lastPortalAccess.portalUrl}>
+                  Continuar acompanhamento
+                </a>
+                <button
+                  type="button"
+                  className="office-button office-button--secondary"
+                  onClick={clearLastPortalAccess}
+                >
+                  Limpar acompanhamento deste dispositivo
+                </button>
+              </div>
+            </article>
+          ) : null}
+
           <div className="office-intake-trust-sticky" role="status" aria-live="polite">
             Contexto preservado: cada etapa salva automaticamente para retomada segura.
           </div>
@@ -2718,24 +3001,26 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
             <PostSubmitExpectation submissionState={intakeSubmissionState} />
           ) : null}
 
-          <aside className="office-intake-mobile-decision motion-surface" aria-label="Decisão principal da triagem">
-            <button
-              type="button"
-              className="office-button office-button--secondary"
-              onClick={goToPreviousIntakeStep}
-              disabled={intakeStepIndex === 0 || intakeSubmitting}
-            >
-              Voltar
-            </button>
-            <button
-              type="button"
-              className="office-button office-button--primary"
-              onClick={handleIntakeMobilePrimaryAction}
-              disabled={intakeMobilePrimaryDisabled}
-            >
-              {intakeMobilePrimaryLabel}
-            </button>
-          </aside>
+          {intakeSubmissionState.status !== 'success' ? (
+            <aside className="office-intake-mobile-decision motion-surface" aria-label="Decisão principal da triagem">
+              <button
+                type="button"
+                className="office-button office-button--secondary"
+                onClick={goToPreviousIntakeStep}
+                disabled={intakeStepIndex === 0 || intakeSubmitting}
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                className="office-button office-button--primary"
+                onClick={handleIntakeMobilePrimaryAction}
+                disabled={intakeMobilePrimaryDisabled}
+              >
+                {intakeMobilePrimaryLabel}
+              </button>
+            </aside>
+          ) : null}
 
           <div className="office-intake-runtime-bridge">
           <PublicPresencePage
