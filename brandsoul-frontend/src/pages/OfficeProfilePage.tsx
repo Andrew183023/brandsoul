@@ -859,6 +859,35 @@ function TrustRibbon() {
   )
 }
 
+function HeaderTrustHighlights(props: {
+  responsible?: ResponsibleProfessional
+  cities: string[]
+}) {
+  const { responsible, cities } = props
+  const compactCities = cities
+    .map((city) => city.trim())
+    .filter((city) => city.length > 0)
+    .slice(0, 2)
+
+  const items = [
+    responsible?.fullName,
+    responsible?.oabCredential,
+    compactCities.length > 0 ? `Atende ${compactCities.join(' e ')}` : undefined,
+  ].filter((item): item is string => Boolean(item && item.trim().length > 0))
+
+  if (items.length === 0) {
+    return null
+  }
+
+  return (
+    <div className="office-profile-header__trust-highlights" aria-label="Sinais de confiança acima da dobra">
+      {items.map((item) => (
+        <span key={item} className="office-profile-header__trust-pill">{item}</span>
+      ))}
+    </div>
+  )
+}
+
 function StateBanner(props: {
   tone: 'info' | 'warning' | 'danger'
   title: string
@@ -1574,6 +1603,7 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
   const [intakeDraftRecovered, setIntakeDraftRecovered] = useState(false)
   const [intakeSubmitting, setIntakeSubmitting] = useState(false)
   const [intakeSubmissionState, setIntakeSubmissionState] = useState<IntakeSubmissionState>({ status: 'idle' })
+  const [showFloatingTriageCta, setShowFloatingTriageCta] = useState(false)
   const showVisualDebug = import.meta.env.DEV || new URLSearchParams(window.location.search).has('presenceDebug')
   const publicPresenceMemorySessionId = `public-presence:${officeId}:tenant:${authSession?.tenant.id ?? 'public'}:user:${authSession?.user.id ?? 'anonymous'}`
 
@@ -1737,6 +1767,23 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
     window.localStorage.setItem(resolveIntakeStorageKey(officeId), JSON.stringify(payload))
   }, [officeId, intakeDraft, intakeStepIndex])
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    const syncFloatingTriageCta = () => {
+      setShowFloatingTriageCta(window.scrollY > 360)
+    }
+
+    syncFloatingTriageCta()
+    window.addEventListener('scroll', syncFloatingTriageCta, { passive: true })
+
+    return () => {
+      window.removeEventListener('scroll', syncFloatingTriageCta)
+    }
+  }, [])
+
   const specialties = useMemo(
     () => resolveOfficeSpecialties(businessConfig),
     [businessConfig],
@@ -1789,6 +1836,18 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
   const institutionalVideo = canonicalProjection.profile.institutionalVideo
   const institutionalVideoUrl = resolvePublicAssetUrl(institutionalVideo?.url) ?? institutionalVideo?.url
   const primaryCoverageLabel = coverage[0]?.label ?? 'Cobertura informada no perfil'
+  const servedCities = useMemo(
+    () => (businessConfig?.servedCities ?? [])
+      .map((city) => city.trim())
+      .filter((city) => city.length > 0),
+    [businessConfig?.servedCities],
+  )
+
+  const scrollToTriage = useCallback(() => {
+    document
+      .getElementById('office-public-triagem')
+      ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [])
 
   const availabilityConfidence: Confidence = useMemo(() => {
     if (runtimeMode === 'degraded' || runtimeMode === 'fallback') {
@@ -2292,24 +2351,22 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
               <button
                 type="button"
                 className="office-button office-button--primary"
-                onClick={() =>
-                  document
-                    .getElementById('office-public-triagem')
-                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                }
+                onClick={scrollToTriage}
               >
                 Iniciar triagem
               </button>
-              <button type="button" className="office-button office-button--secondary" onClick={handleShare}>
-                Compartilhar
+            </div>
+            <div className="office-profile-header__micro-actions" aria-label="Ações secundárias do perfil">
+              <button type="button" className="office-action-link" onClick={handleShare}>
+                Compartilhar perfil
               </button>
-              <button type="button" className="office-button office-button--ghost" onClick={handleFollow}>
-                Acompanhar
+              <button type="button" className="office-action-link" onClick={handleFollow}>
+                Acompanhar escritório
               </button>
             </div>
+            <HeaderTrustHighlights responsible={responsibleProfessional} cities={servedCities} />
             <TrustRibbon />
             {responsibleProfessional ? <ResponsibleProfessionalCard responsible={responsibleProfessional} /> : null}
-            <PublicProfessionalsSection professionals={publicProfessionals} />
             <section className="office-profile-header__availability" aria-label="Disponibilidade pública">
               <div className="office-profile-header__availability-main">
                 <div className="office-block-heading">
@@ -2333,6 +2390,7 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
                 </div>
               </div>
             </section>
+            <PublicProfessionalsSection professionals={publicProfessionals} />
           </div>
         </header>
 
@@ -2703,19 +2761,17 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
           </div>
         </section>
 
-        <aside className="office-profile-mobile-cta motion-surface" aria-label="Ação rápida de triagem">
-          <button
-            type="button"
-            className="office-button office-button--primary"
-            onClick={() =>
-              document
-                .getElementById('office-public-triagem')
-                ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-            }
-          >
-            Iniciar triagem segura
-          </button>
-        </aside>
+        {showFloatingTriageCta ? (
+          <aside className="office-profile-mobile-cta motion-surface" aria-label="Ação rápida de triagem">
+            <button
+              type="button"
+              className="office-button office-button--primary"
+              onClick={scrollToTriage}
+            >
+              Iniciar triagem segura
+            </button>
+          </aside>
+        ) : null}
         {institutionalVideo ? (
           <Modal
             open={isInstitutionalVideoOpen}
