@@ -1189,9 +1189,10 @@
 .office-profile-mobile-cta {
   position: fixed;
   left: 50%;
-  bottom: 0.7rem;
+  bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
   transform: translateX(-50%);
-  width: min(760px, calc(100vw - 1.2rem));
+  width: min(520px, calc(100vw - 2rem));
+  max-width: calc(100vw - 2rem);
   border: 1px solid color-mix(in srgb, var(--card-border) 72%, #ffffff 28%);
   border-radius: 18px;
   padding: 0.5rem;
@@ -1339,7 +1340,9 @@
   }
 
   .office-profile-mobile-cta {
-    display: none;
+    width: min(520px, calc(100vw - 1.25rem));
+    max-width: calc(100vw - 1.25rem);
+    bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
   }
 
   .office-intake-mobile-decision {
