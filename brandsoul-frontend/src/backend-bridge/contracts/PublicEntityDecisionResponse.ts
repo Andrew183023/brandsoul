@@ -18,6 +18,16 @@ export type PublicEntityInteractionRequest = {
     sessionId?: string
     allowDebug?: boolean
     clientRenderVersion?: string
+    attribution?: {
+      utmSource?: string
+      utmMedium?: string
+      utmCampaign?: string
+      utmTerm?: string
+      utmContent?: string
+      referrer?: string
+      currentUrl?: string
+      pathname?: string
+    }
   }
 }
 

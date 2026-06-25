@@ -243,6 +243,16 @@ type PortfolioPublicTriageCaptureCommand = {
   tenantId: number
   requestId: string
   userMessage: string
+  attribution?: {
+    utmSource?: string
+    utmMedium?: string
+    utmCampaign?: string
+    utmTerm?: string
+    utmContent?: string
+    referrer?: string
+    currentUrl?: string
+    pathname?: string
+  }
   city?: string
   practiceArea?: string
   urgency: 'critical' | 'priority' | 'planned'
@@ -3350,6 +3360,7 @@ export class SovereignMutationCommandService {
           practiceArea: command.practiceArea?.trim() || undefined,
           contactPreference: command.contactPreference?.trim() || undefined,
           contactValue: command.contactValue?.trim() || undefined,
+          attribution: command.attribution,
         },
         detectedAt: new Date().toISOString(),
       })
@@ -3372,6 +3383,7 @@ export class SovereignMutationCommandService {
         attribution: {
           requestId: command.requestId,
           tenantId: command.tenantId,
+          publicTriageAttribution: command.attribution,
           lifecycle: {
             lastTransition: 'routed',
             lastCommandId: command.commandId,
@@ -3387,6 +3399,7 @@ export class SovereignMutationCommandService {
           contactPreference: command.contactPreference?.trim() || undefined,
           contactValue: command.contactValue?.trim() || undefined,
           source: 'public-triage',
+          attribution: command.attribution,
         },
       })
 
@@ -3408,6 +3421,7 @@ export class SovereignMutationCommandService {
           practiceArea: command.practiceArea?.trim() || undefined,
           contactPreference: command.contactPreference?.trim() || undefined,
           contactValue: command.contactValue?.trim() || undefined,
+          attribution: command.attribution,
         },
       })
 

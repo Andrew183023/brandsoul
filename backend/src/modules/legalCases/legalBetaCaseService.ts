@@ -242,6 +242,16 @@ export class LegalBetaCaseService {
     entityId: string
     requestId: string
     userMessage: string
+    attribution?: {
+      utmSource?: string
+      utmMedium?: string
+      utmCampaign?: string
+      utmTerm?: string
+      utmContent?: string
+      referrer?: string
+      currentUrl?: string
+      pathname?: string
+    }
     triage?: {
       context: string
       urgency: 'critical' | 'priority' | 'planned'
@@ -274,6 +284,7 @@ export class LegalBetaCaseService {
       objective: args.triage?.objective?.trim() || undefined,
       contactPreference: args.triage?.contactPreference?.trim() || undefined,
       contactValue: args.triage?.contactValue?.trim() || undefined,
+      attribution: args.attribution,
     }) as {
       signalId: string
       leadId: string
@@ -320,6 +331,9 @@ export class LegalBetaCaseService {
           urgency: args.triage?.urgency ?? 'planned',
           leadId: portfolioCapture.leadId,
           intakeId: portfolioCapture.intakeId,
+          attribution:
+            safeJsonObject(nextMetadata.publicTriage).attribution
+            ?? args.attribution,
         }
 
         await caseRepository.updateCaseMetadata(tenantId, existingCase.id, nextMetadata)
@@ -354,6 +368,7 @@ export class LegalBetaCaseService {
             urgency: args.triage?.urgency ?? 'planned',
             leadId: portfolioCapture.leadId,
             intakeId: portfolioCapture.intakeId,
+            attribution: args.attribution,
           },
           city: args.triage?.city?.trim() || undefined,
           contact: args.triage?.contactValue?.trim() || undefined,

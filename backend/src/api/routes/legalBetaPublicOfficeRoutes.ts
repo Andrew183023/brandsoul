@@ -64,6 +64,21 @@ type OfficeProfessionalBody = {
 type PublicInteractionRequest = {
   requestId?: string
   userMessage: string
+  context?: {
+    sessionId?: string
+    allowDebug?: boolean
+    clientRenderVersion?: string
+    attribution?: {
+      utmSource?: string
+      utmMedium?: string
+      utmCampaign?: string
+      utmTerm?: string
+      utmContent?: string
+      referrer?: string
+      currentUrl?: string
+      pathname?: string
+    }
+  }
   triage?: {
     context: string
     urgency: 'critical' | 'priority' | 'planned'
@@ -1228,6 +1243,7 @@ export async function registerLegalBetaPublicOfficeRoutes(app: FastifyInstance) 
       entityId: request.params.id,
       requestId,
       userMessage,
+      attribution: request.body?.context?.attribution,
       triage: request.body?.triage,
       businessContext: request.body?.businessContext,
     })
