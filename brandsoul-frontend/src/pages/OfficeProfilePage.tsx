@@ -1789,7 +1789,6 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
   const [intakeSubmitting, setIntakeSubmitting] = useState(false)
   const [intakeSubmissionState, setIntakeSubmissionState] = useState<IntakeSubmissionState>({ status: 'idle' })
   const [lastPortalAccess, setLastPortalAccess] = useState<PersistedLastPortalAccess | undefined>(undefined)
-  const [showFloatingTriageCta, setShowFloatingTriageCta] = useState(false)
   const showVisualDebug = import.meta.env.DEV || new URLSearchParams(window.location.search).has('presenceDebug')
   const publicPresenceMemorySessionId = `public-presence:${officeId}:tenant:${authSession?.tenant.id ?? 'public'}:user:${authSession?.user.id ?? 'anonymous'}`
 
@@ -1992,22 +1991,6 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
     setIntakeAttribution(capturePublicTriageAttribution())
   }, [intakeAttribution, intakeDraft])
 
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return
-    }
-
-    const syncFloatingTriageCta = () => {
-      setShowFloatingTriageCta(window.scrollY > 360)
-    }
-
-    syncFloatingTriageCta()
-    window.addEventListener('scroll', syncFloatingTriageCta, { passive: true })
-
-    return () => {
-      window.removeEventListener('scroll', syncFloatingTriageCta)
-    }
-  }, [])
 
   const specialties = useMemo(
     () => resolveOfficeSpecialties(businessConfig),
@@ -3035,10 +3018,7 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
           </div>
         </section>
 
-        {showFloatingTriageCta
-          && intakeSubmissionState.status !== 'success'
-          && intakeStepIndex === 0
-          && !hasIntakeDraftContent(intakeDraft) ? (
+        {false ? (
           <aside className="office-profile-mobile-cta motion-surface" aria-label="Ação rápida de triagem">
             <button
               type="button"
