@@ -866,6 +866,7 @@ export async function registerLegalBetaPublicOfficeRoutes(app: FastifyInstance) 
         ownerTenantId: owned.entity.ownerTenantId,
       },
       actingProfessional,
+      professionals: officeProfessionals,
       officeProfessionals,
       tenantProfessionals,
     }
