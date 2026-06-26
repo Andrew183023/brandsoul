@@ -1118,7 +1118,7 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
                         <button
                           type="submit"
                           className="admin-button"
-                          disabled={isAssigning || selectedCase.status === 'closed' || selectedCase.isAssigned || !selectedProfessionalIdByCaseId[selectedCase.id]}
+                          disabled={isAssigning || selectedCase.status === 'closed' || !selectedProfessionalIdByCaseId[selectedCase.id]}
                         >
                           {isAssigning ? 'Atribuindo...' : 'Atribuir'}
                         </button>
@@ -1126,7 +1126,7 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
                           type="button"
                           className="admin-button admin-button--ghost"
                           onClick={() => void handleAssignCase(selectedCase.id)}
-                          disabled={isAssigning || selectedCase.status === 'closed' || selectedCase.isAssigned}
+                          disabled={isAssigning || selectedCase.status === 'closed'}
                         >
                           {isAssigning ? 'Assumindo...' : 'Assumir comigo'}
                         </button>
