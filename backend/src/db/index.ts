@@ -2207,11 +2207,34 @@ async function initializePostgresLegalCaseSchema(db: BackendDatabase) {
     `CHECK (message_status IN ('draft', 'queued', 'sent', 'delivered', 'failed', 'read'))`,
   )
 
+  await db.exec(`
+    DO $$
+    DECLARE
+      constraint_name TEXT;
+    BEGIN
+      SELECT con.conname
+      INTO constraint_name
+      FROM pg_constraint con
+      JOIN pg_class rel ON rel.oid = con.conrelid
+      JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+      WHERE nsp.nspname = current_schema()
+        AND rel.relname = 'case_timeline'
+        AND con.contype = 'c'
+        AND con.conname = 'case_timeline_event_type_check'
+        AND pg_get_constraintdef(con.oid) NOT LIKE '%status_changed%';
+
+      IF constraint_name IS NOT NULL THEN
+        EXECUTE format('ALTER TABLE case_timeline DROP CONSTRAINT %I', constraint_name);
+      END IF;
+    END
+    $$;
+  `)
+
   await postgresAddConstraintIfMissing(
     db,
     'case_timeline',
     'case_timeline_event_type_check',
-    `CHECK (event_type IN ('created', 'message_added', 'matched', 'assigned', 'accepted', 'rejected', 'closed', 'reopened', 'archived', 'feedback_received')) NOT VALID`,
+    `CHECK (event_type IN ('created', 'message_added', 'status_changed', 'matched', 'assigned', 'accepted', 'rejected', 'closed', 'reopened', 'archived', 'feedback_received')) NOT VALID`,
   )
 
   await db.exec(`
