@@ -2966,17 +2966,6 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
             </QuestionBlock>
           ) : null}
 
-          {currentIntakeStep.id !== 'review' ? (
-            <div className="office-intake-nav">
-              <button type="button" className="office-button office-button--secondary" onClick={goToPreviousIntakeStep} disabled={intakeStepIndex === 0}>
-                Voltar
-              </button>
-              <button type="button" className="office-button office-button--primary" onClick={goToNextIntakeStep} disabled={!intakeCanAdvance}>
-                Próxima etapa
-              </button>
-            </div>
-          ) : null}
-
           {currentIntakeStep.id === 'review' ? (
             <ReviewSubmitPanel
               draft={intakeDraft}

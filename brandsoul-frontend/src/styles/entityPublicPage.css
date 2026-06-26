@@ -1343,7 +1343,6 @@
   padding: 0.5rem 0.6rem;
 }
 
-.office-intake-nav,
 .office-intake-review-panel__actions {
   display: flex;
   flex-wrap: wrap;
@@ -1643,12 +1642,10 @@
     min-height: 50px;
   }
 
-  .office-intake-nav,
   .office-intake-review-panel__actions {
     flex-direction: column;
   }
 
-  .office-intake-nav .office-button,
   .office-intake-review-panel__actions .office-button {
     width: 100%;
   }
