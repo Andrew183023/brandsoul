@@ -3035,7 +3035,10 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
           </div>
         </section>
 
-        {showFloatingTriageCta ? (
+        {showFloatingTriageCta
+          && intakeSubmissionState.status !== 'success'
+          && intakeStepIndex === 0
+          && !hasIntakeDraftContent(intakeDraft) ? (
           <aside className="office-profile-mobile-cta motion-surface" aria-label="Ação rápida de triagem">
             <button
               type="button"
