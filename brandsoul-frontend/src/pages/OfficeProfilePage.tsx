@@ -3018,8 +3018,8 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
           </div>
         </section>
 
-        {false ? (
-          <aside className="office-profile-mobile-cta motion-surface" aria-label="Ação rápida de triagem">
+        {true ? (
+          <aside className="office-profile-floating-cta office-profile-floating-cta--desktop motion-surface" aria-label="Ação rápida de triagem">
             <button
               type="button"
               className="office-button office-button--primary"

@@ -2041,3 +2041,9 @@
   position: relative;
   overflow: hidden;
 }
+
+@media (max-width: 760px) {
+  .office-profile-floating-cta--desktop {
+    display: none !important;
+  }
+}
