@@ -5,6 +5,8 @@ void React
 
 import {
   assignCase,
+  listOfficeProfessionals,
+  type OfficeProfessional,
   closeCase,
   getOfficeBusinessConfig,
   getCase,
@@ -154,6 +156,8 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
   const [isReputationLoading, setIsReputationLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [actionFeedback, setActionFeedback] = useState<string | null>(null)
+  const [officeProfessionals, setOfficeProfessionals] = useState<OfficeProfessional[]>([])
+  const [selectedProfessionalIdByCaseId, setSelectedProfessionalIdByCaseId] = useState<Record<string, string>>({})
   const [reputation, setReputation] = useState<AdminLawyerReputation | null>(null)
   const [reputationError, setReputationError] = useState<string | null>(null)
   const [officeConfig, setOfficeConfig] = useState<Awaited<ReturnType<typeof getOfficeBusinessConfig>>['businessConfig'] | null>(null)
@@ -276,6 +280,11 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
     }),
     [cases, officeConfig],
   )
+  const activeOfficeProfessionals = useMemo(
+    () => officeProfessionals.filter((professional) => professional.status === 'active'),
+    [officeProfessionals],
+  )
+
   const responseRequiresAssignment = !selectedCase?.isAssigned
   const showTeamBindingCta = error === 'Antes de assumir casos, vincule um profissional ao seu acesso.'
 
@@ -301,6 +310,18 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
 
   useEffect(() => {
     void loadCases(null)
+
+    async function loadProfessionals() {
+      try {
+        const payload = await listOfficeProfessionals(String(officeId))
+        setOfficeProfessionals(payload.professionals)
+      } catch (nextError) {
+        setOfficeProfessionals([])
+        console.warn('Failed to load office professionals for case assignment', nextError)
+      }
+    }
+
+    void loadProfessionals()
   }, [officeId])
 
   useEffect(() => {
@@ -397,7 +418,7 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
     await loadCases(casePayload.case.id)
   }
 
-  async function handleAssignCase(caseId: string, requireConfirmation = true) {
+  async function handleAssignCase(caseId: string, requireConfirmation = true, professionalId?: string) {
     if (requireConfirmation) {
       const confirmed = window.confirm(`Assumir este caso registra uma cobrança simulada fixa de ${formatCaseMonetizationAmount()}. Deseja continuar?`)
       if (!confirmed) {
@@ -409,7 +430,8 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
       setIsAssigning(true)
       setActionFeedback(null)
       setError(null)
-      const payload = await assignCase(caseId)
+      const selectedProfessionalId = professionalId ?? selectedProfessionalIdByCaseId[caseId]
+      const payload = await assignCase(caseId, selectedProfessionalId || undefined)
       await refreshSelectedCase(
         payload.case.id,
         `Caso assumido com sucesso. Cobrança simulada registrada em ${formatCaseMonetizationAmount(payload.case.monetization?.amountCents, payload.case.monetization?.currency)}.`,
@@ -932,6 +954,39 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
                   </button>
                 </div>
               </form>
+
+              {!selectedCase.isAssigned ? (
+                <form
+                  className="admin-form"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    void handleAssignCase(selectedCase.id, true, selectedProfessionalIdByCaseId[selectedCase.id])
+                  }}
+                >
+                  <label className="admin-field">
+                    <span>Profissional responsável</span>
+                    <select
+                      value={selectedProfessionalIdByCaseId[selectedCase.id] ?? ''}
+                      onChange={(event) => setSelectedProfessionalIdByCaseId((current) => ({
+                        ...current,
+                        [selectedCase.id]: event.target.value,
+                      }))}
+                    >
+                      <option value="">Assumir com meu vínculo</option>
+                      {activeOfficeProfessionals.map((professional) => (
+                        <option key={professional.id} value={professional.id}>
+                          {professional.displayName}{professional.oabCredential ? ` · ${professional.oabCredential}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="admin-actions">
+                    <button type="submit" className="admin-button" disabled={isAssigning || selectedCase.status === 'closed'}>
+                      {isAssigning ? 'Atribuindo...' : 'Atribuir e assumir caso'}
+                    </button>
+                  </div>
+                </form>
+              ) : null}
 
               <ProfessionalReputationCard
                 lawyerId={selectedCase.assignedProfessionalId ?? selectedCase.assignedLawyerId}
