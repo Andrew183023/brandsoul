@@ -45,7 +45,7 @@
 }
 
 .admin-workbench-layout.admin-cases-cabin {
-  grid-template-columns: minmax(18rem, 0.95fr) minmax(42rem, 1.7fr) minmax(17rem, 0.78fr);
+  grid-template-columns: minmax(18rem, 0.92fr) minmax(42rem, 1.66fr) minmax(20rem, 0.9fr);
   gap: 1.5rem;
 }
 
@@ -53,6 +53,10 @@
 .admin-cases-cabin__detail,
 .admin-cases-cabin__actions {
   min-height: 100%;
+}
+
+.admin-cases-cabin__actions {
+  min-width: 20rem;
 }
 
 .admin-cases-cabin__queue {
@@ -347,6 +351,45 @@
   padding: 0 1rem 1rem;
 }
 
+.admin-cases-cabin__reputation-card {
+  width: 100%;
+  min-width: 0;
+}
+
+.admin-cases-cabin__actions .admin-cases-cabin__reputation-card,
+.admin-cases-cabin__actions .admin-cases-cabin__reputation-card .admin-domain-grid {
+  min-width: 0;
+  width: 100%;
+}
+
+.admin-cases-cabin__actions .admin-cases-cabin__reputation-card .admin-domain-grid {
+  grid-template-columns: repeat(2, minmax(9rem, 1fr));
+}
+
+.admin-cases-cabin__actions .admin-cases-cabin__reputation-card .admin-card-header,
+.admin-cases-cabin__actions .admin-cases-cabin__reputation-card .admin-domain-card,
+.admin-cases-cabin__actions .admin-cases-cabin__reputation-card .admin-domain-card strong,
+.admin-cases-cabin__actions .admin-cases-cabin__reputation-card .admin-domain-card span,
+.admin-cases-cabin__actions .admin-cases-cabin__reputation-card .admin-feedback {
+  min-width: 0;
+  word-break: normal;
+  overflow-wrap: normal;
+  white-space: normal;
+}
+
+.admin-cases-cabin__actions .admin-cases-cabin__reputation-card .admin-card-header {
+  align-items: start;
+}
+
+.admin-cases-cabin__actions .admin-cases-cabin__reputation-card .admin-card-header span {
+  text-align: right;
+}
+
+.admin-cases-cabin__actions .admin-cases-cabin__reputation-card .admin-domain-card strong,
+.admin-cases-cabin__actions .admin-cases-cabin__reputation-card .admin-domain-card span {
+  hyphens: none;
+}
+
 .admin-cases-cabin__action-row {
   justify-content: flex-start;
 }
@@ -363,6 +406,11 @@
 
   .admin-cases-cabin__actions {
     grid-column: 1 / -1;
+    min-width: 0;
+  }
+
+  .admin-cases-cabin__actions .admin-cases-cabin__reputation-card .admin-domain-grid {
+    grid-template-columns: repeat(2, minmax(10rem, 1fr));
   }
 }
 
@@ -376,6 +424,10 @@
   }
 
   .admin-cases-cabin__history-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-cases-cabin__actions .admin-cases-cabin__reputation-card .admin-domain-grid {
     grid-template-columns: 1fr;
   }
 }

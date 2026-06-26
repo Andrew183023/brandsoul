@@ -1139,6 +1139,7 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
                       isLoading={isReputationLoading}
                       error={reputationError}
                       emptyMessage="A reputação aparece após a atribuição do advogado."
+                      className="admin-cases-cabin__reputation-card"
                     />
                   </div>
                 ) : null}
