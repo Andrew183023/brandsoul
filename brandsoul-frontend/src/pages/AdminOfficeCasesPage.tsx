@@ -3,6 +3,8 @@ import React, { type FormEvent } from 'react'
 
 void React
 
+import '../styles/adminOfficeCasesPage.css'
+
 import {
   assignCase,
   listOfficeProfessionals,
@@ -31,7 +33,6 @@ import { useAuthSession } from '../lib/session'
 import {
   evaluatePriorityQueue,
   formatDurationMinutes,
-  formatPriorityLevel,
   type PriorityLevel,
 } from '../lib/priorityQueueEngine'
 import { evaluateOfficeCapacityRuntime } from '../lib/officeCapacityRuntime'
@@ -51,6 +52,7 @@ type AdminOfficeCasesPageProps = {
 }
 
 type StatusAction = 'em-atendimento' | 'pendente-cliente' | 'finalizado'
+type WorkbenchPanel = 'attendance' | 'response' | 'status' | 'forward' | 'escalation'
 
 export function resolveStatusActionTransitionPayload(statusAction: StatusAction) {
   if (statusAction === 'em-atendimento') {
@@ -167,6 +169,8 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
   const [forwardNote, setForwardNote] = useState('')
   const [escalationSeverity, setEscalationSeverity] = useState<'alta' | 'moderada' | 'baixa'>('alta')
   const [escalationReason, setEscalationReason] = useState('')
+  const [showIndicators, setShowIndicators] = useState(false)
+  const [activeWorkbenchPanel, setActiveWorkbenchPanel] = useState<WorkbenchPanel>('attendance')
 
   function resolvePriorityTone(level: PriorityLevel) {
     if (level === 'critical') {
@@ -184,6 +188,22 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
     return 'success' as const
   }
 
+  function formatPriorityBadgeLabel(level: PriorityLevel) {
+    if (level === 'critical') {
+      return 'Crítico'
+    }
+
+    if (level === 'high') {
+      return 'Alto'
+    }
+
+    if (level === 'medium') {
+      return 'Médio'
+    }
+
+    return 'Baixo'
+  }
+
   function formatSlaRemainingLabel(value: number | null) {
     if (value == null) {
       return 'SLA não configurado'
@@ -194,6 +214,22 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
     }
 
     return `SLA restante ${formatDurationMinutes(value)}`
+  }
+
+  function formatResponseStateLabel(value: AdminLegalCase['responseState']) {
+    if (value === 'waiting_client') {
+      return 'Aguardando cliente'
+    }
+
+    if (value === 'waiting_office') {
+      return 'Aguardando escritório'
+    }
+
+    if (value === 'closed') {
+      return 'Encerrado'
+    }
+
+    return 'Ativo'
   }
 
   async function loadCases(preferredCaseId?: string | null) {
@@ -284,13 +320,13 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
     () => officeProfessionals.filter((professional) => professional.status === 'active'),
     [officeProfessionals],
   )
+  const professionalById = useMemo(
+    () => new Map(officeProfessionals.map((professional) => [professional.id, professional])),
+    [officeProfessionals],
+  )
 
   const responseRequiresAssignment = !selectedCase?.isAssigned
   const showTeamBindingCta = error === 'Antes de assumir casos, vincule um profissional ao seu acesso.'
-
-  function canAssumeCase(caseItem: AdminLegalCase) {
-    return !caseItem.isAssigned && caseItem.status === 'open'
-  }
 
   function resolveCapacityTone() {
     if (capacityRuntime.state === 'OVERLOAD') {
@@ -306,6 +342,75 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
     }
 
     return 'success' as const
+  }
+
+  function resolveProfessionalLabelById(professionalId?: string) {
+    if (!professionalId) {
+      return 'Sem responsável'
+    }
+
+    const professional = professionalById.get(professionalId)
+    if (!professional) {
+      return 'Responsável não identificado'
+    }
+
+    return professional.oabCredential
+      ? `${professional.displayName} · ${professional.oabCredential}`
+      : professional.displayName
+  }
+
+  function resolveQueueClientLabel(caseItem: AdminLegalCase) {
+    const normalizedContact = caseItem.contact?.trim()
+    if (normalizedContact) {
+      return normalizedContact
+    }
+
+    const firstClientMessage = caseItem.messages.find((message) => message.role === 'user')?.text?.trim()
+    if (firstClientMessage) {
+      return firstClientMessage.length > 56 ? `${firstClientMessage.slice(0, 56)}...` : firstClientMessage
+    }
+
+    return 'Cliente sem identificação'
+  }
+
+  function resolveSelectedCaseSummary(caseItem: AdminLegalCase) {
+    const normalizedDescription = caseItem.description?.trim()
+    if (normalizedDescription) {
+      return normalizedDescription
+    }
+
+    return 'Sem resumo operacional disponível para este caso.'
+  }
+
+  function resolveInitialClientMessage(caseItem: AdminLegalCase | null, caseMessages: AdminLegalCaseMessage[]) {
+    if (!caseItem) {
+      return 'Selecione um caso para visualizar a primeira mensagem.'
+    }
+
+    const firstClientMessage = caseMessages.find((message) => message.role === 'user')
+      ?? caseItem.messages.find((message) => message.role === 'user')
+
+    return firstClientMessage?.text?.trim() || caseItem.description || 'Nenhuma mensagem inicial registrada.'
+  }
+
+  function resolveSlaProgress(priorityEntry: typeof selectedPriority) {
+    const target = priorityEntry?.metrics.slaTargetMinutes
+    const remaining = priorityEntry?.metrics.slaRemainingMinutes
+
+    if (target == null || remaining == null || target <= 0) {
+      return null
+    }
+
+    const consumed = target - remaining
+    return Math.max(0, Math.min(1, consumed / target))
+  }
+
+  function resolveQueueAgeLabel(priorityEntry: NonNullable<(typeof priorityQueue.entries)[number]>) {
+    return `Aberto há ${formatDurationMinutes(priorityEntry.metrics.caseAgeMinutes)}`
+  }
+
+  function resolveQuickStatValue(matcher: (entry: (typeof priorityQueue.entries)[number]) => boolean) {
+    return priorityQueue.entries.filter(matcher).length
   }
 
   useEffect(() => {
@@ -333,6 +438,14 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
       window.clearInterval(intervalId)
     }
   }, [officeId, selectedCaseId])
+
+  useEffect(() => {
+    if (!selectedCaseId) {
+      return
+    }
+
+    setActiveWorkbenchPanel('attendance')
+  }, [selectedCaseId])
 
   useEffect(() => {
     async function loadSelectedCase() {
@@ -566,6 +679,22 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
     }
   }
 
+  const selectedCaseSummary = selectedCase ? resolveSelectedCaseSummary(selectedCase) : null
+  const selectedCaseInitialMessage = resolveInitialClientMessage(selectedCase, messages)
+  const selectedSlaProgress = resolveSlaProgress(selectedPriority)
+  const unassignedCaseCount = useMemo(
+    () => priorityQueue.entries.filter((entry) => !entry.caseItem.isAssigned).length,
+    [priorityQueue.entries],
+  )
+  const waitingClientCount = useMemo(
+    () => resolveQuickStatValue((entry) => entry.caseItem.responseState === 'waiting_client'),
+    [priorityQueue.entries],
+  )
+  const criticalCaseCount = useMemo(
+    () => resolveQuickStatValue((entry) => entry.level === 'critical'),
+    [priorityQueue.entries],
+  )
+
   return (
     <AdminOfficeLayout
       officeId={officeId}
@@ -586,139 +715,167 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
       ) : null}
       {actionFeedback ? <FeedbackBanner tone="success">{actionFeedback}</FeedbackBanner> : null}
 
-      <SurfaceCard tone="admin" className="admin-card admin-backlog-dashboard">
-        <div className="admin-card-header">
-          <h2>Painel do backlog de casos</h2>
-          <span>Atualizado em {formatDateTime(backlogReport.generatedAt)}</span>
+      <SurfaceCard tone="admin" className="admin-card admin-cases-cabin__toolbar">
+        <div className="admin-cases-cabin__toolbar-main">
+          <div>
+            <p className="admin-cases-cabin__eyebrow">Cabine operacional</p>
+            <h2>Casos</h2>
+          </div>
+          <button
+            type="button"
+            className="admin-button admin-button--ghost"
+            onClick={() => setShowIndicators((current) => !current)}
+          >
+            {showIndicators ? 'Ocultar indicadores' : 'Mostrar indicadores'}
+          </button>
         </div>
-
-        <p className="admin-diagnosis-copy">{operationalReport}</p>
-
-        <div className="admin-domain-grid admin-backlog-dashboard__buckets">
-          <article className="admin-domain-card">
-            <strong>Casos críticos</strong>
-            <span>{backlogReport.buckets.criticalCases}</span>
-          </article>
-          <article className="admin-domain-card">
-            <strong>Casos atrasados</strong>
-            <span>{backlogReport.buckets.delayedCases}</span>
-          </article>
-          <article className="admin-domain-card">
-            <strong>Sem resposta</strong>
-            <span>{backlogReport.buckets.noResponseCases}</span>
-          </article>
-          <article className="admin-domain-card">
-            <strong>Vencendo SLA</strong>
-            <span>{backlogReport.buckets.expiringSlaCases}</span>
-          </article>
-          <article className="admin-domain-card">
-            <strong>Aguardando operador</strong>
-            <span>{backlogReport.buckets.waitingOperatorCases}</span>
-          </article>
-          <article className="admin-domain-card">
-            <strong>Aguardando cliente</strong>
-            <span>{backlogReport.buckets.waitingClientCases}</span>
-          </article>
+        <div className="admin-cases-cabin__quick-stats" aria-label="Leitura rápida da operação">
+          <span>{isLoading ? 'Atualizando fila...' : `${prioritizedCases.length} caso${prioritizedCases.length === 1 ? '' : 's'} na cabine`}</span>
+          <span>{criticalCaseCount} crítico(s)</span>
+          <span>{unassignedCaseCount} sem responsável</span>
+          <span>{waitingClientCount} aguardando cliente</span>
         </div>
-
-        <div className="admin-domain-grid admin-backlog-dashboard__kpis">
-          <article className="admin-domain-card">
-            <strong>Backlog total</strong>
-            <span>{backlogReport.kpis.backlogTotal}</span>
-          </article>
-          <article className="admin-domain-card">
-            <strong>Backlog crítico</strong>
-            <span>{backlogReport.kpis.backlogCritical}</span>
-          </article>
-          <article className="admin-domain-card">
-            <strong>Primeira resposta média</strong>
-            <span>
-              {backlogReport.kpis.averageFirstResponseMinutes == null
-                ? 'Sem dados'
-                : formatDurationMinutes(backlogReport.kpis.averageFirstResponseMinutes)}
-            </span>
-          </article>
-          <article className="admin-domain-card">
-            <strong>SLA médio (restante)</strong>
-            <span>
-              {backlogReport.kpis.averageSlaRemainingMinutes == null
-                ? 'Sem SLA configurado'
-                : formatDurationMinutes(Math.abs(backlogReport.kpis.averageSlaRemainingMinutes))
-                  + (backlogReport.kpis.averageSlaRemainingMinutes < 0 ? ' em atraso' : ' restante')}
-            </span>
-          </article>
-        </div>
-
-        <section className="admin-diagnosis-section">
-          <h3>Casos por responsável</h3>
-          {backlogReport.kpis.casesByOperator.length === 0 ? (
-            <p className="admin-diagnosis-copy">Nenhum caso atribuído no momento.</p>
-          ) : (
-            <ul className="admin-diagnosis-list">
-              {backlogReport.kpis.casesByOperator.map((item) => (
-                <li key={item.operatorId}>{item.operatorId}: {item.cases} caso(s)</li>
-              ))}
-            </ul>
-          )}
-        </section>
       </SurfaceCard>
 
-      <SurfaceCard tone="admin" className="admin-card admin-capacity-runtime-card">
-        <div className="admin-card-header">
-          <h2>Capacidade operacional</h2>
-          <StatusChip tone={resolveCapacityTone()}>{capacityRuntime.state}</StatusChip>
-        </div>
+      {showIndicators ? (
+        <>
+          <SurfaceCard tone="admin" className="admin-card admin-backlog-dashboard">
+            <div className="admin-card-header">
+              <h2>Painel do backlog de casos</h2>
+              <span>Atualizado em {formatDateTime(backlogReport.generatedAt)}</span>
+            </div>
 
-        <div className="admin-domain-grid admin-capacity-runtime-grid">
-          <article className="admin-domain-card">
-            <strong>Capacidade atual</strong>
-            <span>{capacityRuntime.declaredCapacity}</span>
-          </article>
-          <article className="admin-domain-card">
-            <strong>Carga atual</strong>
-            <span>{capacityRuntime.activeCases}</span>
-          </article>
-          <article className="admin-domain-card">
-            <strong>Pressão operacional</strong>
-            <span>{capacityRuntime.operationalPressurePercent}%</span>
-          </article>
-          <article className="admin-domain-card">
-            <strong>Risco de overload</strong>
-            <span>{capacityRuntime.overloadRisk}</span>
-          </article>
-          <article className="admin-domain-card">
-            <strong>Capacidade livre</strong>
-            <span>{capacityRuntime.freeCapacity}</span>
-          </article>
-          <article className="admin-domain-card">
-            <strong>Operadores ativos</strong>
-            <span>{capacityRuntime.activeOperators}</span>
-          </article>
-          <article className="admin-domain-card">
-            <strong>SLA configurado</strong>
-            <span>
-              {capacityRuntime.configuredSlaMinutes == null
-                ? 'Não configurado'
-                : formatDurationMinutes(capacityRuntime.configuredSlaMinutes)}
-            </span>
-          </article>
-          <article className="admin-domain-card">
-            <strong>Utilizacao</strong>
-            <span>{capacityRuntime.utilizationPercent}%</span>
-          </article>
-        </div>
+            <p className="admin-diagnosis-copy">{operationalReport}</p>
 
-        <p className="admin-diagnosis-copy">{capacityRuntime.reason}</p>
-      </SurfaceCard>
+            <div className="admin-domain-grid admin-backlog-dashboard__buckets">
+              <article className="admin-domain-card">
+                <strong>Casos críticos</strong>
+                <span>{backlogReport.buckets.criticalCases}</span>
+              </article>
+              <article className="admin-domain-card">
+                <strong>Casos atrasados</strong>
+                <span>{backlogReport.buckets.delayedCases}</span>
+              </article>
+              <article className="admin-domain-card">
+                <strong>Sem resposta</strong>
+                <span>{backlogReport.buckets.noResponseCases}</span>
+              </article>
+              <article className="admin-domain-card">
+                <strong>Vencendo SLA</strong>
+                <span>{backlogReport.buckets.expiringSlaCases}</span>
+              </article>
+              <article className="admin-domain-card">
+                <strong>Aguardando operador</strong>
+                <span>{backlogReport.buckets.waitingOperatorCases}</span>
+              </article>
+              <article className="admin-domain-card">
+                <strong>Aguardando cliente</strong>
+                <span>{backlogReport.buckets.waitingClientCases}</span>
+              </article>
+            </div>
 
-        <section className="admin-workbench-layout" aria-label="Cabine operacional de casos">
-        <SurfaceCard tone="admin" className="admin-card admin-workbench-column">
+            <div className="admin-domain-grid admin-backlog-dashboard__kpis">
+              <article className="admin-domain-card">
+                <strong>Backlog total</strong>
+                <span>{backlogReport.kpis.backlogTotal}</span>
+              </article>
+              <article className="admin-domain-card">
+                <strong>Backlog crítico</strong>
+                <span>{backlogReport.kpis.backlogCritical}</span>
+              </article>
+              <article className="admin-domain-card">
+                <strong>Primeira resposta média</strong>
+                <span>
+                  {backlogReport.kpis.averageFirstResponseMinutes == null
+                    ? 'Sem dados'
+                    : formatDurationMinutes(backlogReport.kpis.averageFirstResponseMinutes)}
+                </span>
+              </article>
+              <article className="admin-domain-card">
+                <strong>SLA médio (restante)</strong>
+                <span>
+                  {backlogReport.kpis.averageSlaRemainingMinutes == null
+                    ? 'Sem SLA configurado'
+                    : formatDurationMinutes(Math.abs(backlogReport.kpis.averageSlaRemainingMinutes))
+                      + (backlogReport.kpis.averageSlaRemainingMinutes < 0 ? ' em atraso' : ' restante')}
+                </span>
+              </article>
+            </div>
+
+            <section className="admin-diagnosis-section">
+              <h3>Casos por responsável</h3>
+              {backlogReport.kpis.casesByOperator.length === 0 ? (
+                <p className="admin-diagnosis-copy">Nenhum caso atribuído no momento.</p>
+              ) : (
+                <ul className="admin-diagnosis-list">
+                  {backlogReport.kpis.casesByOperator.map((item) => (
+                    <li key={item.operatorId}>
+                      {resolveProfessionalLabelById(item.operatorId)}: {item.cases} caso(s)
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          </SurfaceCard>
+
+          <SurfaceCard tone="admin" className="admin-card admin-capacity-runtime-card">
+            <div className="admin-card-header">
+              <h2>Capacidade operacional</h2>
+              <StatusChip tone={resolveCapacityTone()}>{capacityRuntime.state}</StatusChip>
+            </div>
+
+            <div className="admin-domain-grid admin-capacity-runtime-grid">
+              <article className="admin-domain-card">
+                <strong>Capacidade atual</strong>
+                <span>{capacityRuntime.declaredCapacity}</span>
+              </article>
+              <article className="admin-domain-card">
+                <strong>Carga atual</strong>
+                <span>{capacityRuntime.activeCases}</span>
+              </article>
+              <article className="admin-domain-card">
+                <strong>Pressão operacional</strong>
+                <span>{capacityRuntime.operationalPressurePercent}%</span>
+              </article>
+              <article className="admin-domain-card">
+                <strong>Risco de overload</strong>
+                <span>{capacityRuntime.overloadRisk}</span>
+              </article>
+              <article className="admin-domain-card">
+                <strong>Capacidade livre</strong>
+                <span>{capacityRuntime.freeCapacity}</span>
+              </article>
+              <article className="admin-domain-card">
+                <strong>Operadores ativos</strong>
+                <span>{capacityRuntime.activeOperators}</span>
+              </article>
+              <article className="admin-domain-card">
+                <strong>SLA configurado</strong>
+                <span>
+                  {capacityRuntime.configuredSlaMinutes == null
+                    ? 'Não configurado'
+                    : formatDurationMinutes(capacityRuntime.configuredSlaMinutes)}
+                </span>
+              </article>
+              <article className="admin-domain-card">
+                <strong>Utilização</strong>
+                <span>{capacityRuntime.utilizationPercent}%</span>
+              </article>
+            </div>
+
+            <p className="admin-diagnosis-copy">{capacityRuntime.reason}</p>
+          </SurfaceCard>
+        </>
+      ) : null}
+
+      <section className="admin-workbench-layout admin-cases-cabin" aria-label="Cabine operacional de casos">
+        <SurfaceCard tone="admin" className="admin-card admin-workbench-column admin-cases-cabin__queue">
           <div className="admin-card-header">
-            <h2>Fila priorizada</h2>
-            <span>{isLoading ? 'Carregando...' : `${prioritizedCases.length} caso${prioritizedCases.length === 1 ? '' : 's'}`}</span>
+            <h2>Fila</h2>
+            <span>{isLoading ? 'Carregando...' : `${prioritizedCases.length} ticket(s)`}</span>
           </div>
           <p className="admin-diagnosis-meta">
-            Sequenciamento automático por prioridade operacional. Selecione um caso para atuar sem trocar de tela.
+            Clique em um ticket para abrir o caso e operar sem trocar de tela.
           </p>
 
           {isLoading ? (
@@ -726,48 +883,33 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
           ) : prioritizedCases.length === 0 ? (
             <FeedbackBanner>Nenhum caso encontrado para este escritório.</FeedbackBanner>
           ) : (
-            <ul className="admin-office-list">
-              {prioritizedCases.map((item) => {
-                const priority = priorityByCaseId.get(item.id)
+            <ul className="admin-office-list admin-cases-cabin__queue-list">
+              {priorityQueue.entries.map((entry) => {
+                const item = entry.caseItem
                 const isSelected = selectedCaseId === item.id
+                const queueSlaProgress = resolveSlaProgress(entry)
 
                 return (
-                  <li key={item.id} className={`admin-office-item ${isSelected ? 'admin-workbench-queue-item--selected' : ''}`}>
-                    <div className="admin-office-main">
-                      <strong>{item.description}</strong>
-                      <span>{item.id}</span>
-                      <span>{item.assignedProfessionalId ? `Responsável: ${item.assignedProfessionalId}` : 'Sem responsável atribuído'}</span>
-                      {priority ? (
-                        <>
-                          <span>Prioridade: {formatPriorityLevel(priority.level)} ({priority.score})</span>
-                          <span>Sem resposta: {formatDurationMinutes(priority.metrics.timeWithoutResponseMinutes)}</span>
-                          <span>{formatSlaRemainingLabel(priority.metrics.slaRemainingMinutes)}</span>
-                        </>
-                      ) : null}
-                      <div className="admin-actions">
-                        <button
-                          type="button"
-                          className="admin-button admin-button--ghost"
-                          onClick={() => setSelectedCaseId(item.id)}
-                        >
-                          Selecionar
-                        </button>
-                        {canAssumeCase(item) ? (
-                          <button
-                            type="button"
-                            className="admin-button"
-                            onClick={() => void handleAssignCase(item.id)}
-                            disabled={isAssigning}
-                          >
-                            {isAssigning && selectedCaseId === item.id ? 'Assumindo...' : 'Assumir'}
-                          </button>
-                        ) : null}
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      className={`admin-cases-cabin__queue-ticket ${isSelected ? 'is-selected' : ''}`}
+                      onClick={() => setSelectedCaseId(item.id)}
+                    >
+                      <div className="admin-cases-cabin__queue-ticket-header">
+                        <strong>{item.practiceArea?.trim() || 'Caso jurídico geral'}</strong>
+                        <StatusChip tone={resolvePriorityTone(entry.level)}>{formatPriorityBadgeLabel(entry.level)}</StatusChip>
                       </div>
-                    </div>
-                    <div className="admin-office-meta">
-                      <StatusChip tone={resolveCaseStatusTone(item.status)}>{formatCaseStatus(item.status)}</StatusChip>
-                      {priority ? <StatusChip tone={resolvePriorityTone(priority.level)}>{formatPriorityLevel(priority.level)}</StatusChip> : null}
-                    </div>
+                      <span>{resolveQueueClientLabel(item)}</span>
+                      <span>{resolveQueueAgeLabel(entry)}</span>
+                      <span>{resolveProfessionalLabelById(item.assignedProfessionalId ?? item.assignedLawyerId)}</span>
+                      <div className="admin-cases-cabin__queue-ticket-sla">
+                        <div className="admin-cases-cabin__sla-bar" aria-hidden="true">
+                          <span style={{ width: `${Math.round((queueSlaProgress ?? 0) * 100)}%` }} />
+                        </div>
+                        <span>{formatSlaRemainingLabel(entry.metrics.slaRemainingMinutes)}</span>
+                      </div>
+                    </button>
                   </li>
                 )
               })}
@@ -775,59 +917,56 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
           )}
         </SurfaceCard>
 
-        <SurfaceCard tone="admin" className="admin-card admin-workbench-column">
+        <SurfaceCard tone="admin" className="admin-card admin-workbench-column admin-cases-cabin__detail">
           <div className="admin-card-header">
-            <h2>Resumo do caso</h2>
-            <span>{selectedCase ? selectedCase.id : 'nenhum caso selecionado'}</span>
+            <h2>Caso</h2>
+            <span>{selectedCase ? formatDateTime(selectedCase.updatedAt) : 'nenhum caso selecionado'}</span>
           </div>
 
           {isCaseLoading ? (
             <FeedbackBanner>Carregando resumo do caso...</FeedbackBanner>
           ) : !selectedCase ? (
-                    <FeedbackBanner>Selecione um caso na fila para abrir o resumo.</FeedbackBanner>
+            <FeedbackBanner>Selecione um caso na fila para abrir a ficha operacional.</FeedbackBanner>
           ) : (
-            <>
-              {selectedPriority ? (
-                <section className="admin-diagnosis-section">
-                  <h3>Prioridade operacional</h3>
-                  <ul className="admin-diagnosis-list">
-                    <li>Nível: {formatPriorityLevel(selectedPriority.level)} ({selectedPriority.score})</li>
-                    <li>Tempo sem resposta: {formatDurationMinutes(selectedPriority.metrics.timeWithoutResponseMinutes)}</li>
-                    <li>{formatSlaRemainingLabel(selectedPriority.metrics.slaRemainingMinutes)}</li>
-                    {(selectedPriority.reasons ?? []).slice(0, 3).map((reason) => (
-                      <li key={reason}>{reason}</li>
-                    ))}
-                  </ul>
-                </section>
-              ) : null}
-
-              <div className="admin-domain-grid">
-                <article className="admin-domain-card">
-                  <strong>Status</strong>
+            <div className="admin-cases-cabin__detail-stack">
+              <header className="admin-cases-cabin__case-header">
+                <div>
+                  <p className="admin-cases-cabin__eyebrow">Ficha operacional</p>
+                  <h3>{selectedCase.practiceArea?.trim() || 'Caso jurídico geral'}</h3>
+                </div>
+                <div className="admin-cases-cabin__case-header-chips">
                   <StatusChip tone={resolveCaseStatusTone(selectedCase.status)}>{formatCaseStatus(selectedCase.status)}</StatusChip>
+                  {selectedPriority ? (
+                    <StatusChip tone={resolvePriorityTone(selectedPriority.level)}>
+                      {formatPriorityBadgeLabel(selectedPriority.level)}
+                    </StatusChip>
+                  ) : null}
+                </div>
+              </header>
+
+              <div className="admin-cases-cabin__summary-strip">
+                <article className="admin-domain-card admin-cases-cabin__summary-item">
+                  <strong>Status</strong>
+                  <span>{formatCaseStatus(selectedCase.status)}</span>
                 </article>
-                <article className="admin-domain-card">
+                <article className="admin-domain-card admin-cases-cabin__summary-item">
+                  <strong>Prioridade</strong>
+                  <span>{selectedPriority ? formatPriorityBadgeLabel(selectedPriority.level) : 'Não calculada'}</span>
+                </article>
+                <article className="admin-domain-card admin-cases-cabin__summary-item">
                   <strong>Responsável</strong>
-                  <span>{selectedCase.assignedProfessionalId ?? selectedCase.assignedLawyerId ?? 'Não atribuído'}</span>
+                  <span>{resolveProfessionalLabelById(selectedCase.assignedProfessionalId ?? selectedCase.assignedLawyerId)}</span>
                 </article>
-                <article className="admin-domain-card">
-                  <strong>Resposta</strong>
-                  <span>{selectedCase.responseState === 'waiting_client' ? 'Aguardando cliente' : selectedCase.responseState === 'waiting_office' ? 'Aguardando escritório' : selectedCase.responseState === 'closed' ? 'Encerrado' : 'Ativo'}</span>
-                </article>
-                <article className="admin-domain-card">
-                  <strong>Criado em</strong>
+                <article className="admin-domain-card admin-cases-cabin__summary-item">
+                  <strong>Criado</strong>
                   <span>{formatDateTime(selectedCase.createdAt)}</span>
                 </article>
-                <article className="admin-domain-card">
-                  <strong>Atualizado em</strong>
+                <article className="admin-domain-card admin-cases-cabin__summary-item">
+                  <strong>Atualizado</strong>
                   <span>{formatDateTime(selectedCase.updatedAt)}</span>
                 </article>
-                <article className="admin-domain-card">
-                  <strong>Resumo</strong>
-                  <span>{selectedCase.description}</span>
-                </article>
-                <article className="admin-domain-card">
-                  <strong>Cobrança simulada</strong>
+                <article className="admin-domain-card admin-cases-cabin__summary-item">
+                  <strong>Cobrança</strong>
                   <span>
                     {selectedCase.monetization
                       ? `${formatCaseMonetizationAmount(selectedCase.monetization.amountCents, selectedCase.monetization.currency)} (${selectedCase.monetization.status})`
@@ -836,166 +975,281 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
                 </article>
               </div>
 
-              <section className="admin-diagnosis-section">
-                <h3>Histórico de mensagens</h3>
+              <section className="admin-diagnosis-section admin-cases-cabin__detail-card">
+                <div className="admin-cases-cabin__detail-card-header">
+                  <h3>Resumo</h3>
+                  <span>{formatResponseStateLabel(selectedCase.responseState)}</span>
+                </div>
+                <p className="admin-diagnosis-copy">{selectedCaseSummary}</p>
+                {selectedPriority ? (
+                  <div className="admin-cases-cabin__priority-panel">
+                    <div className="admin-cases-cabin__priority-metrics">
+                      <span>Tempo sem resposta: {formatDurationMinutes(selectedPriority.metrics.timeWithoutResponseMinutes)}</span>
+                      <span>{formatSlaRemainingLabel(selectedPriority.metrics.slaRemainingMinutes)}</span>
+                    </div>
+                    <div className="admin-cases-cabin__sla-bar" aria-hidden="true">
+                      <span style={{ width: `${Math.round((selectedSlaProgress ?? 0) * 100)}%` }} />
+                    </div>
+                    {(selectedPriority.reasons ?? []).length > 0 ? (
+                      <ul className="admin-diagnosis-list admin-cases-cabin__priority-reasons">
+                        {selectedPriority.reasons.slice(0, 3).map((reason) => (
+                          <li key={reason}>{reason}</li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                ) : null}
+              </section>
+
+              <section className="admin-diagnosis-section admin-cases-cabin__detail-card">
+                <div className="admin-cases-cabin__detail-card-header">
+                  <h3>Mensagem inicial</h3>
+                  <span>{selectedCase.contact?.trim() || selectedCase.city?.trim() || 'Sem contato visível'}</span>
+                </div>
+                <p className="admin-diagnosis-copy">{selectedCaseInitialMessage}</p>
+              </section>
+
+              <section className="admin-diagnosis-section admin-cases-cabin__detail-card">
+                <div className="admin-cases-cabin__detail-card-header">
+                  <h3>Histórico da conversa</h3>
+                  <span>{messages.length} interação(ões)</span>
+                </div>
                 <ConversationThread messages={messages} />
               </section>
-            </>
+            </div>
           )}
         </SurfaceCard>
 
-        <SurfaceCard tone="admin" className="admin-card admin-workbench-column">
+        <SurfaceCard tone="admin" className="admin-card admin-workbench-column admin-cases-cabin__actions">
           <div className="admin-card-header">
-            <h2>Ações operacionais</h2>
-            <span>Sem sair da tela</span>
+            <h2>Ações</h2>
+            <span>Uma operação por vez</span>
           </div>
 
           {!selectedCase ? (
-            <FeedbackBanner>Selecione um caso na fila para habilitar as ações.</FeedbackBanner>
+            <FeedbackBanner>Selecione um caso na fila para habilitar a cabine operacional.</FeedbackBanner>
           ) : (
-            <>
-              <form className="admin-form" onSubmit={(event) => void handleStatusUpdate(event)}>
-                <label className="admin-field">
-                  <span>Atualizar status</span>
-                  <select value={statusAction} onChange={(event) => setStatusAction(event.target.value as StatusAction)}>
-                    <option value="em-atendimento">Em atendimento</option>
-                    <option value="pendente-cliente">Aguardando cliente</option>
-                    <option value="finalizado">Finalizado</option>
-                  </select>
-                </label>
-                <div className="admin-actions">
-                  <button
-                    type="submit"
-                    className="admin-button"
-                    disabled={shouldDisableStatusUpdateAction(selectedCase, isStatusUpdating, isAssigning)}
-                  >
-                    {isStatusUpdating ? 'Atualizando...' : 'Atualizar status'}
-                  </button>
-                </div>
-              </form>
-
-              <form className="admin-form" onSubmit={(event) => void handleRespond(event)}>
-                <label className="admin-field">
-                  <span>Responder caso</span>
-                  <textarea
-                    value={responseText}
-                    onChange={(event) => setResponseText(event.target.value)}
-                    rows={4}
-                    placeholder="Escreva a resposta do advogado..."
-                    disabled={responseRequiresAssignment || isResponding || selectedCase.status === 'closed'}
-                  />
-                </label>
-                {responseRequiresAssignment ? (
-                  <p className="admin-diagnosis-copy">Assuma ou atribua este caso para liberar resposta.</p>
-                ) : null}
-                <div className="admin-actions">
-                  <button type="submit" className="admin-button" disabled={responseRequiresAssignment || isResponding || selectedCase.status === 'closed'}>
-                    {isResponding ? 'Enviando...' : 'Responder'}
-                  </button>
-                  {canAssumeCase(selectedCase) ? (
-                    <button
-                      type="button"
-                      className="admin-button admin-button--ghost"
-                      onClick={() => void handleAssignCase(selectedCase.id)}
-                      disabled={isAssigning}
-                    >
-                      {isAssigning ? 'Assumindo...' : 'Assumir caso'}
-                    </button>
-                  ) : null}
-                </div>
-              </form>
-
-              <form className="admin-form" onSubmit={(event) => void handleForwardCase(event)}>
-                <label className="admin-field">
-                  <span>Encaminhar</span>
-                  <input
-                    value={forwardDestination}
-                    onChange={(event) => setForwardDestination(event.target.value)}
-                    placeholder="Destino (ex: Núcleo Trabalhista)"
-                  />
-                </label>
-                <label className="admin-field">
-                  <span>Nota de encaminhamento (opcional)</span>
-                  <textarea
-                    rows={3}
-                    value={forwardNote}
-                    onChange={(event) => setForwardNote(event.target.value)}
-                    placeholder="Contexto para quem vai receber o caso"
-                  />
-                </label>
-                <div className="admin-actions">
-                  <button type="submit" className="admin-button" disabled={isForwarding || selectedCase.status === 'closed' || !forwardDestination.trim()}>
-                    {isForwarding ? 'Encaminhando...' : 'Encaminhar caso'}
-                  </button>
-                </div>
-              </form>
-
-              <form className="admin-form" onSubmit={(event) => void handleEscalateCase(event)}>
-                <label className="admin-field">
-                  <span>Escalonar</span>
-                  <select value={escalationSeverity} onChange={(event) => setEscalationSeverity(event.target.value as 'alta' | 'moderada' | 'baixa')}>
-                    <option value="alta">Severidade alta</option>
-                    <option value="moderada">Severidade moderada</option>
-                    <option value="baixa">Severidade baixa</option>
-                  </select>
-                </label>
-                <label className="admin-field">
-                  <span>Motivo do escalonamento</span>
-                  <textarea
-                    rows={3}
-                    value={escalationReason}
-                    onChange={(event) => setEscalationReason(event.target.value)}
-                    placeholder="Descreva o motivo para a rotina operacional"
-                  />
-                </label>
-                <div className="admin-actions">
-                  <button type="submit" className="admin-button" disabled={isEscalating || selectedCase.status === 'closed' || !escalationReason.trim()}>
-                    {isEscalating ? 'Escalonando...' : 'Escalonar caso'}
-                  </button>
-                </div>
-              </form>
-
-              {!selectedCase.isAssigned ? (
-                <form
-                  className="admin-form"
-                  onSubmit={(event) => {
-                    event.preventDefault()
-                    void handleAssignCase(selectedCase.id, true, selectedProfessionalIdByCaseId[selectedCase.id])
-                  }}
+            <div className="admin-cases-cabin__accordion">
+              <section className="admin-cases-cabin__accordion-item">
+                <button
+                  type="button"
+                  className={`admin-cases-cabin__accordion-trigger ${activeWorkbenchPanel === 'attendance' ? 'is-open' : ''}`}
+                  onClick={() => setActiveWorkbenchPanel('attendance')}
+                  aria-expanded={activeWorkbenchPanel === 'attendance'}
                 >
-                  <label className="admin-field">
-                    <span>Profissional responsável</span>
-                    <select
-                      value={selectedProfessionalIdByCaseId[selectedCase.id] ?? ''}
-                      onChange={(event) => setSelectedProfessionalIdByCaseId((current) => ({
-                        ...current,
-                        [selectedCase.id]: event.target.value,
-                      }))}
+                  <span>{activeWorkbenchPanel === 'attendance' ? '▼' : '▶'} Atendimento</span>
+                  <small>{resolveProfessionalLabelById(selectedCase.assignedProfessionalId ?? selectedCase.assignedLawyerId)}</small>
+                </button>
+                {activeWorkbenchPanel === 'attendance' ? (
+                  <div className="admin-cases-cabin__accordion-content">
+                    <form
+                      className="admin-form"
+                      onSubmit={(event) => {
+                        event.preventDefault()
+                        void handleAssignCase(selectedCase.id, true, selectedProfessionalIdByCaseId[selectedCase.id])
+                      }}
                     >
-                      <option value="">Assumir com meu vínculo</option>
-                      {activeOfficeProfessionals.map((professional) => (
-                        <option key={professional.id} value={professional.id}>
-                          {professional.displayName}{professional.oabCredential ? ` · ${professional.oabCredential}` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <div className="admin-actions">
-                    <button type="submit" className="admin-button" disabled={isAssigning || selectedCase.status === 'closed'}>
-                      {isAssigning ? 'Atribuindo...' : 'Atribuir e assumir caso'}
-                    </button>
-                  </div>
-                </form>
-              ) : null}
+                      <label className="admin-field">
+                        <span>Profissional</span>
+                        <select
+                          value={selectedProfessionalIdByCaseId[selectedCase.id] ?? ''}
+                          onChange={(event) => setSelectedProfessionalIdByCaseId((current) => ({
+                            ...current,
+                            [selectedCase.id]: event.target.value,
+                          }))}
+                        >
+                          <option value="">Selecione um profissional ativo</option>
+                          {activeOfficeProfessionals.map((professional) => (
+                            <option key={professional.id} value={professional.id}>
+                              {professional.displayName}{professional.oabCredential ? ` · ${professional.oabCredential}` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      {selectedCase.isAssigned ? (
+                        <p className="admin-diagnosis-copy">Este caso já possui responsável atribuído. As ações de atendimento continuam disponíveis abaixo.</p>
+                      ) : null}
+                      <div className="admin-actions admin-cases-cabin__action-row">
+                        <button
+                          type="submit"
+                          className="admin-button"
+                          disabled={isAssigning || selectedCase.status === 'closed' || selectedCase.isAssigned || !selectedProfessionalIdByCaseId[selectedCase.id]}
+                        >
+                          {isAssigning ? 'Atribuindo...' : 'Atribuir'}
+                        </button>
+                        <button
+                          type="button"
+                          className="admin-button admin-button--ghost"
+                          onClick={() => void handleAssignCase(selectedCase.id)}
+                          disabled={isAssigning || selectedCase.status === 'closed' || selectedCase.isAssigned}
+                        >
+                          {isAssigning ? 'Assumindo...' : 'Assumir comigo'}
+                        </button>
+                      </div>
+                    </form>
 
-              <ProfessionalReputationCard
-                lawyerId={selectedCase.assignedProfessionalId ?? selectedCase.assignedLawyerId}
-                reputation={reputation}
-                isLoading={isReputationLoading}
-                error={reputationError}
-                emptyMessage="A reputação aparece após a atribuição do advogado."
-              />
-            </>
+                    <ProfessionalReputationCard
+                      lawyerId={selectedCase.assignedProfessionalId ?? selectedCase.assignedLawyerId}
+                      reputation={reputation}
+                      isLoading={isReputationLoading}
+                      error={reputationError}
+                      emptyMessage="A reputação aparece após a atribuição do advogado."
+                    />
+                  </div>
+                ) : null}
+              </section>
+
+              <section className="admin-cases-cabin__accordion-item">
+                <button
+                  type="button"
+                  className={`admin-cases-cabin__accordion-trigger ${activeWorkbenchPanel === 'response' ? 'is-open' : ''}`}
+                  onClick={() => setActiveWorkbenchPanel('response')}
+                  aria-expanded={activeWorkbenchPanel === 'response'}
+                >
+                  <span>{activeWorkbenchPanel === 'response' ? '▼' : '▶'} Resposta</span>
+                  <small>{responseRequiresAssignment ? 'requer responsável' : 'pronta para envio'}</small>
+                </button>
+                {activeWorkbenchPanel === 'response' ? (
+                  <div className="admin-cases-cabin__accordion-content">
+                    <form className="admin-form" onSubmit={(event) => void handleRespond(event)}>
+                      <label className="admin-field">
+                        <span>Resposta</span>
+                        <textarea
+                          value={responseText}
+                          onChange={(event) => setResponseText(event.target.value)}
+                          rows={5}
+                          placeholder="Escreva a resposta do advogado..."
+                          disabled={responseRequiresAssignment || isResponding || selectedCase.status === 'closed'}
+                        />
+                      </label>
+                      {responseRequiresAssignment ? (
+                        <p className="admin-diagnosis-copy">Assuma ou atribua este caso para liberar resposta.</p>
+                      ) : null}
+                      <div className="admin-actions">
+                        <button type="submit" className="admin-button" disabled={responseRequiresAssignment || isResponding || selectedCase.status === 'closed'}>
+                          {isResponding ? 'Enviando...' : 'Responder'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                ) : null}
+              </section>
+
+              <section className="admin-cases-cabin__accordion-item">
+                <button
+                  type="button"
+                  className={`admin-cases-cabin__accordion-trigger ${activeWorkbenchPanel === 'status' ? 'is-open' : ''}`}
+                  onClick={() => setActiveWorkbenchPanel('status')}
+                  aria-expanded={activeWorkbenchPanel === 'status'}
+                >
+                  <span>{activeWorkbenchPanel === 'status' ? '▼' : '▶'} Status</span>
+                  <small>{formatCaseStatus(selectedCase.status)}</small>
+                </button>
+                {activeWorkbenchPanel === 'status' ? (
+                  <div className="admin-cases-cabin__accordion-content">
+                    <form className="admin-form" onSubmit={(event) => void handleStatusUpdate(event)}>
+                      <label className="admin-field">
+                        <span>Status</span>
+                        <select value={statusAction} onChange={(event) => setStatusAction(event.target.value as StatusAction)}>
+                          <option value="em-atendimento">Em atendimento</option>
+                          <option value="pendente-cliente">Aguardando cliente</option>
+                          <option value="finalizado">Finalizado</option>
+                        </select>
+                      </label>
+                      <div className="admin-actions">
+                        <button
+                          type="submit"
+                          className="admin-button"
+                          disabled={shouldDisableStatusUpdateAction(selectedCase, isStatusUpdating, isAssigning)}
+                        >
+                          {isStatusUpdating ? 'Salvando...' : 'Salvar'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                ) : null}
+              </section>
+
+              <section className="admin-cases-cabin__accordion-item">
+                <button
+                  type="button"
+                  className={`admin-cases-cabin__accordion-trigger ${activeWorkbenchPanel === 'forward' ? 'is-open' : ''}`}
+                  onClick={() => setActiveWorkbenchPanel('forward')}
+                  aria-expanded={activeWorkbenchPanel === 'forward'}
+                >
+                  <span>{activeWorkbenchPanel === 'forward' ? '▼' : '▶'} Encaminhamento</span>
+                  <small>{forwardDestination.trim() ? 'destino preenchido' : 'sem destino'}</small>
+                </button>
+                {activeWorkbenchPanel === 'forward' ? (
+                  <div className="admin-cases-cabin__accordion-content">
+                    <form className="admin-form" onSubmit={(event) => void handleForwardCase(event)}>
+                      <label className="admin-field">
+                        <span>Destino</span>
+                        <input
+                          value={forwardDestination}
+                          onChange={(event) => setForwardDestination(event.target.value)}
+                          placeholder="Ex.: Núcleo Trabalhista"
+                        />
+                      </label>
+                      <label className="admin-field">
+                        <span>Observação</span>
+                        <textarea
+                          rows={4}
+                          value={forwardNote}
+                          onChange={(event) => setForwardNote(event.target.value)}
+                          placeholder="Contexto para quem vai receber o caso"
+                        />
+                      </label>
+                      <div className="admin-actions">
+                        <button type="submit" className="admin-button" disabled={isForwarding || selectedCase.status === 'closed' || !forwardDestination.trim()}>
+                          {isForwarding ? 'Encaminhando...' : 'Encaminhar'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                ) : null}
+              </section>
+
+              <section className="admin-cases-cabin__accordion-item">
+                <button
+                  type="button"
+                  className={`admin-cases-cabin__accordion-trigger ${activeWorkbenchPanel === 'escalation' ? 'is-open' : ''}`}
+                  onClick={() => setActiveWorkbenchPanel('escalation')}
+                  aria-expanded={activeWorkbenchPanel === 'escalation'}
+                >
+                  <span>{activeWorkbenchPanel === 'escalation' ? '▼' : '▶'} Escalonamento</span>
+                  <small>{escalationSeverity}</small>
+                </button>
+                {activeWorkbenchPanel === 'escalation' ? (
+                  <div className="admin-cases-cabin__accordion-content">
+                    <form className="admin-form" onSubmit={(event) => void handleEscalateCase(event)}>
+                      <label className="admin-field">
+                        <span>Severidade</span>
+                        <select value={escalationSeverity} onChange={(event) => setEscalationSeverity(event.target.value as 'alta' | 'moderada' | 'baixa')}>
+                          <option value="alta">Severidade alta</option>
+                          <option value="moderada">Severidade moderada</option>
+                          <option value="baixa">Severidade baixa</option>
+                        </select>
+                      </label>
+                      <label className="admin-field">
+                        <span>Motivo</span>
+                        <textarea
+                          rows={4}
+                          value={escalationReason}
+                          onChange={(event) => setEscalationReason(event.target.value)}
+                          placeholder="Descreva o motivo para a rotina operacional"
+                        />
+                      </label>
+                      <div className="admin-actions">
+                        <button type="submit" className="admin-button" disabled={isEscalating || selectedCase.status === 'closed' || !escalationReason.trim()}>
+                          {isEscalating ? 'Escalonando...' : 'Escalonar'}
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                ) : null}
+              </section>
+            </div>
           )}
         </SurfaceCard>
       </section>
