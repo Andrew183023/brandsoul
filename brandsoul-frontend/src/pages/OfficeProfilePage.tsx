@@ -1008,7 +1008,7 @@ function resolveContactChannels(
 }
 
 function ConfidenceBadge({ confidence }: { confidence: Confidence }) {
-  return <span className={`office-confidence office-confidence--${confidence}`}>{confidence}</span>
+  return <span className={`office-confidence office-confidence--${confidence}`} aria-hidden="true" />
 }
 
 function TrustRibbon() {
@@ -1390,7 +1390,7 @@ function resolveReadinessIndicators(args: {
   const { specialties, coverage, contacts, availabilityLabel, availabilityConfidence, responseWindowLabel } = args
   return [
     {
-      label: 'Cobertura visível',
+      label: 'Cobertura',
       value: coverage[0]?.label ?? 'Não informada',
       confidence: coverage[0]?.confidence ?? 'estimated',
     },
@@ -1400,7 +1400,7 @@ function resolveReadinessIndicators(args: {
       confidence: availabilityConfidence,
     },
     {
-      label: 'Janela de resposta',
+      label: 'Prazo de resposta',
       value: responseWindowLabel,
       confidence: availabilityConfidence === 'unavailable' ? 'estimated' : availabilityConfidence,
     },
@@ -1482,7 +1482,7 @@ function resolveOperationalPresenceSignals(args: {
   const signalTone = runtimeMode === 'normal' ? 'confirmed' : runtimeMode === 'unavailable' ? 'attention' : 'neutral'
   const recentActivityLabel = socialState?.aggregate.lastSignalAt
     ? `Atualizado em ${formatOperationalTimestamp(socialState.aggregate.lastSignalAt)}`
-    : 'Informações disponíveis agora'
+    : 'Perfil disponível'
   const recentActivityDetail = socialState?.aggregate.lastSignalAt
     ? 'Sinais públicos recentes reforçam a atividade deste escritório.'
     : 'O perfil segue disponível mesmo sem um horário recente exibido.'
@@ -1502,14 +1502,14 @@ function resolveOperationalPresenceSignals(args: {
       tone: signalTone,
     },
     {
-      label: 'Cobertura confirmada',
+      label: 'Cobertura',
       value: coverageConfirmed > 0 ? `${coverageConfirmed} ponto(s) confirmado(s)` : 'Cobertura em atualização',
       detail: coverage[0]?.label ?? 'Cobertura pública em atualização.',
       tone: coverageConfirmed > 0 ? 'confirmed' : 'neutral',
     },
     {
       label: 'Triagem disponível',
-      value: 'Fluxo disponível',
+      value: 'Triagem disponível',
       detail: intakeExpectationLabel,
       tone: runtimeMode === 'unavailable' ? 'attention' : 'neutral',
     },
@@ -2810,7 +2810,7 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
             <section className="office-profile-section">
               <div className="office-block-heading">
                 <p>Informações do perfil</p>
-                <h2>O que está visível neste momento</h2>
+                <h2>Informações do escritório</h2>
               </div>
               <ul className="office-readiness-list">
                 {readinessIndicators.map((indicator) => (
