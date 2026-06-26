@@ -74,12 +74,6 @@ type TimelineItem = {
   tone: 'neutral' | 'confirmed' | 'attention'
 }
 
-type OperationalPresenceSignal = {
-  label: string
-  value: string
-  detail: string
-  tone: 'confirmed' | 'attention' | 'neutral'
-}
 
 type ResponsibleProfessional = {
   photoUrl?: string
@@ -1454,68 +1448,6 @@ function resolveOperationalTimeline(args: {
   ] satisfies TimelineItem[]
 }
 
-function formatOperationalTimestamp(value?: string) {
-  if (!value) {
-    return 'Sem atualização recente visível'
-  }
-
-  const parsed = new Date(value)
-  if (Number.isNaN(parsed.getTime())) {
-    return 'Atualização recente registrada'
-  }
-
-  return new Intl.DateTimeFormat('pt-BR', {
-    dateStyle: 'short',
-    timeStyle: 'short',
-  }).format(parsed)
-}
-
-function resolveOperationalPresenceSignals(args: {
-  runtimeMode: RuntimeMode
-  socialState?: PublicOfficeSocialState
-  availabilityLabel: string
-  responseWindowLabel: string
-  coverage: Array<{ label: string; confidence: Confidence }>
-  intakeExpectationLabel: string
-}) {
-  const { runtimeMode, socialState, availabilityLabel, responseWindowLabel, coverage, intakeExpectationLabel } = args
-  const signalTone = runtimeMode === 'normal' ? 'confirmed' : runtimeMode === 'unavailable' ? 'attention' : 'neutral'
-  const recentActivityLabel = socialState?.aggregate.lastSignalAt
-    ? `Atualizado em ${formatOperationalTimestamp(socialState.aggregate.lastSignalAt)}`
-    : 'Perfil disponível'
-  const recentActivityDetail = socialState?.aggregate.lastSignalAt
-    ? 'Sinais públicos recentes reforçam a atividade deste escritório.'
-    : 'O perfil segue disponível mesmo sem um horário recente exibido.'
-  const coverageConfirmed = coverage.filter((item) => item.confidence === 'confirmed').length
-
-  return [
-    {
-      label: 'Atualização recente',
-      value: recentActivityLabel,
-      detail: recentActivityDetail,
-      tone: signalTone,
-    },
-    {
-      label: 'Resposta esperada',
-      value: responseWindowLabel,
-      detail: `Disponibilidade atual: ${availabilityLabel}.`,
-      tone: signalTone,
-    },
-    {
-      label: 'Cobertura',
-      value: coverageConfirmed > 0 ? `${coverageConfirmed} ponto(s) confirmado(s)` : 'Cobertura em atualização',
-      detail: coverage[0]?.label ?? 'Cobertura pública em atualização.',
-      tone: coverageConfirmed > 0 ? 'confirmed' : 'neutral',
-    },
-    {
-      label: 'Triagem disponível',
-      value: 'Triagem disponível',
-      detail: intakeExpectationLabel,
-      tone: runtimeMode === 'unavailable' ? 'attention' : 'neutral',
-    },
-  ] satisfies OperationalPresenceSignal[]
-}
-
 function ProgressMeta(props: {
   currentStep: number
   totalSteps: number
@@ -1728,20 +1660,6 @@ function HeroMetric(props: { label: string; value: string; detail: string }) {
       <strong>{props.value}</strong>
       <p>{props.detail}</p>
     </article>
-  )
-}
-
-function OperationalPresenceLayer(props: { signals: OperationalPresenceSignal[] }) {
-  return (
-    <section className="office-operational-presence" aria-label="Sinais operacionais">
-      {props.signals.map((signal) => (
-        <article key={`${signal.label}-${signal.value}`} className={`office-operational-presence__card office-operational-presence__card--${signal.tone}`}>
-          <span>{signal.label}</span>
-          <strong>{signal.value}</strong>
-          <p>{signal.detail}</p>
-        </article>
-      ))}
-    </section>
   )
 }
 
@@ -2099,18 +2017,7 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
     }),
     [availabilityLabel, canonicalProjection.operational.responseWindowLabel, intakeExpectationLabel, runtimeMode],
   )
-  const operationalPresenceSignals = useMemo(
-    () => resolveOperationalPresenceSignals({
-      runtimeMode,
-      socialState,
-      availabilityLabel,
-      responseWindowLabel: canonicalProjection.operational.responseWindowLabel,
-      coverage,
-      intakeExpectationLabel,
-    }),
-    [availabilityLabel, canonicalProjection.operational.responseWindowLabel, coverage, intakeExpectationLabel, runtimeMode, socialState],
-  )
-  const seoPayload = useMemo(() => {
+const seoPayload = useMemo(() => {
     if (typeof window === 'undefined' || !presence) {
       return null
     }
@@ -2842,15 +2749,7 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
                 ))}
               </ol>
             </section>
-
-            <section className="office-profile-section">
-              <div className="office-block-heading">
-                <p>Atualizações recentes</p>
-                <h2>Atualizações e disponibilidade</h2>
-              </div>
-              <OperationalPresenceLayer signals={operationalPresenceSignals} />
-            </section>
-          </article>
+</article>
         </section>
 
         <section className="office-profile-intake motion-surface motion-section-anchor" id="office-public-triagem">
