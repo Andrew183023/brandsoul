@@ -375,6 +375,21 @@ export async function registerLegalBetaCaseRoutes(app: FastifyInstance) {
     }
   })
 
+  app.get('/debug/professionals', { preHandler: [requireAuth] }, async (request) => {
+    const auth = getRequestAuth(request)!
+    const caseRepository = getCaseRepository(app)
+    const professionals = await caseRepository.listDetailedProfessionalsForTenant(auth.tenantId)
+    const actingProfessional = await caseRepository.getProfessionalRecordByUserId(auth.tenantId, auth.userId)
+
+    return {
+      status: 'ready',
+      tenantId: auth.tenantId,
+      userId: auth.userId,
+      actingProfessional,
+      professionals,
+    }
+  })
+
   app.post<{ Params: { id: string }; Body: AssignBody }>('/cases/:id/assign', { preHandler: [requireAuth, privateWriteRateLimit] }, async (request, reply) => {
     const auth = getRequestAuth(request)!
     const caseRepository = getCaseRepository(app)
