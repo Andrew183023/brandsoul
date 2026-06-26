@@ -846,10 +846,28 @@ export async function registerLegalBetaPublicOfficeRoutes(app: FastifyInstance) 
       return
     }
 
+    const auth = getRequestAuth(request)!
+    const caseRepository = getCaseRepository(app)
+    const tenantId = owned.entity.ownerTenantId ?? owned.auth.tenantId
+    const officeProfessionals = await getCaseService(app).listOfficeProfessionals(tenantId, request.params.id)
+    const tenantProfessionals = await caseRepository.listDetailedProfessionalsForTenant(auth.tenantId)
+    const actingProfessional = await caseRepository.getProfessionalRecordByUserId(auth.tenantId, auth.userId)
+
     return {
-      status: 'ready',
+      status: 'debug',
       officeId: request.params.id,
-      professionals: await getCaseService(app).listOfficeProfessionals(owned.entity.ownerTenantId ?? owned.auth.tenantId, request.params.id),
+      auth: {
+        tenantId: auth.tenantId,
+        userId: auth.userId,
+      },
+      owned: {
+        tenantId,
+        ownerUserId: owned.entity.ownerUserId,
+        ownerTenantId: owned.entity.ownerTenantId,
+      },
+      actingProfessional,
+      officeProfessionals,
+      tenantProfessionals,
     }
   })
 
