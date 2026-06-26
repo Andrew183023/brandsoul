@@ -2974,7 +2974,7 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
           ) : null}
 
           {intakeSubmissionState.status !== 'success' ? (
-            <aside className="office-intake-mobile-decision motion-surface" aria-label="Decisão principal da triagem">
+            <aside className="office-intake-decision motion-surface" aria-label="Decisão principal da triagem">
               <button
                 type="button"
                 className="office-button office-button--secondary"
@@ -3019,7 +3019,7 @@ export default function OfficeProfilePage({ officeId }: OfficeProfilePageProps) 
         </section>
 
         {true ? (
-          <aside className="office-profile-floating-cta office-profile-floating-cta--desktop motion-surface" aria-label="Ação rápida de triagem">
+          <aside className="office-profile-floating-cta office-profile-floating-cta--desktop office-profile-mobile-cta motion-surface" aria-label="Ação rápida de triagem">
             <button
               type="button"
               className="office-button office-button--primary"

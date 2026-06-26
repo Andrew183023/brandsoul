@@ -1433,7 +1433,7 @@
   display: none;
 }
 
-.office-intake-mobile-decision {
+.office-intake-decision {
   display: none;
 }
 
@@ -1620,7 +1620,7 @@
     bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
   }
 
-  .office-intake-mobile-decision {
+  .office-intake-decision {
     position: sticky;
     left: auto;
     right: auto;
@@ -1637,7 +1637,7 @@
     gap: 0.35rem;
   }
 
-  .office-intake-mobile-decision .office-button {
+  .office-intake-decision .office-button {
     width: 100%;
     min-height: 50px;
   }
@@ -1692,7 +1692,7 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .office-intake-mobile-decision {
+  .office-intake-decision {
     grid-template-columns: 1fr;
   }
 }
