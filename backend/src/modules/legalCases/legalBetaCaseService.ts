@@ -155,44 +155,58 @@ export class LegalBetaCaseService {
     professionalId: string
     assignedByProfessionalId?: string
   }) {
-    const current = await this.caseRepository.getCaseById(args.tenantId, args.caseId)
-    if (!current) {
-      return { status: 'not_found' as const }
-    }
+    return this.db.transaction(async (tx) => {
+      const repository = createCaseRepository(tx)
+      const current = await repository.getCaseByIdForUpdate(args.tenantId, args.caseId)
+      if (!current) {
+        return { status: 'not_found' as const }
+      }
 
-    const assignments = await this.caseRepository.listAssignmentsByCase(args.tenantId, args.caseId)
-    const alreadyActive = assignments.find((assignment) => assignment.professionalId === args.professionalId && assignment.status === 'active')
+      const assignments = await repository.listAssignmentsByCase(args.tenantId, args.caseId)
+      const activeAssignment = assignments.find((assignment) => assignment.status === 'active')
+      const alreadyActive = assignments.find((assignment) => assignment.professionalId === args.professionalId && assignment.status === 'active')
 
-    if (!alreadyActive) {
-      await this.caseRepository.createAssignment({
-        tenantId: args.tenantId,
-        caseId: args.caseId,
-        professionalId: args.professionalId,
-        assignedByProfessionalId: args.assignedByProfessionalId,
-        metadata: {
-          source: 'legal-beta-assign',
-        },
-      })
-    }
+      if (activeAssignment && activeAssignment.professionalId !== args.professionalId) {
+        return {
+          status: 'conflict' as const,
+          activeProfessionalId: activeAssignment.professionalId,
+        }
+      }
 
-    await this.caseRepository.updateCaseLeadProfessional(args.tenantId, args.caseId, args.professionalId)
+      if (!alreadyActive) {
+        await repository.createAssignment({
+          tenantId: args.tenantId,
+          caseId: args.caseId,
+          professionalId: args.professionalId,
+          assignedByProfessionalId: args.assignedByProfessionalId,
+          metadata: {
+            source: 'legal-beta-assign',
+          },
+        })
 
-    const nextStatus = current.status === 'open' ? 'dispatched' : current.status
-    if (nextStatus !== current.status) {
-      await this.caseRepository.updateCaseStatus(args.tenantId, args.caseId, nextStatus)
-    }
+        await repository.updateCaseLeadProfessional(args.tenantId, args.caseId, args.professionalId)
 
-    await this.caseRepository.addTimelineEvent({
-      tenantId: args.tenantId,
-      caseId: args.caseId,
-      eventType: 'assigned',
-      actorProfessionalId: args.professionalId,
-      payload: {
-        professionalId: args.professionalId,
-      },
+        const nextStatus = current.status === 'open' ? 'dispatched' : current.status
+        if (nextStatus !== current.status) {
+          await repository.updateCaseStatus(args.tenantId, args.caseId, nextStatus)
+        }
+
+        await repository.addTimelineEvent({
+          tenantId: args.tenantId,
+          caseId: args.caseId,
+          eventType: 'assigned',
+          actorProfessionalId: args.professionalId,
+          payload: {
+            professionalId: args.professionalId,
+            assignedByProfessionalId: args.assignedByProfessionalId,
+          },
+        })
+      } else {
+        await repository.updateCaseLeadProfessional(args.tenantId, args.caseId, args.professionalId)
+      }
+
+      return { status: 'assigned' as const }
     })
-
-    return { status: 'assigned' as const }
   }
 
   async close(args: {
