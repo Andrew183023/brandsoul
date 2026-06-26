@@ -435,6 +435,10 @@ export function buildTimelineSummary(event: CaseTimelineEventRecord) {
     return 'Caso atribuído.'
   }
 
+  if (event.eventType === 'reassigned') {
+    return 'Caso reatribuído.'
+  }
+
   if (event.eventType === 'closed') {
     return 'Caso encerrado.'
   }
@@ -458,6 +462,7 @@ export function buildTimelineSummary(event: CaseTimelineEventRecord) {
 export function mapTimelineEventToClientLabel(event: CaseTimelineEventRecord) {
   if (event.eventType === 'created') return 'Triagem recebida'
   if (event.eventType === 'assigned') return 'Responsável definido'
+  if (event.eventType === 'reassigned') return 'Responsável redefinido'
   if (event.eventType === 'closed') return 'Caso encerrado'
 
   if (event.eventType === 'status_changed') {

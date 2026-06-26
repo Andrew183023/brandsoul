@@ -164,46 +164,57 @@ export class LegalBetaCaseService {
 
       const assignments = await repository.listAssignmentsByCase(args.tenantId, args.caseId)
       const activeAssignment = assignments.find((assignment) => assignment.status === 'active')
-      const alreadyActive = assignments.find((assignment) => assignment.professionalId === args.professionalId && assignment.status === 'active')
+      const nextStatus = current.status === 'open' ? 'dispatched' : current.status
 
-      if (activeAssignment && activeAssignment.professionalId !== args.professionalId) {
-        return {
-          status: 'conflict' as const,
-          activeProfessionalId: activeAssignment.professionalId,
-        }
-      }
-
-      if (!alreadyActive) {
-        await repository.createAssignment({
-          tenantId: args.tenantId,
-          caseId: args.caseId,
-          professionalId: args.professionalId,
-          assignedByProfessionalId: args.assignedByProfessionalId,
-          metadata: {
-            source: 'legal-beta-assign',
-          },
-        })
-
+      if (activeAssignment?.professionalId === args.professionalId) {
         await repository.updateCaseLeadProfessional(args.tenantId, args.caseId, args.professionalId)
 
-        const nextStatus = current.status === 'open' ? 'dispatched' : current.status
         if (nextStatus !== current.status) {
           await repository.updateCaseStatus(args.tenantId, args.caseId, nextStatus)
         }
 
-        await repository.addTimelineEvent({
-          tenantId: args.tenantId,
-          caseId: args.caseId,
-          eventType: 'assigned',
-          actorProfessionalId: args.professionalId,
-          payload: {
-            professionalId: args.professionalId,
-            assignedByProfessionalId: args.assignedByProfessionalId,
-          },
-        })
-      } else {
-        await repository.updateCaseLeadProfessional(args.tenantId, args.caseId, args.professionalId)
+        return { status: 'assigned' as const }
       }
+
+      let eventType: 'assigned' | 'reassigned' = 'assigned'
+      let payload: Record<string, unknown> = {
+        professionalId: args.professionalId,
+        assignedByProfessionalId: args.assignedByProfessionalId,
+      }
+
+      if (activeAssignment) {
+        await repository.revokeAssignment(args.tenantId, activeAssignment.id)
+        eventType = 'reassigned'
+        payload = {
+          oldProfessionalId: activeAssignment.professionalId,
+          newProfessionalId: args.professionalId,
+          assignedByProfessionalId: args.assignedByProfessionalId,
+        }
+      }
+
+      await repository.createAssignment({
+        tenantId: args.tenantId,
+        caseId: args.caseId,
+        professionalId: args.professionalId,
+        assignedByProfessionalId: args.assignedByProfessionalId,
+        metadata: {
+          source: 'legal-beta-assign',
+        },
+      })
+
+      await repository.updateCaseLeadProfessional(args.tenantId, args.caseId, args.professionalId)
+
+      if (nextStatus !== current.status) {
+        await repository.updateCaseStatus(args.tenantId, args.caseId, nextStatus)
+      }
+
+      await repository.addTimelineEvent({
+        tenantId: args.tenantId,
+        caseId: args.caseId,
+        eventType,
+        actorProfessionalId: args.professionalId,
+        payload,
+      })
 
       return { status: 'assigned' as const }
     })

@@ -488,26 +488,6 @@ export async function registerLegalBetaCaseRoutes(app: FastifyInstance) {
       assignedByProfessionalId: actingProfessional?.id,
     })
 
-    if (assigned.status === 'conflict') {
-      console.warn('case_assign_conflict', {
-        tenantId: auth.tenantId,
-        caseId: request.params.id,
-        entityId: caseRecord.entityId,
-        actorUserId: auth.userId,
-        actorProfessionalId: actingProfessional?.id ?? null,
-        targetProfessionalId: professionalId,
-        activeProfessionalId: assigned.activeProfessionalId ?? null,
-      })
-
-      return reply.status(409).send({
-        status: 'failed',
-        error: {
-          code: 'CASE_ALREADY_ASSIGNED',
-          message: 'Este caso já possui um responsável ativo.',
-        },
-      })
-    }
-
     if (assigned.status === 'not_found') {
       console.warn('case_assign_failed', {
         tenantId: auth.tenantId,

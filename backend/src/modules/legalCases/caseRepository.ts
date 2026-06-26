@@ -327,12 +327,12 @@ function mapNotificationRow(row?: {
   const title = typeof row.case_title === 'string' && row.case_title.trim().length > 0
     ? row.case_title
     : `Caso ${row.case_id}`
-  const priority = row.event_type === 'assigned'
+  const priority = row.event_type === 'assigned' || row.event_type === 'reassigned'
     ? 'high'
     : row.event_type === 'message_added'
       ? 'medium'
       : 'low'
-  const message = row.event_type === 'assigned'
+  const message = row.event_type === 'assigned' || row.event_type === 'reassigned'
     ? 'Novo caso atribuido para sua fila.'
     : row.event_type === 'message_added'
       ? 'Nova mensagem recebida no caso.'
@@ -1030,6 +1030,36 @@ export class CaseRepository {
     return record
   }
 
+  async revokeAssignment(tenantId: number, assignmentId: string): Promise<CaseAssignmentRecord | null> {
+    const now = new Date().toISOString()
+
+    await this.db.run(
+      `
+        UPDATE case_assignments
+        SET status = 'revoked', unassigned_at = COALESCE(unassigned_at, ?), updated_at = ?
+        WHERE tenant_id = ? AND id = ? AND status = 'active'
+      `,
+      now,
+      now,
+      tenantId,
+      assignmentId,
+    )
+
+    const row = await this.db.get<Parameters<typeof mapCaseAssignmentRow>[0]>(
+      `
+        SELECT
+          id, tenant_id, case_id, professional_id, role, status, assigned_by_professional_id,
+          assigned_at, unassigned_at, metadata, created_at, updated_at
+        FROM case_assignments
+        WHERE tenant_id = ? AND id = ?
+      `,
+      tenantId,
+      assignmentId,
+    )
+
+    return mapCaseAssignmentRow(row)
+  }
+
   async createCaseDispatch(input: {
     tenantId: number
     caseId: string
@@ -1678,6 +1708,7 @@ export class CaseRepository {
         ORDER BY
           CASE
             WHEN events.event_type = 'assigned' THEN 3
+            WHEN events.event_type = 'reassigned' THEN 3
             WHEN events.event_type = 'message_added' THEN 2
             ELSE 1
           END DESC,

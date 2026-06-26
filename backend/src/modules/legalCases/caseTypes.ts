@@ -6,6 +6,7 @@ export const caseTimelineEventTypes = [
   'status_changed',
   'matched',
   'assigned',
+  'reassigned',
   'accepted',
   'rejected',
   'closed',

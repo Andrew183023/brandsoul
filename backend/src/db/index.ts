@@ -2234,7 +2234,7 @@ async function initializePostgresLegalCaseSchema(db: BackendDatabase) {
     db,
     'case_timeline',
     'case_timeline_event_type_check',
-    `CHECK (event_type IN ('created', 'message_added', 'status_changed', 'matched', 'assigned', 'accepted', 'rejected', 'closed', 'reopened', 'archived', 'feedback_received')) NOT VALID`,
+    `CHECK (event_type IN ('created', 'message_added', 'status_changed', 'matched', 'assigned', 'reassigned', 'accepted', 'rejected', 'closed', 'reopened', 'archived', 'feedback_received')) NOT VALID`,
   )
 
   await db.exec(`
