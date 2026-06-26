@@ -751,6 +751,7 @@ export class CaseRepository {
   async createManagedProfessional(input: {
     tenantId: number
     officeId: string
+    userId?: number
     displayName: string
     email?: string
     phone?: string
@@ -780,13 +781,13 @@ export class CaseRepository {
           INSERT INTO professionals (
             id, tenant_id, user_id, kind, status, display_name, primary_email, primary_phone, metadata, created_at, updated_at
           )
-          VALUES (?, ?, NULL, 'human', ?, ?, ?, ?, ?::jsonb, ?, ?)
+          VALUES (?, ?, ?, 'human', ?, ?, ?, ?, ?::jsonb, ?, ?)
         `
       : `
           INSERT INTO professionals (
             id, tenant_id, user_id, kind, status, display_name, primary_email, primary_phone, metadata, created_at, updated_at
           )
-          VALUES (?, ?, NULL, 'human', ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, 'human', ?, ?, ?, ?, ?, ?, ?)
         `
 
     const insertProfileSql = this.db.dialect === 'postgres'
@@ -807,6 +808,7 @@ export class CaseRepository {
       insertProfessionalSql,
       id,
       input.tenantId,
+      input.userId ?? null,
       input.status,
       input.displayName,
       input.email ?? null,

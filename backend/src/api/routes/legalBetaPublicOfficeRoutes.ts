@@ -879,6 +879,7 @@ export async function registerLegalBetaPublicOfficeRoutes(app: FastifyInstance) 
     const created = await caseRepository.createManagedProfessional({
       tenantId: owned.entity.ownerTenantId ?? owned.auth.tenantId,
       officeId: request.params.id,
+      userId: professional.isResponsible === true ? owned.auth.userId : undefined,
       displayName: professional.displayName!.trim(),
       email: professional.email?.trim() || undefined,
       phone: professional.phone?.trim() || undefined,
