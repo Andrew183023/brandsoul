@@ -463,3 +463,45 @@
     flex: 1 1 100%;
   }
 }
+
+/* Fix definitivo: reputação legível na coluna de ações */
+.admin-cases-cabin__actions .admin-cases-cabin__reputation-card {
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.admin-cases-cabin__actions .admin-cases-cabin__reputation-card .admin-card-header {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.35rem;
+}
+
+.admin-cases-cabin__actions .admin-cases-cabin__reputation-card .admin-card-header span {
+  text-align: left;
+}
+
+.admin-cases-cabin__actions .admin-cases-cabin__reputation-card .admin-domain-grid {
+  display: grid;
+  grid-template-columns: 1fr !important;
+  gap: 0.65rem;
+}
+
+.admin-cases-cabin__actions .admin-cases-cabin__reputation-card .admin-domain-card {
+  width: 100%;
+  min-width: 0;
+  padding: 0.85rem;
+}
+
+.admin-cases-cabin__actions .admin-cases-cabin__reputation-card .admin-domain-card strong,
+.admin-cases-cabin__actions .admin-cases-cabin__reputation-card .admin-domain-card span,
+.admin-cases-cabin__actions .admin-cases-cabin__reputation-card p {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
+  hyphens: none !important;
+  line-height: 1.45;
+}
