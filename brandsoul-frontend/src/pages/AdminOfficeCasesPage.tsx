@@ -932,7 +932,8 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
               <header className="admin-cases-cabin__case-header">
                 <div>
                   <p className="admin-cases-cabin__eyebrow">Ficha operacional</p>
-                  <h3>{selectedCase.practiceArea?.trim() || 'Caso jurídico geral'}</h3>
+                  <h3>{resolveQueueClientLabel(selectedCase)}</h3>
+                  <p className="admin-cases-cabin__case-subtitle">{selectedCase.practiceArea?.trim() || 'Caso jurídico geral'}</p>
                 </div>
                 <div className="admin-cases-cabin__case-header-chips">
                   <StatusChip tone={resolveCaseStatusTone(selectedCase.status)}>{formatCaseStatus(selectedCase.status)}</StatusChip>
@@ -944,40 +945,17 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
                 </div>
               </header>
 
-              <div className="admin-cases-cabin__summary-strip">
-                <article className="admin-domain-card admin-cases-cabin__summary-item">
-                  <strong>Status</strong>
-                  <span>{formatCaseStatus(selectedCase.status)}</span>
-                </article>
-                <article className="admin-domain-card admin-cases-cabin__summary-item">
-                  <strong>Prioridade</strong>
-                  <span>{selectedPriority ? formatPriorityBadgeLabel(selectedPriority.level) : 'Não calculada'}</span>
-                </article>
-                <article className="admin-domain-card admin-cases-cabin__summary-item">
-                  <strong>Responsável</strong>
-                  <span>{resolveProfessionalLabelById(selectedCase.assignedProfessionalId ?? selectedCase.assignedLawyerId)}</span>
-                </article>
-                <article className="admin-domain-card admin-cases-cabin__summary-item">
-                  <strong>Criado</strong>
-                  <span>{formatDateTime(selectedCase.createdAt)}</span>
-                </article>
-                <article className="admin-domain-card admin-cases-cabin__summary-item">
-                  <strong>Atualizado</strong>
-                  <span>{formatDateTime(selectedCase.updatedAt)}</span>
-                </article>
-                <article className="admin-domain-card admin-cases-cabin__summary-item">
-                  <strong>Cobrança</strong>
-                  <span>
-                    {selectedCase.monetization
-                      ? `${formatCaseMonetizationAmount(selectedCase.monetization.amountCents, selectedCase.monetization.currency)} (${selectedCase.monetization.status})`
-                      : `Taxa fixa prevista: ${formatCaseMonetizationAmount()}`}
-                  </span>
-                </article>
+              <div className="admin-cases-cabin__badge-row" aria-label="Metadados principais do caso">
+                <span className="admin-cases-cabin__meta-badge">Cliente · {resolveQueueClientLabel(selectedCase)}</span>
+                <span className="admin-cases-cabin__meta-badge">Área · {selectedCase.practiceArea?.trim() || 'Geral'}</span>
+                <span className="admin-cases-cabin__meta-badge">Responsável · {resolveProfessionalLabelById(selectedCase.assignedProfessionalId ?? selectedCase.assignedLawyerId)}</span>
+                <span className="admin-cases-cabin__meta-badge">Abertura · {formatDateTime(selectedCase.createdAt)}</span>
+                <span className="admin-cases-cabin__meta-badge">SLA · {selectedPriority ? formatSlaRemainingLabel(selectedPriority.metrics.slaRemainingMinutes) : 'Não calculado'}</span>
               </div>
 
               <section className="admin-diagnosis-section admin-cases-cabin__detail-card">
                 <div className="admin-cases-cabin__detail-card-header">
-                  <h3>Resumo</h3>
+                  <h3>Resumo do problema</h3>
                   <span>{formatResponseStateLabel(selectedCase.responseState)}</span>
                 </div>
                 <p className="admin-diagnosis-copy">{selectedCaseSummary}</p>
@@ -1003,6 +981,28 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
 
               <section className="admin-diagnosis-section admin-cases-cabin__detail-card">
                 <div className="admin-cases-cabin__detail-card-header">
+                  <h3>Timeline operacional</h3>
+                  <span>{selectedCase.timeline.length} evento(s)</span>
+                </div>
+                {selectedCase.timeline.length > 0 ? (
+                  <ol className="admin-cases-cabin__timeline">
+                    {selectedCase.timeline.map((entry) => (
+                      <li key={entry.id} className="admin-cases-cabin__timeline-item">
+                        <span className="admin-cases-cabin__timeline-dot" aria-hidden="true" />
+                        <div className="admin-cases-cabin__timeline-body">
+                          <strong>{entry.summary}</strong>
+                          <span>{formatDateTime(entry.createdAt)}</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="admin-diagnosis-copy">Ainda não há eventos registrados na timeline operacional.</p>
+                )}
+              </section>
+
+              <section className="admin-diagnosis-section admin-cases-cabin__detail-card">
+                <div className="admin-cases-cabin__detail-card-header">
                   <h3>Mensagem inicial</h3>
                   <span>{selectedCase.contact?.trim() || selectedCase.city?.trim() || 'Sem contato visível'}</span>
                 </div>
@@ -1011,10 +1011,55 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
 
               <section className="admin-diagnosis-section admin-cases-cabin__detail-card">
                 <div className="admin-cases-cabin__detail-card-header">
-                  <h3>Histórico da conversa</h3>
+                  <h3>Mensagens</h3>
                   <span>{messages.length} interação(ões)</span>
                 </div>
                 <ConversationThread messages={messages} />
+              </section>
+
+              <section className="admin-diagnosis-section admin-cases-cabin__detail-card">
+                <div className="admin-cases-cabin__detail-card-header">
+                  <h3>Arquivos</h3>
+                  <span>Sem integração de upload nesta cabine</span>
+                </div>
+                <p className="admin-diagnosis-copy">Nenhum arquivo disponível para leitura nesta visualização operacional.</p>
+              </section>
+
+              <section className="admin-diagnosis-section admin-cases-cabin__detail-card">
+                <div className="admin-cases-cabin__detail-card-header">
+                  <h3>Histórico</h3>
+                  <span>Leitura rápida do caso</span>
+                </div>
+                <div className="admin-cases-cabin__history-grid">
+                  <article className="admin-domain-card admin-cases-cabin__summary-item">
+                    <strong>Status</strong>
+                    <span>{formatCaseStatus(selectedCase.status)}</span>
+                  </article>
+                  <article className="admin-domain-card admin-cases-cabin__summary-item">
+                    <strong>Prioridade</strong>
+                    <span>{selectedPriority ? formatPriorityBadgeLabel(selectedPriority.level) : 'Não calculada'}</span>
+                  </article>
+                  <article className="admin-domain-card admin-cases-cabin__summary-item">
+                    <strong>Responsável</strong>
+                    <span>{resolveProfessionalLabelById(selectedCase.assignedProfessionalId ?? selectedCase.assignedLawyerId)}</span>
+                  </article>
+                  <article className="admin-domain-card admin-cases-cabin__summary-item">
+                    <strong>Abertura</strong>
+                    <span>{formatDateTime(selectedCase.createdAt)}</span>
+                  </article>
+                  <article className="admin-domain-card admin-cases-cabin__summary-item">
+                    <strong>Última atualização</strong>
+                    <span>{formatDateTime(selectedCase.updatedAt)}</span>
+                  </article>
+                  <article className="admin-domain-card admin-cases-cabin__summary-item">
+                    <strong>Cobrança</strong>
+                    <span>
+                      {selectedCase.monetization
+                        ? `${formatCaseMonetizationAmount(selectedCase.monetization.amountCents, selectedCase.monetization.currency)} (${selectedCase.monetization.status})`
+                        : `Taxa fixa prevista: ${formatCaseMonetizationAmount()}`}
+                    </span>
+                  </article>
+                </div>
               </section>
             </div>
           )}
