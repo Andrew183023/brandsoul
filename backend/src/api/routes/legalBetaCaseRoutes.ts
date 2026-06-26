@@ -41,6 +41,8 @@ type CloseBody = {
   closedBy?: string
 }
 
+type DetailedProfessionalRecord = Awaited<ReturnType<ReturnType<typeof createCaseRepository>['listDetailedProfessionalsForTenant']>>[number]
+
 function getConnection(app: FastifyInstance) {
   return (app as FastifyInstance & BackendContext).backendContext.connection
 }
@@ -128,6 +130,38 @@ const privateWriteRateLimit = createRateLimit({
   windowMs: 60_000,
   key: 'user',
 })
+
+function resolveValidatedAssignableProfessional(args: {
+  professionals: DetailedProfessionalRecord[]
+  professionalId: string
+  officeId?: string
+}) {
+  const professional = args.professionals.find((entry) => entry.id === args.professionalId)
+  if (!professional) {
+    return {
+      status: 'missing' as const,
+    }
+  }
+
+  if (professional.status !== 'active') {
+    return {
+      status: 'inactive' as const,
+      professional,
+    }
+  }
+
+  if (args.officeId && professional.officeId && professional.officeId !== args.officeId) {
+    return {
+      status: 'office_mismatch' as const,
+      professional,
+    }
+  }
+
+  return {
+    status: 'ready' as const,
+    professional,
+  }
+}
 
 export async function registerLegalBetaCaseRoutes(app: FastifyInstance) {
   app.get<{ Querystring: CasesQuerystring }>('/cases', { preHandler: [requireAuth, publicReadRateLimit] }, async (request, reply) => {
@@ -343,7 +377,8 @@ export async function registerLegalBetaCaseRoutes(app: FastifyInstance) {
 
   app.post<{ Params: { id: string }; Body: AssignBody }>('/cases/:id/assign', { preHandler: [requireAuth, privateWriteRateLimit] }, async (request, reply) => {
     const auth = getRequestAuth(request)!
-    const caseRecord = await getCaseRepository(app).getCaseByIdAnyTenant(request.params.id)
+    const caseRepository = getCaseRepository(app)
+    const caseRecord = await caseRepository.getCaseByIdAnyTenant(request.params.id)
     if (!caseRecord?.entityId) {
       return reply.status(404).send({
         status: 'failed',
@@ -359,10 +394,28 @@ export async function registerLegalBetaCaseRoutes(app: FastifyInstance) {
       return
     }
 
-    let professionalId = request.body?.lawyerId?.trim()
+    const requestedProfessionalId = request.body?.lawyerId?.trim()
+    const actingProfessional = await caseRepository.getProfessionalRecordByUserId(auth.tenantId, auth.userId)
+
+    console.info('case_assign_started', {
+      tenantId: auth.tenantId,
+      caseId: request.params.id,
+      entityId: caseRecord.entityId,
+      actorUserId: auth.userId,
+      actorProfessionalId: actingProfessional?.id ?? null,
+      requestedProfessionalId: requestedProfessionalId ?? null,
+    })
+
+    let professionalId = requestedProfessionalId
     if (!professionalId || professionalId === 'self') {
-      const professional = await getCaseRepository(app).getProfessionalRecordByUserId(auth.tenantId, auth.userId)
-      if (!professional) {
+      if (!actingProfessional) {
+        console.warn('assignment_validation_failed', {
+          tenantId: auth.tenantId,
+          caseId: request.params.id,
+          entityId: caseRecord.entityId,
+          actorUserId: auth.userId,
+          reason: 'professional_binding_required',
+        })
         return reply.status(409).send({
           status: 'failed',
           error: {
@@ -371,16 +424,65 @@ export async function registerLegalBetaCaseRoutes(app: FastifyInstance) {
           },
         })
       }
-      professionalId = professional.id
+      professionalId = actingProfessional.id
+    }
+
+    const professionals = await caseRepository.listDetailedProfessionalsForTenant(auth.tenantId)
+    const validatedProfessional = resolveValidatedAssignableProfessional({
+      professionals,
+      professionalId,
+      officeId: caseRecord.entityId,
+    })
+
+    if (validatedProfessional.status !== 'ready') {
+      const errorCode = validatedProfessional.status === 'missing'
+        ? 'INVALID_PROFESSIONAL'
+        : validatedProfessional.status === 'inactive'
+          ? 'INACTIVE_PROFESSIONAL'
+          : 'PROFESSIONAL_OFFICE_MISMATCH'
+      const errorMessage = validatedProfessional.status === 'missing'
+        ? 'Profissional não encontrado para assumir este caso.'
+        : validatedProfessional.status === 'inactive'
+          ? 'O profissional informado não está ativo para assumir este caso.'
+          : 'O profissional informado não pertence a este escritório.'
+
+      console.warn(validatedProfessional.status === 'missing' ? 'invalid_professional' : 'assignment_validation_failed', {
+        tenantId: auth.tenantId,
+        caseId: request.params.id,
+        entityId: caseRecord.entityId,
+        actorUserId: auth.userId,
+        actorProfessionalId: actingProfessional?.id ?? null,
+        requestedProfessionalId: requestedProfessionalId ?? null,
+        targetProfessionalId: professionalId,
+        reason: validatedProfessional.status,
+      })
+
+      return reply.status(422).send({
+        status: 'failed',
+        error: {
+          code: errorCode,
+          message: errorMessage,
+        },
+      })
     }
 
     const assigned = await getCaseService(app).assign({
       tenantId: auth.tenantId,
       caseId: request.params.id,
       professionalId,
+      assignedByProfessionalId: actingProfessional?.id,
     })
 
     if (assigned.status === 'not_found') {
+      console.warn('case_assign_failed', {
+        tenantId: auth.tenantId,
+        caseId: request.params.id,
+        entityId: caseRecord.entityId,
+        actorUserId: auth.userId,
+        actorProfessionalId: actingProfessional?.id ?? null,
+        targetProfessionalId: professionalId,
+        reason: 'case_not_found_after_validation',
+      })
       return reply.status(404).send({
         status: 'failed',
         error: {
@@ -391,6 +493,19 @@ export async function registerLegalBetaCaseRoutes(app: FastifyInstance) {
     }
 
     const payload = await getCaseService(app).getCaseById(auth.tenantId, request.params.id)
+
+    console.info('case_assign_succeeded', {
+      tenantId: auth.tenantId,
+      caseId: request.params.id,
+      entityId: caseRecord.entityId,
+      actorUserId: auth.userId,
+      actorProfessionalId: actingProfessional?.id ?? null,
+      targetProfessionalId: professionalId,
+      status: payload?.status ?? null,
+      assignedProfessionalId: payload?.assignedProfessionalId ?? null,
+      assignedLawyerId: payload?.assignedLawyerId ?? null,
+    })
+
     return {
       status: 'ready',
       case: payload,

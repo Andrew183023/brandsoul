@@ -144,11 +144,6 @@ export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageP
   }, [entityId, selectedCase?.assignedLawyerId, selectedCase?.updatedAt])
 
   async function handleAssignCase(caseId: string) {
-    if (!authSession?.user?.id) {
-      setError('Sessao invalida para assumir o caso.')
-      return
-    }
-
     const confirmed = window.confirm(`Assumir este caso registra uma cobranca mock fixa de ${formatCaseMonetizationAmount()}. Deseja continuar?`)
     if (!confirmed) {
       return
@@ -157,7 +152,7 @@ export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageP
     try {
       setIsAssigning(true)
       setActionFeedback(null)
-      const payload = await assignCase(caseId, String(authSession.user.id))
+      const payload = await assignCase(caseId)
       setActionFeedback(`Caso assumido com sucesso. Monetizacao mock registrada em ${formatCaseMonetizationAmount(payload.case.monetization?.amountCents, payload.case.monetization?.currency)}.`)
       setSelectedCase(payload.case)
       setSelectedCaseId(payload.case.id)

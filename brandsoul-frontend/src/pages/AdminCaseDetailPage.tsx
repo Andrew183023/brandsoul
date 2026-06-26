@@ -129,11 +129,6 @@ export default function AdminCaseDetailPage({ caseId }: AdminCaseDetailPageProps
   }, [legalCase?.assignedLawyerId, legalCase?.entityId, legalCase?.updatedAt])
 
   async function handleAssignCase() {
-    if (!authSession?.user?.id) {
-      setError('Sessao invalida para atribuir o caso.')
-      return
-    }
-
     const confirmed = window.confirm(`Assumir este caso registra uma cobranca mock fixa de ${formatCaseMonetizationAmount()}. Deseja continuar?`)
     if (!confirmed) {
       return
@@ -144,7 +139,7 @@ export default function AdminCaseDetailPage({ caseId }: AdminCaseDetailPageProps
       setActionFeedback(null)
       setError(null)
 
-      const payload = await assignCase(caseId, String(authSession.user.id))
+      const payload = await assignCase(caseId)
       setLegalCase(payload.case)
       setActionFeedback(`Caso assumido com sucesso. Monetizacao mock registrada em ${formatCaseMonetizationAmount(payload.case.monetization?.amountCents, payload.case.monetization?.currency)}.`)
       await loadCaseDetail()
