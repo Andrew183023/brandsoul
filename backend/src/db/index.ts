@@ -2221,7 +2221,7 @@ async function initializePostgresLegalCaseSchema(db: BackendDatabase) {
         AND rel.relname = 'case_timeline'
         AND con.contype = 'c'
         AND con.conname = 'case_timeline_event_type_check'
-        AND pg_get_constraintdef(con.oid) NOT LIKE '%status_changed%';
+        AND pg_get_constraintdef(con.oid) NOT LIKE '%reassigned%';
 
       IF constraint_name IS NOT NULL THEN
         EXECUTE format('ALTER TABLE case_timeline DROP CONSTRAINT %I', constraint_name);
