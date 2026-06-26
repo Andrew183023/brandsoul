@@ -1434,7 +1434,11 @@
 }
 
 .office-intake-decision {
-  display: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
 }
 
 .office-profile-mobile-cta {
