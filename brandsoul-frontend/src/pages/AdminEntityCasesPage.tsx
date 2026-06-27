@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import React, { type FormEvent } from 'react'
 
 void React
@@ -48,13 +48,19 @@ export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageP
   const [actionFeedback, setActionFeedback] = useState<string | null>(null)
   const [reputation, setReputation] = useState<AdminLawyerReputation | null>(null)
   const [reputationError, setReputationError] = useState<string | null>(null)
+  const casesLoadRequestIdRef = useRef(0)
+  const selectedCaseLoadRequestIdRef = useRef(0)
 
   async function loadCases(preferredCaseId?: string | null) {
+    const requestId = ++casesLoadRequestIdRef.current
     setIsLoading(true)
     setError(null)
 
     try {
       const payload = await listEntityCases(entityId)
+      if (requestId !== casesLoadRequestIdRef.current) {
+        return
+      }
       setCases(payload.cases)
 
       const nextSelectedId = preferredCaseId
@@ -64,9 +70,13 @@ export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageP
 
       setSelectedCaseId(nextSelectedId)
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Erro ao carregar casos.')
+      if (requestId === casesLoadRequestIdRef.current) {
+        setError(nextError instanceof Error ? nextError.message : 'Erro ao carregar casos.')
+      }
     } finally {
-      setIsLoading(false)
+      if (requestId === casesLoadRequestIdRef.current) {
+        setIsLoading(false)
+      }
     }
   }
 
@@ -82,6 +92,8 @@ export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageP
         return
       }
 
+      const requestId = ++selectedCaseLoadRequestIdRef.current
+
       try {
         setIsCaseLoading(true)
         setError(null)
@@ -91,12 +103,20 @@ export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageP
           getCaseMessages(selectedCaseId),
         ])
 
+        if (requestId !== selectedCaseLoadRequestIdRef.current) {
+          return
+        }
+
         setSelectedCase(casePayload.case)
         setMessages(messagesPayload.messages)
       } catch (nextError) {
-        setError(nextError instanceof Error ? nextError.message : 'Erro ao carregar o caso.')
+        if (requestId === selectedCaseLoadRequestIdRef.current) {
+          setError(nextError instanceof Error ? nextError.message : 'Erro ao carregar o caso.')
+        }
       } finally {
-        setIsCaseLoading(false)
+        if (requestId === selectedCaseLoadRequestIdRef.current) {
+          setIsCaseLoading(false)
+        }
       }
     }
 
@@ -143,7 +163,13 @@ export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageP
     }
   }, [entityId, selectedCase?.assignedLawyerId, selectedCase?.updatedAt])
 
+  const isMutating = isAssigning || isResponding
+
   async function handleAssignCase(caseId: string) {
+    if (isMutating) {
+      return
+    }
+
     const confirmed = window.confirm(`Assumir este caso registra uma cobranca mock fixa de ${formatCaseMonetizationAmount()}. Deseja continuar?`)
     if (!confirmed) {
       return
@@ -152,10 +178,19 @@ export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageP
     try {
       setIsAssigning(true)
       setActionFeedback(null)
+      setError(null)
       const payload = await assignCase(caseId)
       setActionFeedback(`Caso assumido com sucesso. Monetizacao mock registrada em ${formatCaseMonetizationAmount(payload.case.monetization?.amountCents, payload.case.monetization?.currency)}.`)
-      setSelectedCase(payload.case)
       setSelectedCaseId(payload.case.id)
+      const requestId = ++selectedCaseLoadRequestIdRef.current
+      const [refreshed, messagesPayload] = await Promise.all([
+        getCase(payload.case.id),
+        getCaseMessages(payload.case.id),
+      ])
+      if (requestId === selectedCaseLoadRequestIdRef.current) {
+        setSelectedCase(refreshed.case)
+        setMessages(messagesPayload.messages)
+      }
       await loadCases(payload.case.id)
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Erro ao assumir caso.')
@@ -167,19 +202,26 @@ export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageP
   async function handleRespond(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
-    if (!selectedCaseId || !responseText.trim()) {
+    if (isMutating || !selectedCaseId || !responseText.trim()) {
       return
     }
 
     try {
       setIsResponding(true)
       setActionFeedback(null)
-      const payload = await respondToCase(selectedCaseId, responseText.trim())
-      setMessages(payload.messages)
+      setError(null)
+      await respondToCase(selectedCaseId, responseText.trim())
       setResponseText('')
       setActionFeedback('Resposta enviada dentro do case.')
-      const refreshed = await getCase(selectedCaseId)
-      setSelectedCase(refreshed.case)
+      const requestId = ++selectedCaseLoadRequestIdRef.current
+      const [refreshed, messagesPayload] = await Promise.all([
+        getCase(selectedCaseId),
+        getCaseMessages(selectedCaseId),
+      ])
+      if (requestId === selectedCaseLoadRequestIdRef.current) {
+        setSelectedCase(refreshed.case)
+        setMessages(messagesPayload.messages)
+      }
       await loadCases(selectedCaseId)
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Erro ao responder caso.')
@@ -228,6 +270,7 @@ export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageP
                         type="button"
                         className="admin-button admin-button--ghost"
                         onClick={() => setSelectedCaseId(item.id)}
+                        disabled={isMutating}
                       >
                         Abrir caso
                       </button>
@@ -239,7 +282,7 @@ export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageP
                           type="button"
                           className="admin-button"
                           onClick={() => void handleAssignCase(item.id)}
-                          disabled={isAssigning}
+                          disabled={isMutating}
                         >
                           {isAssigning && selectedCaseId === item.id ? 'Assumindo...' : `Assumir caso (${formatCaseMonetizationAmount()})`}
                         </button>
@@ -318,7 +361,7 @@ export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageP
                   />
                 </label>
                 <div className="admin-actions">
-                  <button type="submit" className="admin-button" disabled={isResponding || selectedCase.status === 'closed'}>
+                  <button type="submit" className="admin-button" disabled={isMutating || selectedCase.status === 'closed'}>
                     {isResponding ? 'Enviando...' : 'Enviar resposta'}
                   </button>
                   {selectedCase.status === 'open' ? (
@@ -326,7 +369,7 @@ export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageP
                       type="button"
                       className="admin-button admin-button--ghost"
                       onClick={() => void handleAssignCase(selectedCase.id)}
-                      disabled={isAssigning}
+                      disabled={isMutating}
                     >
                       {isAssigning ? 'Assumindo...' : 'Assumir caso'}
                     </button>

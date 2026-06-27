@@ -27,7 +27,7 @@ type AddMessageBody = {
 }
 
 type StatusBody = {
-  status?: 'in_progress' | 'pending' | 'on_hold'
+  status?: 'accepted' | 'in_progress' | 'resolved'
   reason?: string
 }
 
@@ -290,13 +290,45 @@ export async function registerLegalBetaCaseRoutes(app: FastifyInstance) {
     }
 
     const professional = await getCaseRepository(app).getProfessionalRecordByUserId(auth.tenantId, auth.userId)
-    const message = await getCaseService(app).addMessage({
+    const messageResult = await getCaseService(app).addMessage({
       tenantId: auth.tenantId,
       caseId: request.params.id,
       authorProfessionalId: professional?.id,
       body,
       direction: request.body?.role === 'user' ? 'inbound' : 'outbound',
     })
+
+    if (messageResult.status === 'not_found') {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'CASE_NOT_FOUND',
+          message: `Case "${request.params.id}" was not found.`,
+        },
+      })
+    }
+
+    if (messageResult.status === 'closed') {
+      return reply.status(409).send({
+        status: 'failed',
+        error: {
+          code: 'CASE_CLOSED_FOR_MESSAGES',
+          message: 'Casos encerrados ou arquivados não podem receber novas mensagens.',
+        },
+      })
+    }
+
+    if (messageResult.status === 'responsible_required') {
+      return reply.status(409).send({
+        status: 'failed',
+        error: {
+          code: 'CASE_RESPONSIBLE_REQUIRED',
+          message: 'Assuma ou atribua o caso antes de enviar resposta.',
+        },
+      })
+    }
+
+    const message = messageResult.message
 
     const messages = await getCaseService(app).getCaseMessages(auth.tenantId, request.params.id)
     const casePayload = await getCaseService(app).getCaseById(auth.tenantId, request.params.id)
@@ -341,12 +373,12 @@ export async function registerLegalBetaCaseRoutes(app: FastifyInstance) {
     }
 
     const nextStatus = request.body?.status
-    if (!nextStatus || !['in_progress', 'pending', 'on_hold'].includes(nextStatus)) {
+    if (!nextStatus || !['accepted', 'in_progress', 'resolved'].includes(nextStatus)) {
       return reply.status(400).send({
         status: 'failed',
         error: {
           code: 'INVALID_CASE_STATUS',
-          message: 'This endpoint only supports transitions to in_progress, pending or on_hold.',
+          message: 'This endpoint only supports transitions to accepted, in_progress or resolved.',
         },
       })
     }
@@ -358,12 +390,32 @@ export async function registerLegalBetaCaseRoutes(app: FastifyInstance) {
       reason: request.body?.reason,
     })
 
-    if (!updated) {
+    if (updated.status === 'not_found') {
       return reply.status(404).send({
         status: 'failed',
         error: {
           code: 'CASE_NOT_FOUND',
           message: `Case "${request.params.id}" was not found.`,
+        },
+      })
+    }
+
+    if (updated.status === 'responsible_required') {
+      return reply.status(409).send({
+        status: 'failed',
+        error: {
+          code: 'CASE_RESPONSIBLE_REQUIRED',
+          message: 'Defina um responsável ativo antes de alterar o status operacional.',
+        },
+      })
+    }
+
+    if (updated.status === 'invalid_transition') {
+      return reply.status(409).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_CASE_STATUS_TRANSITION',
+          message: 'A transição de status solicitada não é válida para o estado atual do caso.',
         },
       })
     }
@@ -507,6 +559,25 @@ export async function registerLegalBetaCaseRoutes(app: FastifyInstance) {
       })
     }
 
+    if (assigned.status === 'invalid_state') {
+      console.warn('case_assign_failed', {
+        tenantId: auth.tenantId,
+        caseId: request.params.id,
+        entityId: caseRecord.entityId,
+        actorUserId: auth.userId,
+        actorProfessionalId: actingProfessional?.id ?? null,
+        targetProfessionalId: professionalId,
+        reason: 'invalid_case_state',
+      })
+      return reply.status(409).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_CASE_ASSIGNMENT_STATE',
+          message: 'Casos encerrados ou arquivados não podem receber responsável.',
+        },
+      })
+    }
+
     const payload = await getCaseService(app).getCaseById(auth.tenantId, request.params.id)
 
     console.info('case_assign_succeeded', {
@@ -571,6 +642,26 @@ export async function registerLegalBetaCaseRoutes(app: FastifyInstance) {
         error: {
           code: 'CASE_ALREADY_CLOSED',
           message: 'Case is already closed.',
+        },
+      })
+    }
+
+    if (result.status === 'responsible_required') {
+      return reply.status(409).send({
+        status: 'failed',
+        error: {
+          code: 'CASE_RESPONSIBLE_REQUIRED',
+          message: 'Defina um responsável válido antes de encerrar o caso.',
+        },
+      })
+    }
+
+    if (result.status === 'invalid_state') {
+      return reply.status(409).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_CASE_CLOSE_STATE',
+          message: 'O caso só pode ser encerrado após atingir o estado resolved.',
         },
       })
     }

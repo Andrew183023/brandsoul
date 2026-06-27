@@ -1,0 +1,13 @@
+ backend/src/api/canonicalOfficeRoutes.test.ts      | 157 +++++++++++-
+ backend/src/api/routes/legalBetaCaseRoutes.ts      | 101 +++++++-
+ backend/src/db/index.ts                            |   9 +-
+ backend/src/modules/legalCases/caseRepository.ts   |  18 ++
+ .../src/modules/legalCases/legalBetaCaseService.ts | 271 +++++++++++++++------
+ backend/src/services/publicProfileMapper.ts        |   2 +
+ .../src/backend-bridge/api/adminApi.ts             |   4 +-
+ .../src/pages/AdminCaseDetailPage.tsx              |  39 ++-
+ .../src/pages/AdminEntityCasesPage.tsx             |  71 ++++--
+ .../src/pages/AdminOfficeCasesPage.tsx             | 100 +++++---
+ brandsoul-frontend/src/pages/ClientPortalPage.tsx  |  47 ++--
+ brandsoul-frontend/src/pages/adminCaseUi.ts        |   7 +-
+ 12 files changed, 657 insertions(+), 169 deletions(-)

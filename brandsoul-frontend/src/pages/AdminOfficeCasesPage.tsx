@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import React, { type FormEvent } from 'react'
 
 void React
@@ -64,8 +64,8 @@ export function resolveStatusActionTransitionPayload(statusAction: StatusAction)
 
   if (statusAction === 'pendente-cliente') {
     return {
-      status: 'pending' as const,
-      reason: 'admin_cabin_status_update:pendente-cliente',
+      status: 'accepted' as const,
+      reason: 'admin_cabin_status_update:aceito',
     }
   }
 
@@ -171,6 +171,8 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
   const [escalationReason, setEscalationReason] = useState('')
   const [showIndicators, setShowIndicators] = useState(false)
   const [activeWorkbenchPanel, setActiveWorkbenchPanel] = useState<WorkbenchPanel>('attendance')
+  const casesLoadRequestIdRef = useRef(0)
+  const selectedCaseLoadRequestIdRef = useRef(0)
 
   function resolvePriorityTone(level: PriorityLevel) {
     if (level === 'critical') {
@@ -233,6 +235,7 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
   }
 
   async function loadCases(preferredCaseId?: string | null) {
+    const requestId = ++casesLoadRequestIdRef.current
     setIsLoading(true)
     setError(null)
 
@@ -242,6 +245,10 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
         getOfficeBusinessConfig(officeId).catch(() => null),
       ])
       const snapshotAt = new Date().toISOString()
+      if (requestId !== casesLoadRequestIdRef.current) {
+        return
+      }
+
       setCases(payload.cases)
       const nextOfficeConfig = officeConfigPayload?.businessConfig ?? null
       setOfficeConfig(nextOfficeConfig)
@@ -259,9 +266,13 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
 
       setSelectedCaseId(nextSelectedId)
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : 'Erro ao carregar casos.')
+      if (requestId === casesLoadRequestIdRef.current) {
+        setError(nextError instanceof Error ? nextError.message : 'Erro ao carregar casos.')
+      }
     } finally {
-      setIsLoading(false)
+      if (requestId === casesLoadRequestIdRef.current) {
+        setIsLoading(false)
+      }
     }
   }
 
@@ -455,6 +466,8 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
         return
       }
 
+      const requestId = ++selectedCaseLoadRequestIdRef.current
+
       try {
         setIsCaseLoading(true)
         setError(null)
@@ -464,12 +477,20 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
           getCaseMessages(selectedCaseId),
         ])
 
+        if (requestId !== selectedCaseLoadRequestIdRef.current) {
+          return
+        }
+
         setSelectedCase(casePayload.case)
         setMessages(messagesPayload.messages)
       } catch (nextError) {
-        setError(nextError instanceof Error ? nextError.message : 'Erro ao carregar o caso.')
+        if (requestId === selectedCaseLoadRequestIdRef.current) {
+          setError(nextError instanceof Error ? nextError.message : 'Erro ao carregar o caso.')
+        }
       } finally {
-        setIsCaseLoading(false)
+        if (requestId === selectedCaseLoadRequestIdRef.current) {
+          setIsCaseLoading(false)
+        }
       }
     }
 
@@ -517,10 +538,15 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
   }, [officeId, selectedCase?.assignedProfessionalId, selectedCase?.assignedLawyerId, selectedCase?.updatedAt])
 
   async function refreshSelectedCase(caseId: string, feedback?: string) {
+    const requestId = ++selectedCaseLoadRequestIdRef.current
     const [casePayload, messagesPayload] = await Promise.all([
       getCase(caseId),
       getCaseMessages(caseId),
     ])
+
+    if (requestId !== selectedCaseLoadRequestIdRef.current) {
+      return
+    }
 
     setSelectedCase(casePayload.case)
     setMessages(messagesPayload.messages)
@@ -531,7 +557,13 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
     await loadCases(casePayload.case.id)
   }
 
+  const isMutating = isAssigning || isResponding || isStatusUpdating || isForwarding || isEscalating
+
   async function handleAssignCase(caseId: string, requireConfirmation = true, professionalId?: string) {
+    if (isMutating) {
+      return
+    }
+
     if (requireConfirmation) {
       const confirmed = window.confirm(`Assumir este caso registra uma cobrança simulada fixa de ${formatCaseMonetizationAmount()}. Deseja continuar?`)
       if (!confirmed) {
@@ -560,7 +592,7 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
   async function handleRespond(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
-    if (!selectedCaseId || !responseText.trim()) {
+    if (isMutating || !selectedCaseId || !responseText.trim()) {
       return
     }
 
@@ -568,8 +600,7 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
       setIsResponding(true)
       setActionFeedback(null)
       setError(null)
-      const payload = await respondToCase(selectedCaseId, responseText.trim())
-      setMessages(payload.messages)
+      await respondToCase(selectedCaseId, responseText.trim())
       setResponseText('')
       await refreshSelectedCase(selectedCaseId, 'Resposta enviada dentro do case.')
     } catch (nextError) {
@@ -583,7 +614,7 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
   async function handleStatusUpdate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
-    if (!selectedCase) {
+    if (isMutating || !selectedCase) {
       return
     }
 
@@ -595,18 +626,13 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
       const statusTransition = resolveStatusActionTransitionPayload(statusAction)
       if (statusTransition) {
         await updateCaseStatus(selectedCase.id, statusTransition)
-        setSelectedCase((current) => {
-          if (!current || current.id !== selectedCase.id) {
-            return current
-          }
-
-          return applyLocalStatusUpdate(current, statusTransition.status)
-        })
         await refreshSelectedCase(
           selectedCase.id,
-          statusTransition.status === 'in_progress'
-            ? 'Status atualizado para em atendimento.'
-            : 'Status atualizado para aguardando cliente.',
+          statusTransition.status === 'accepted'
+            ? 'Status atualizado para aceito.'
+            : statusTransition.status === 'in_progress'
+              ? 'Status atualizado para em atendimento.'
+              : 'Status atualizado para resolvido.',
         )
         return
       }
@@ -629,7 +655,7 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
   async function handleForwardCase(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
-    if (!selectedCase || !forwardDestination.trim()) {
+    if (isMutating || !selectedCase || !forwardDestination.trim()) {
       return
     }
 
@@ -656,7 +682,7 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
   async function handleEscalateCase(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
-    if (!selectedCase || !escalationReason.trim()) {
+    if (isMutating || !selectedCase || !escalationReason.trim()) {
       return
     }
 
@@ -891,11 +917,12 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
 
                 return (
                   <li key={item.id}>
-                    <button
-                      type="button"
-                      className={`admin-cases-cabin__queue-ticket ${isSelected ? 'is-selected' : ''}`}
-                      onClick={() => setSelectedCaseId(item.id)}
-                    >
+                      <button
+                        type="button"
+                        className={`admin-cases-cabin__queue-ticket ${isSelected ? 'is-selected' : ''}`}
+                        onClick={() => setSelectedCaseId(item.id)}
+                        disabled={isMutating}
+                      >
                       <div className="admin-cases-cabin__queue-ticket-header">
                         <strong>{item.practiceArea?.trim() || 'Caso jurídico geral'}</strong>
                         <StatusChip tone={resolvePriorityTone(entry.level)}>{formatPriorityBadgeLabel(entry.level)}</StatusChip>
@@ -1102,6 +1129,7 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
                             ...current,
                             [selectedCase.id]: event.target.value,
                           }))}
+                          disabled={isMutating || selectedCase.status === 'closed'}
                         >
                           <option value="">Selecione um profissional ativo</option>
                           {activeOfficeProfessionals.map((professional) => (
@@ -1118,7 +1146,7 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
                         <button
                           type="submit"
                           className="admin-button"
-                          disabled={isAssigning || selectedCase.status === 'closed' || !selectedProfessionalIdByCaseId[selectedCase.id]}
+                          disabled={isMutating || selectedCase.status === 'closed' || !selectedProfessionalIdByCaseId[selectedCase.id]}
                         >
                           {isAssigning ? 'Atribuindo...' : 'Atribuir'}
                         </button>
@@ -1126,7 +1154,7 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
                           type="button"
                           className="admin-button admin-button--ghost"
                           onClick={() => void handleAssignCase(selectedCase.id)}
-                          disabled={isAssigning || selectedCase.status === 'closed'}
+                          disabled={isMutating || selectedCase.status === 'closed'}
                         >
                           {isAssigning ? 'Assumindo...' : 'Assumir comigo'}
                         </button>
@@ -1165,14 +1193,14 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
                           onChange={(event) => setResponseText(event.target.value)}
                           rows={5}
                           placeholder="Escreva a resposta do advogado..."
-                          disabled={responseRequiresAssignment || isResponding || selectedCase.status === 'closed'}
+                          disabled={responseRequiresAssignment || isMutating || selectedCase.status === 'closed'}
                         />
                       </label>
                       {responseRequiresAssignment ? (
                         <p className="admin-diagnosis-copy">Assuma ou atribua este caso para liberar resposta.</p>
                       ) : null}
                       <div className="admin-actions">
-                        <button type="submit" className="admin-button" disabled={responseRequiresAssignment || isResponding || selectedCase.status === 'closed'}>
+                        <button type="submit" className="admin-button" disabled={responseRequiresAssignment || isMutating || selectedCase.status === 'closed'}>
                           {isResponding ? 'Enviando...' : 'Responder'}
                         </button>
                       </div>
@@ -1197,8 +1225,8 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
                       <label className="admin-field">
                         <span>Status</span>
                         <select value={statusAction} onChange={(event) => setStatusAction(event.target.value as StatusAction)}>
+                          <option value="pendente-cliente">Aceito</option>
                           <option value="em-atendimento">Em atendimento</option>
-                          <option value="pendente-cliente">Aguardando cliente</option>
                           <option value="finalizado">Finalizado</option>
                         </select>
                       </label>
@@ -1206,7 +1234,7 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
                         <button
                           type="submit"
                           className="admin-button"
-                          disabled={shouldDisableStatusUpdateAction(selectedCase, isStatusUpdating, isAssigning)}
+                          disabled={shouldDisableStatusUpdateAction(selectedCase, isStatusUpdating, isAssigning) || isResponding || isForwarding || isEscalating}
                         >
                           {isStatusUpdating ? 'Salvando...' : 'Salvar'}
                         </button>
@@ -1247,7 +1275,7 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
                         />
                       </label>
                       <div className="admin-actions">
-                        <button type="submit" className="admin-button" disabled={isForwarding || selectedCase.status === 'closed' || !forwardDestination.trim()}>
+                        <button type="submit" className="admin-button" disabled={isMutating || selectedCase.status === 'closed' || !forwardDestination.trim()}>
                           {isForwarding ? 'Encaminhando...' : 'Encaminhar'}
                         </button>
                       </div>
@@ -1287,7 +1315,7 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
                         />
                       </label>
                       <div className="admin-actions">
-                        <button type="submit" className="admin-button" disabled={isEscalating || selectedCase.status === 'closed' || !escalationReason.trim()}>
+                        <button type="submit" className="admin-button" disabled={isMutating || selectedCase.status === 'closed' || !escalationReason.trim()}>
                           {isEscalating ? 'Escalonando...' : 'Escalonar'}
                         </button>
                       </div>

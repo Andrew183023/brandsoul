@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import React, { type FormEvent } from 'react'
 
 void React
@@ -62,8 +62,10 @@ export default function AdminCaseDetailPage({ caseId }: AdminCaseDetailPageProps
   const [actionFeedback, setActionFeedback] = useState<string | null>(null)
   const [reputation, setReputation] = useState<AdminLawyerReputation | null>(null)
   const [reputationError, setReputationError] = useState<string | null>(null)
+  const loadRequestIdRef = useRef(0)
 
   async function loadCaseDetail() {
+    const requestId = ++loadRequestIdRef.current
     try {
       setIsLoading(true)
       setError(null)
@@ -73,13 +75,21 @@ export default function AdminCaseDetailPage({ caseId }: AdminCaseDetailPageProps
         getCaseMessages(caseId),
       ])
 
+      if (requestId !== loadRequestIdRef.current) {
+        return
+      }
+
       setLegalCase(casePayload.case)
       setMessages(messagesPayload.messages)
     } catch (nextError) {
       const message = nextError instanceof Error ? nextError.message : 'Erro ao carregar o caso.'
-      setError(resolveLoadErrorMessage(message))
+      if (requestId === loadRequestIdRef.current) {
+        setError(resolveLoadErrorMessage(message))
+      }
     } finally {
-      setIsLoading(false)
+      if (requestId === loadRequestIdRef.current) {
+        setIsLoading(false)
+      }
     }
   }
 
@@ -128,7 +138,13 @@ export default function AdminCaseDetailPage({ caseId }: AdminCaseDetailPageProps
     }
   }, [legalCase?.assignedLawyerId, legalCase?.entityId, legalCase?.updatedAt])
 
+  const isMutating = isAssigning || isResponding || isClosing
+
   async function handleAssignCase() {
+    if (isMutating) {
+      return
+    }
+
     const confirmed = window.confirm(`Assumir este caso registra uma cobranca mock fixa de ${formatCaseMonetizationAmount()}. Deseja continuar?`)
     if (!confirmed) {
       return
@@ -140,7 +156,6 @@ export default function AdminCaseDetailPage({ caseId }: AdminCaseDetailPageProps
       setError(null)
 
       const payload = await assignCase(caseId)
-      setLegalCase(payload.case)
       setActionFeedback(`Caso assumido com sucesso. Monetizacao mock registrada em ${formatCaseMonetizationAmount(payload.case.monetization?.amountCents, payload.case.monetization?.currency)}.`)
       await loadCaseDetail()
     } catch (nextError) {
@@ -153,7 +168,7 @@ export default function AdminCaseDetailPage({ caseId }: AdminCaseDetailPageProps
   async function handleRespond(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
-    if (!responseText.trim()) {
+    if (isMutating || !responseText.trim()) {
       return
     }
 
@@ -162,8 +177,7 @@ export default function AdminCaseDetailPage({ caseId }: AdminCaseDetailPageProps
       setActionFeedback(null)
       setError(null)
 
-      const payload = await respondToCase(caseId, responseText.trim())
-      setMessages(payload.messages)
+      await respondToCase(caseId, responseText.trim())
       setResponseText('')
       setActionFeedback('Resposta enviada dentro do case.')
       await loadCaseDetail()
@@ -177,6 +191,10 @@ export default function AdminCaseDetailPage({ caseId }: AdminCaseDetailPageProps
   async function handleCloseCase(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
+    if (isMutating) {
+      return
+    }
+
     try {
       setIsClosing(true)
       setActionFeedback(null)
@@ -189,7 +207,6 @@ export default function AdminCaseDetailPage({ caseId }: AdminCaseDetailPageProps
         closedBy,
       })
 
-      setLegalCase(payload.case)
       setActionFeedback('Caso finalizado com avaliacao registrada.')
       await loadCaseDetail()
     } catch (nextError) {
@@ -280,7 +297,7 @@ export default function AdminCaseDetailPage({ caseId }: AdminCaseDetailPageProps
             </label>
 
             <div className="admin-actions">
-              <button type="submit" className="admin-button" disabled={isResponding || legalCase.status === 'closed'}>
+              <button type="submit" className="admin-button" disabled={isMutating || legalCase.status === 'closed'}>
                 {isResponding ? 'Enviando...' : 'Enviar resposta'}
               </button>
 
@@ -289,7 +306,7 @@ export default function AdminCaseDetailPage({ caseId }: AdminCaseDetailPageProps
                   type="button"
                   className="admin-button admin-button--ghost"
                   onClick={() => void handleAssignCase()}
-                  disabled={isAssigning}
+                  disabled={isMutating}
                 >
                   {isAssigning ? 'Assumindo...' : `Assumir caso (${formatCaseMonetizationAmount()})`}
                 </button>
@@ -325,7 +342,7 @@ export default function AdminCaseDetailPage({ caseId }: AdminCaseDetailPageProps
                 </label>
               </div>
               <div className="admin-actions">
-                <button type="submit" className="admin-button" disabled={isClosing}>
+                <button type="submit" className="admin-button" disabled={isMutating}>
                   {isClosing ? 'Finalizando...' : 'Finalizar caso'}
                 </button>
               </div>

@@ -1,0 +1,12 @@
+backend/src/api/canonicalOfficeRoutes.test.ts
+backend/src/api/routes/legalBetaCaseRoutes.ts
+backend/src/db/index.ts
+backend/src/modules/legalCases/caseRepository.ts
+backend/src/modules/legalCases/legalBetaCaseService.ts
+backend/src/services/publicProfileMapper.ts
+brandsoul-frontend/src/backend-bridge/api/adminApi.ts
+brandsoul-frontend/src/pages/AdminCaseDetailPage.tsx
+brandsoul-frontend/src/pages/AdminEntityCasesPage.tsx
+brandsoul-frontend/src/pages/AdminOfficeCasesPage.tsx
+brandsoul-frontend/src/pages/ClientPortalPage.tsx
+brandsoul-frontend/src/pages/adminCaseUi.ts

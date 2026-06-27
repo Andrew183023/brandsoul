@@ -1,0 +1,25 @@
+On branch recovery/brandsoul-legal-final-consolidation
+Your branch is up to date with 'brandsoul-legal/recovery/brandsoul-legal-final-consolidation'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   backend/src/api/canonicalOfficeRoutes.test.ts
+	modified:   backend/src/api/routes/legalBetaCaseRoutes.ts
+	modified:   backend/src/db/index.ts
+	modified:   backend/src/modules/legalCases/caseRepository.ts
+	modified:   backend/src/modules/legalCases/legalBetaCaseService.ts
+	modified:   backend/src/services/publicProfileMapper.ts
+	modified:   brandsoul-frontend/src/backend-bridge/api/adminApi.ts
+	modified:   brandsoul-frontend/src/pages/AdminCaseDetailPage.tsx
+	modified:   brandsoul-frontend/src/pages/AdminEntityCasesPage.tsx
+	modified:   brandsoul-frontend/src/pages/AdminOfficeCasesPage.tsx
+	modified:   brandsoul-frontend/src/pages/ClientPortalPage.tsx
+	modified:   brandsoul-frontend/src/pages/adminCaseUi.ts
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	audits/
+	brandsoul-frontend/dist-legal/
+
+no changes added to commit (use "git add" and/or "git commit -a")

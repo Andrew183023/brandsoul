@@ -88,6 +88,36 @@ export class LegalBetaCaseService {
     return this.caseRepository.listMessages(tenantId, caseId)
   }
 
+  private isAllowedStatusTransition(from: CaseStatus, to: CaseStatus) {
+    return (
+      (from === 'open' && to === 'dispatched')
+      || (from === 'dispatched' && to === 'accepted')
+      || (from === 'accepted' && to === 'in_progress')
+      || (from === 'in_progress' && to === 'resolved')
+      || (from === 'resolved' && to === 'closed')
+    )
+  }
+
+  private resolveOperationalResponsible(
+    current: CaseRecord,
+    assignments: Array<{ professionalId: string; status: string; assignedAt: string }>,
+  ) {
+    const activeAssignment = assignments.find((assignment) => assignment.status === 'active')
+    if (activeAssignment?.professionalId) {
+      return activeAssignment.professionalId
+    }
+
+    if (current.leadProfessionalId) {
+      return current.leadProfessionalId
+    }
+
+    const latestAssignment = assignments
+      .slice()
+      .sort((left, right) => Date.parse(right.assignedAt) - Date.parse(left.assignedAt))[0]
+
+    return latestAssignment?.professionalId
+  }
+
   async addMessage(args: {
     tenantId: number
     caseId: string
@@ -95,58 +125,132 @@ export class LegalBetaCaseService {
     body: string
     direction: 'inbound' | 'outbound' | 'internal'
   }) {
-    const message = await this.caseRepository.addMessage({
-      tenantId: args.tenantId,
-      caseId: args.caseId,
-      authorProfessionalId: args.authorProfessionalId,
-      body: args.body,
-      direction: args.direction,
-      messageType: 'note',
-      messageStatus: 'sent',
-      sentAt: new Date().toISOString(),
-    })
+    return this.db.transaction(async (tx) => {
+      const repository = createCaseRepository(tx)
+      const current = await repository.getCaseByIdForUpdate(args.tenantId, args.caseId)
+      if (!current) {
+        return { status: 'not_found' as const }
+      }
 
-    await this.caseRepository.addTimelineEvent({
-      tenantId: args.tenantId,
-      caseId: args.caseId,
-      eventType: 'message_added',
-      actorProfessionalId: args.authorProfessionalId,
-      payload: {
-        sequenceNo: message.sequenceNo,
-      },
-    })
+      if (current.status === 'closed' || current.status === 'archived') {
+        return { status: 'closed' as const }
+      }
 
-    return message
+      const assignments = await repository.listAssignmentsByCase(args.tenantId, args.caseId)
+      const activeAssignment = assignments.find((assignment) => assignment.status === 'active')
+
+      if (args.direction !== 'inbound' && !activeAssignment?.professionalId) {
+        return { status: 'responsible_required' as const }
+      }
+
+      const normalizedAuthorProfessionalId = args.direction === 'inbound'
+        ? args.authorProfessionalId
+        : activeAssignment?.professionalId
+
+      const latestMessage = await repository.getLatestMessage(args.tenantId, args.caseId)
+      const latestMessageTimestamp = latestMessage ? Date.parse(latestMessage.createdAt) : Number.NaN
+      const isImmediateRetryDuplicate = Boolean(
+        latestMessage
+        && latestMessage.body === args.body
+        && latestMessage.direction === args.direction
+        && (latestMessage.authorProfessionalId ?? undefined) === normalizedAuthorProfessionalId
+        && Number.isFinite(latestMessageTimestamp)
+        && (Date.now() - latestMessageTimestamp) <= 5_000
+      )
+
+      if (isImmediateRetryDuplicate) {
+        return {
+          status: 'duplicate' as const,
+          message: latestMessage!,
+        }
+      }
+
+      const message = await repository.addMessage({
+        tenantId: args.tenantId,
+        caseId: args.caseId,
+        authorProfessionalId: normalizedAuthorProfessionalId,
+        body: args.body,
+        direction: args.direction,
+        messageType: 'note',
+        messageStatus: 'sent',
+        sentAt: new Date().toISOString(),
+      })
+
+      await repository.addTimelineEvent({
+        tenantId: args.tenantId,
+        caseId: args.caseId,
+        eventType: 'message_added',
+        actorProfessionalId: normalizedAuthorProfessionalId,
+        payload: {
+          sequenceNo: message.sequenceNo,
+        },
+      })
+
+      return {
+        status: 'ready' as const,
+        message,
+      }
+    })
   }
 
   async updateStatus(args: {
     tenantId: number
     caseId: string
-    status: Extract<CaseStatus, 'in_progress' | 'pending' | 'on_hold'>
+    status: Extract<CaseStatus, 'accepted' | 'in_progress' | 'resolved'>
     reason?: string
   }) {
-    const current = await this.caseRepository.getCaseById(args.tenantId, args.caseId)
-    if (!current) {
-      return null
-    }
+    return this.db.transaction(async (tx) => {
+      const repository = createCaseRepository(tx)
+      const current = await repository.getCaseByIdForUpdate(args.tenantId, args.caseId)
+      if (!current) {
+        return { status: 'not_found' as const }
+      }
 
-    const updated = await this.caseRepository.updateCaseStatus(args.tenantId, args.caseId, args.status, args.reason)
-    if (!updated) {
-      return null
-    }
+      if (current.status === args.status) {
+        return {
+          status: 'unchanged' as const,
+          caseRecord: current,
+        }
+      }
 
-    await this.caseRepository.addTimelineEvent({
-      tenantId: args.tenantId,
-      caseId: args.caseId,
-      eventType: 'status_changed',
-      payload: {
-        from: current.status,
-        to: args.status,
-        reason: args.reason,
-      },
+      if (!this.isAllowedStatusTransition(current.status, args.status)) {
+        return {
+          status: 'invalid_transition' as const,
+          caseRecord: current,
+        }
+      }
+
+      const assignments = await repository.listAssignmentsByCase(args.tenantId, args.caseId)
+      const responsibleProfessionalId = this.resolveOperationalResponsible(current, assignments)
+      if (!responsibleProfessionalId) {
+        return {
+          status: 'responsible_required' as const,
+          caseRecord: current,
+        }
+      }
+
+      const updated = await repository.updateCaseStatus(args.tenantId, args.caseId, args.status, args.reason)
+      if (!updated) {
+        return { status: 'not_found' as const }
+      }
+
+      await repository.addTimelineEvent({
+        tenantId: args.tenantId,
+        caseId: args.caseId,
+        eventType: 'status_changed',
+        actorProfessionalId: responsibleProfessionalId,
+        payload: {
+          from: current.status,
+          to: args.status,
+          reason: args.reason,
+        },
+      })
+
+      return {
+        status: 'ready' as const,
+        caseRecord: updated,
+      }
     })
-
-    return updated
   }
 
   async assign(args: {
@@ -160,6 +264,10 @@ export class LegalBetaCaseService {
       const current = await repository.getCaseByIdForUpdate(args.tenantId, args.caseId)
       if (!current) {
         return { status: 'not_found' as const }
+      }
+
+      if (current.status === 'closed' || current.status === 'archived') {
+        return { status: 'invalid_state' as const }
       }
 
       const assignments = await repository.listAssignmentsByCase(args.tenantId, args.caseId)
@@ -227,40 +335,61 @@ export class LegalBetaCaseService {
     feedback?: string
     closedBy: string
   }) {
-    const current = await this.caseRepository.getCaseById(args.tenantId, args.caseId)
-    if (!current) {
-      return { status: 'not_found' as const }
-    }
+    return this.db.transaction(async (tx) => {
+      const repository = createCaseRepository(tx)
+      const current = await repository.getCaseByIdForUpdate(args.tenantId, args.caseId)
+      if (!current) {
+        return { status: 'not_found' as const }
+      }
 
-    if (current.status === 'closed' || current.status === 'archived') {
-      return { status: 'already_closed' as const }
-    }
+      if (current.status === 'closed' || current.status === 'archived') {
+        return { status: 'already_closed' as const }
+      }
 
-    const metadata = safeJsonObject(current.metadata)
-    metadata.outcome = buildCaseOutcome({
-      currentStatus: current.status,
-      rating: args.rating,
-      feedback: args.feedback,
-      closedBy: args.closedBy,
-    })
+      if (current.status !== 'resolved') {
+        return {
+          status: 'invalid_state' as const,
+          caseRecord: current,
+        }
+      }
 
-    await this.caseRepository.updateCaseMetadata(args.tenantId, args.caseId, metadata)
-    const updated = await this.caseRepository.closeCase(args.tenantId, args.caseId, args.feedback)
-    if (!updated) {
-      return { status: 'not_found' as const }
-    }
+      const assignments = await repository.listAssignmentsByCase(args.tenantId, args.caseId)
+      const responsibleProfessionalId = this.resolveOperationalResponsible(current, assignments)
+      if (!responsibleProfessionalId) {
+        return {
+          status: 'responsible_required' as const,
+          caseRecord: current,
+        }
+      }
 
-    await this.caseRepository.addTimelineEvent({
-      tenantId: args.tenantId,
-      caseId: args.caseId,
-      eventType: 'closed',
-      payload: {
-        closedBy: args.closedBy,
+      const metadata = safeJsonObject(current.metadata)
+      metadata.outcome = buildCaseOutcome({
+        currentStatus: current.status,
         rating: args.rating,
-      },
-    })
+        feedback: args.feedback,
+        closedBy: args.closedBy,
+      })
 
-    return { status: 'closed' as const, caseRecord: updated }
+      await repository.updateCaseMetadata(args.tenantId, args.caseId, metadata)
+      const updated = await repository.closeCase(args.tenantId, args.caseId, args.feedback)
+      if (!updated) {
+        return { status: 'not_found' as const }
+      }
+
+      await repository.addTimelineEvent({
+        tenantId: args.tenantId,
+        caseId: args.caseId,
+        eventType: 'closed',
+        actorProfessionalId: responsibleProfessionalId,
+        payload: {
+          closedBy: args.closedBy,
+          rating: args.rating,
+          responsibleProfessionalId,
+        },
+      })
+
+      return { status: 'closed' as const, caseRecord: updated }
+    })
   }
 
   async createPublicTriageCase(args: {
@@ -536,16 +665,12 @@ export class LegalBetaCaseService {
   }
 
   async resolveAssignedProfessionalId(tenantId: number, caseRecord: CaseRecord) {
-    if (caseRecord.leadProfessionalId) {
-      return caseRecord.leadProfessionalId
-    }
-
     const assignments = await this.caseRepository.listAssignmentsByCase(tenantId, caseRecord.id)
     const activeAssignments = assignments
       .filter((assignment) => assignment.status === 'active')
       .sort((left, right) => Date.parse(right.assignedAt) - Date.parse(left.assignedAt))
 
-    return activeAssignments[0]?.professionalId
+    return activeAssignments[0]?.professionalId ?? caseRecord.leadProfessionalId
   }
 }
 

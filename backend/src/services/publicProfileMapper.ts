@@ -10,6 +10,7 @@ type ExportRecord = {
 
 type PublicProfile = {
   schemaVersion: 1
+  id: string
   entityId: string
   canonicalSlug: string
   name: string
@@ -90,6 +91,7 @@ export function mapEntityProfileToPublicProfile(args: {
 
   return {
     schemaVersion: 1,
+    id: String(entity.id),
     entityId: String(entity.id),
     canonicalSlug: readString(canonicalIdentityRecord.canonicalSlug) ?? '',
     name,

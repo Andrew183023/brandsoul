@@ -1487,6 +1487,7 @@ export class SovereignMutationCommandService {
 
     return getInstitutionalSovereignMutationGate().evaluateAndExecute({
       authoritySource: 'backend/src/orchestrator/sovereignMutationCommandService.ts#submitCommand',
+      mutationId: command.commandId,
       context: {
         mutationType: command.type,
         mutationScope: command.type.startsWith('approval.')

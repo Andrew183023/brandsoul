@@ -1,0 +1,14 @@
+brandsoul-frontend/src/app/LegalAdminApp.tsx:39:  console.log({
+brandsoul-frontend/src/AppLegal.tsx:103:      console.log({
+brandsoul-frontend/src/lib/authContinuation.ts:116:  console.log({
+brandsoul-frontend/src/lib/authContinuation.ts:133:  console.log({
+brandsoul-frontend/src/lib/authContinuation.ts:155:    console.log({
+brandsoul-frontend/src/lib/authContinuation.ts:165:  console.log({
+brandsoul-frontend/src/lib/authContinuation.ts:177:    console.log({
+brandsoul-frontend/src/lib/authContinuation.ts:189:    console.log({
+brandsoul-frontend/src/lib/authContinuation.ts:199:  console.log({
+brandsoul-frontend/src/lib/institutionalOnboarding.ts:251:    console.log({
+brandsoul-frontend/src/lib/institutionalOnboarding.ts:304:    console.log({
+brandsoul-frontend/src/lib/institutionalOnboarding.ts:313:    console.log({
+brandsoul-frontend/src/pages/AdminOfficeGatewayPage.tsx:40:        console.log({
+brandsoul-frontend/src/pages/AdminOfficeGatewayPage.tsx:47:        console.log({

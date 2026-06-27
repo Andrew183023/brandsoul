@@ -91,6 +91,7 @@ async function createHarness(): Promise<Harness> {
   const previousEnv = {
     JWT_SECRET: process.env.JWT_SECRET,
     SQLITE_FILE: process.env.SQLITE_FILE,
+    BRANDSOUL_DB_PATH: process.env.BRANDSOUL_DB_PATH,
     ASSET_STORAGE_DIR: process.env.ASSET_STORAGE_DIR,
     AUTH_ISSUER: process.env.AUTH_ISSUER,
     AUTH_AUDIENCE: process.env.AUTH_AUDIENCE,
@@ -101,6 +102,7 @@ async function createHarness(): Promise<Harness> {
 
   process.env.JWT_SECRET = 'canonical-office-routes-secret'
   process.env.SQLITE_FILE = path.join(workspace, 'canonical-office-routes.sqlite')
+  process.env.BRANDSOUL_DB_PATH = process.env.SQLITE_FILE
   process.env.ASSET_STORAGE_DIR = path.join(workspace, 'assets')
   process.env.AUTH_ISSUER = 'brandsoul-auth-canonical-office-routes'
   process.env.AUTH_AUDIENCE = 'brandsoul-api-canonical-office-routes'

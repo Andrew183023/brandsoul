@@ -68,6 +68,7 @@ import type { EntityBusinessConfig, EntityBusinessType } from '../../domain/enti
 import type { OrchestratorSnapshotRepository } from '../../repositories/orchestratorSnapshotRepository.js'
 import type { RelationalTraceRepository } from '../../repositories/relationalTraceRepository.js'
 import type { SovereignMutationCommandService } from '../../orchestrator/sovereignMutationCommandService.js'
+import { hashCasePortalAccessToken } from './legalBetaSupport.js'
 import type {
   EntityMutationResult,
   EntityRelationshipInteractionResult,
@@ -379,12 +380,6 @@ function normalizePortalTimestamp(value: string | Date | null | undefined) {
   }
 
   return value.toISOString()
-}
-
-function hashCasePortalAccessToken(token: string) {
-  return createHmac('sha256', getJwtSecret())
-    .update(token, 'utf-8')
-    .digest('hex')
 }
 
 async function getCasePortalAccessTokenRecord(app: FastifyInstance, caseId: string, token: string) {
@@ -878,6 +873,209 @@ function projectPublicOfficeBusinessConfig(
           responseWindowLabel: businessConfig.serviceRules.responseWindowLabel,
         }
       : undefined,
+  }
+}
+
+async function buildCanonicalPublicOfficeProfessionalsPayload(
+  app: FastifyInstance,
+  officeId: string,
+  ownerTenantId: number,
+) {
+  const professionals = await getLegalCaseRepository(app).listDetailedProfessionalsForTenant(ownerTenantId)
+  const officeProfessionals = professionals
+    .filter((professional) => professional.officeId === officeId && professional.status === 'active')
+
+  const publicProfessionals = officeProfessionals
+    .filter((professional) => professional.isPublic === true || professional.isResponsible === true)
+    .map((professional) => ({
+      id: professional.id,
+      fullName: professional.displayName,
+      photoUrl: professional.photoUrl,
+      oabCredential: professional.oabCredential,
+      specialties: professional.specialties,
+      bio: professional.bio,
+      isResponsible: professional.isResponsible,
+    }))
+
+  const responsible = publicProfessionals.find((professional) => professional.isResponsible === true)
+  const others = publicProfessionals
+    .filter((professional) => professional.isResponsible !== true)
+    .map(({ isResponsible: _isResponsible, ...professional }) => professional)
+
+  return {
+    status: 'ready' as const,
+    officeId,
+    responsible: responsible
+      ? {
+          id: responsible.id,
+          fullName: responsible.fullName,
+          photoUrl: responsible.photoUrl,
+          oabCredential: responsible.oabCredential,
+          specialties: responsible.specialties,
+          bio: responsible.bio,
+        }
+      : undefined,
+    professionals: others,
+  }
+}
+
+function isCanonicalIdentityBootstrapError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false
+  }
+
+  const maybeCode = (error as Error & { code?: string }).code
+  return maybeCode === 'ENTITY_CANONICAL_IDENTITY_REQUIRED'
+    || error.message.includes('ENTITY_CANONICAL_IDENTITY_REQUIRED')
+}
+
+async function buildCanonicalPublicOfficePresencePayload(
+  app: FastifyInstance,
+  officeId: string,
+  entity: Awaited<ReturnType<EntityRepository['getEntityById']>>,
+) {
+  if (!entity) {
+    return null
+  }
+
+  const eventLogRepository = getEventLogRepository(app)
+  const exportRepository = getEntityExportRepository(app)
+  const snapshotRepository = getOrchestratorSnapshotRepository(app)
+  const relationalTraceRepository = getRelationalTraceRepository(app)
+  const [events, exports, latestSnapshot, relationalTrace] = await Promise.all([
+    eventLogRepository.getRecentEvents(officeId, 60),
+    exportRepository.getExports(officeId),
+    snapshotRepository.getLatestSnapshot(officeId),
+    relationalTraceRepository.getEntityTraces(officeId, 12),
+  ])
+  const publicProfile = mapEntityProfileToPublicProfile({
+    entity: entity.entityProfile,
+    events,
+    exports,
+  })
+
+  const buildBootstrapPresenceFallback = () => ({
+    entity: {
+      id: officeId,
+      name: publicProfile.name,
+      tagline: publicProfile.tagline,
+      avatarExportRef: publicProfile.avatarExportRef,
+      species: publicProfile.species,
+    },
+    visual: {
+      intensity: 0.38,
+      presenceHealth: {
+        trend: 'forming' as const,
+        intensity: 'low' as const,
+        summary: 'Presença pública em inicialização enquanto a identidade canônica é preparada.',
+        recentSignals: events.slice(0, 3).map((event) => ({
+          label: event.type,
+          eventType: event.type,
+          occurredAt: event.timestamp,
+        })),
+      },
+    },
+    relational: {
+      relationshipLabel: 'presença em inicialização',
+      tier: 'new' as const,
+      relationalProjection: undefined,
+    },
+    trajectory: exports.slice(0, 2).map((record) => ({
+      summary: `Export ${record.format} manteve a presença pública disponível.`,
+      occurredAt: record.createdAt,
+    })),
+    exports: exports.slice(0, 4).map((record) => ({
+      id: record.id,
+      summary: `Export ${record.format} conectado à presença pública inicial.`,
+      origin: undefined,
+      impact: undefined,
+      fileUrl: record.fileUrl,
+      occurredAt: record.createdAt,
+    })),
+    cta: {
+      type: 'interact' as const,
+      label: 'Interagir',
+    },
+    deprecatedFallbacks: [],
+    publicFlowMindPartial: undefined,
+  })
+
+  try {
+    return buildPublicPresenceResponse({
+      entityId: officeId,
+      entityProfile: entity.entityProfile as EntityProfile,
+      publicProfile,
+      latestSnapshot,
+      recentEvents: events,
+      relationalTrace,
+      exports,
+    })
+  } catch (error) {
+    if (isCanonicalIdentityBootstrapError(error)) {
+      return buildBootstrapPresenceFallback()
+    }
+
+    throw error
+  }
+}
+
+async function buildCanonicalPublicOfficeSocialProofPayload(
+  app: FastifyInstance,
+  officeId: string,
+  entity: Awaited<ReturnType<EntityRepository['getEntityById']>>,
+) {
+  if (!entity || typeof entity.ownerTenantId !== 'number') {
+    return {
+      status: 'ready' as const,
+      officeId,
+      items: [],
+    }
+  }
+
+  const businessConfig = readEntityBusinessConfig(entity.entityProfile as EntityProfile)
+  const approvedCaseIds = new Set((businessConfig?.trustEvidence?.approvedCaseIds ?? []).filter(Boolean))
+  if (businessConfig?.trustEvidence?.enabled !== true || approvedCaseIds.size === 0) {
+    return {
+      status: 'ready' as const,
+      officeId,
+      items: [],
+    }
+  }
+
+  const cases = await getLegalBetaCaseService(app).listCasesByEntity(entity.ownerTenantId, officeId)
+  const items = cases
+    .filter((caseRecord) => approvedCaseIds.has(caseRecord.id))
+    .filter((caseRecord) => caseRecord.outcome?.verifiedClientFeedback === true && typeof caseRecord.outcome?.feedback === 'string')
+    .map((caseRecord) => ({
+      caseId: caseRecord.id,
+      firstName: caseRecord.outcome?.firstName,
+      city: caseRecord.city,
+      serviceType: caseRecord.practiceArea,
+      review: caseRecord.outcome?.feedback,
+      rating: caseRecord.outcome?.rating,
+    }))
+
+  return {
+    status: 'ready' as const,
+    officeId,
+    items,
+  }
+}
+
+function buildCanonicalPublicOfficeAvailabilityPayload(entityProfile: EntityProfile) {
+  const businessConfig = readEntityBusinessConfig(entityProfile)
+  const message = businessConfig?.publicMessages?.availabilityMessage?.trim() || undefined
+  const responseWindowLabel = businessConfig?.serviceRules?.responseWindowLabel?.trim() || undefined
+  const operatingHours = businessConfig?.operatingHours?.trim() || undefined
+
+  if (!message && !responseWindowLabel && !operatingHours) {
+    return null
+  }
+
+  return {
+    message,
+    responseWindowLabel,
+    operatingHours,
   }
 }
 
@@ -3377,12 +3575,21 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       if (!entity) {
         return null
       }
-
       const eventLogRepository = getEventLogRepository(app)
       const exportRepository = getEntityExportRepository(app)
-      const [events, exports] = await Promise.all([
+      const [events, exports, presence, professionalsPayload, socialProofPayload] = await Promise.all([
         eventLogRepository.getRecentEvents(request.params.id, 100),
         exportRepository.getExports(request.params.id),
+        buildCanonicalPublicOfficePresencePayload(app, request.params.id, entity),
+        typeof entity.ownerTenantId === 'number'
+          ? buildCanonicalPublicOfficeProfessionalsPayload(app, request.params.id, entity.ownerTenantId)
+          : Promise.resolve({
+              status: 'ready' as const,
+              officeId: request.params.id,
+              responsible: undefined,
+              professionals: [],
+            }),
+        buildCanonicalPublicOfficeSocialProofPayload(app, request.params.id, entity),
       ])
 
       return {
@@ -3396,6 +3603,11 @@ export async function registerEntityRoutes(app: FastifyInstance) {
         businessConfig: projectPublicOfficeBusinessConfig(
           readEntityBusinessConfig(entity.entityProfile as EntityProfile),
         ) ?? null,
+        responsible: professionalsPayload.responsible,
+        professionals: professionalsPayload.professionals,
+        presence,
+        socialProof: socialProofPayload.items,
+        availability: buildCanonicalPublicOfficeAvailabilityPayload(entity.entityProfile as EntityProfile),
       }
     })
 
@@ -3411,6 +3623,57 @@ export async function registerEntityRoutes(app: FastifyInstance) {
 
     reply.header('Cache-Control', 'public, max-age=30, stale-while-revalidate=60')
     return payload
+  })
+
+  app.get<{ Params: { id: string } }>('/public/escritorios/:id/profissionais', { preHandler: publicReadRateLimit }, async (request, reply) => {
+    const entity = await getRepository(app).getEntityById(request.params.id)
+    if (!entity || typeof entity.ownerTenantId !== 'number') {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'OFFICE_NOT_FOUND',
+          message: `Office "${request.params.id}" was not found.`,
+        },
+      })
+    }
+
+    return buildCanonicalPublicOfficeProfessionalsPayload(app, request.params.id, entity.ownerTenantId)
+  })
+
+  app.get<{ Params: { id: string } }>('/public/escritorios/:id/presenca', { preHandler: publicReadRateLimit }, async (request, reply) => {
+    const entity = await getRepository(app).getEntityById(request.params.id)
+    if (!entity) {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'OFFICE_NOT_FOUND',
+          message: `Office "${request.params.id}" was not found.`,
+        },
+      })
+    }
+
+    const presence = await buildCanonicalPublicOfficePresencePayload(app, request.params.id, entity)
+
+    return {
+      status: 'ready',
+      officeId: request.params.id,
+      presence,
+    }
+  })
+
+  app.get<{ Params: { id: string } }>('/public/escritorios/:id/prova-social', { preHandler: publicReadRateLimit }, async (request, reply) => {
+    const entity = await getRepository(app).getEntityById(request.params.id)
+    if (!entity || typeof entity.ownerTenantId !== 'number') {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'OFFICE_NOT_FOUND',
+          message: `Office "${request.params.id}" was not found.`,
+        },
+      })
+    }
+
+    return buildCanonicalPublicOfficeSocialProofPayload(app, request.params.id, entity)
   })
 
   app.post<{ Params: { id: string } }>('/entity/:id/rebrand/diagnose', { preHandler: [requireAuth, requireEntityOwner, privateWriteRateLimit] }, async (

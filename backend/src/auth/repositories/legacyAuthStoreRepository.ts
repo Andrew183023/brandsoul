@@ -163,34 +163,67 @@ export class LegacyAuthStoreRepository implements AuthIdentityStoreRepository {
     return this.dbPromise
   }
 
+  private async resolveAuthUserTable(db: SQLiteDatabase) {
+    const flow = await db.get<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='flow_auth_user'",
+    )
+
+    return flow ? 'flow_auth_user' : 'users'
+  }
+
+  private async resolveAuthTenantTable(db: SQLiteDatabase) {
+    const flow = await db.get<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='flow_auth_tenant'",
+    )
+
+    return flow ? 'flow_auth_tenant' : 'tenants'
+  }
+
+  private async resolveMembershipTable(db: SQLiteDatabase) {
+    const flow = await db.get<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='flow_auth_membership'",
+    )
+
+    if (flow) {
+      return 'flow_auth_membership'
+    }
+
+    return 'memberships'
+  }
+
   async findUserByEmail(email: string) {
     const db = await this.getDb()
-    const row = await db.get<UserRow>(`SELECT * FROM users WHERE email = ?`, email.toLowerCase())
+    const table = await this.resolveAuthUserTable(db)
+    const row = await db.get<UserRow>(`SELECT * FROM ${table} WHERE email = ?`, email.toLowerCase())
     return mapUserRow(row)
   }
 
   async findUserById(userId: number) {
     const db = await this.getDb()
-    const row = await db.get<UserRow>(`SELECT * FROM users WHERE id = ?`, userId)
+    const table = await this.resolveAuthUserTable(db)
+    const row = await db.get<UserRow>(`SELECT * FROM ${table} WHERE id = ?`, userId)
     return mapUserRow(row)
   }
 
   async findTenantById(tenantId: number) {
     const db = await this.getDb()
-    const row = await db.get<TenantRow>(`SELECT * FROM tenants WHERE id = ?`, tenantId)
+    const table = await this.resolveAuthTenantTable(db)
+    const row = await db.get<TenantRow>(`SELECT * FROM ${table} WHERE id = ?`, tenantId)
     return mapTenantRow(row)
   }
 
   async findTenantBySlug(slug: string) {
     const db = await this.getDb()
-    const row = await db.get<TenantRow>(`SELECT * FROM tenants WHERE slug = ?`, slug)
+    const table = await this.resolveAuthTenantTable(db)
+    const row = await db.get<TenantRow>(`SELECT * FROM ${table} WHERE slug = ?`, slug)
     return mapTenantRow(row)
   }
 
   async findMembershipForUser(userId: number) {
     const db = await this.getDb()
+    const table = await this.resolveMembershipTable(db)
     const row = await db.get<MembershipRow>(
-      `SELECT * FROM memberships WHERE user_id = ? ORDER BY id ASC LIMIT 1`,
+      `SELECT * FROM ${table} WHERE user_id = ? ORDER BY id ASC LIMIT 1`,
       userId,
     )
     return mapMembershipRow(row)
@@ -198,10 +231,11 @@ export class LegacyAuthStoreRepository implements AuthIdentityStoreRepository {
 
   async findMembershipForUserAndTenant(userId: number, tenantId: number) {
     const db = await this.getDb()
+    const table = await this.resolveMembershipTable(db)
     const row = await db.get<MembershipRow>(
       `
         SELECT *
-        FROM memberships
+        FROM ${table}
         WHERE user_id = ?
           AND tenant_id = ?
         LIMIT 1
@@ -214,14 +248,15 @@ export class LegacyAuthStoreRepository implements AuthIdentityStoreRepository {
 
   async listMembershipsForUser(userId: number): Promise<AuthTenantMembershipRecord[]> {
     const db = await this.getDb()
+    const table = await this.resolveMembershipTable(db)
     const rows = await db.all<MembershipTenantRow[]>(
       `
         SELECT
-          memberships.id,
-          memberships.user_id,
-          memberships.tenant_id,
-          memberships.role,
-          memberships.created_at,
+          memberships_table.id,
+          memberships_table.user_id,
+          memberships_table.tenant_id,
+          memberships_table.role,
+          memberships_table.created_at,
           tenants.name AS tenant_name,
           tenants.slug AS tenant_slug,
           tenants.business_model AS tenant_business_model,
@@ -229,11 +264,11 @@ export class LegacyAuthStoreRepository implements AuthIdentityStoreRepository {
           tenants.is_active AS tenant_is_active,
           tenants.created_at AS tenant_created_at,
           tenants.updated_at AS tenant_updated_at
-        FROM memberships
+        FROM ${table} AS memberships_table
         INNER JOIN tenants
-          ON tenants.id = memberships.tenant_id
-        WHERE memberships.user_id = ?
-        ORDER BY memberships.created_at ASC, memberships.id ASC
+          ON tenants.id = memberships_table.tenant_id
+        WHERE memberships_table.user_id = ?
+        ORDER BY memberships_table.created_at ASC, memberships_table.id ASC
       `,
       userId,
     )
@@ -272,6 +307,7 @@ export class LegacyAuthStoreRepository implements AuthIdentityStoreRepository {
 
   async listMembershipUsersByTenant(tenantId: number): Promise<AuthMembershipUserRecord[]> {
     const db = await this.getDb()
+    const table = await this.resolveMembershipTable(db)
     const rows = await db.all<MembershipUserRow[]>(
       `
         SELECT
@@ -285,7 +321,7 @@ export class LegacyAuthStoreRepository implements AuthIdentityStoreRepository {
           users.is_active AS user_is_active,
           users.created_at AS user_created_at,
           users.updated_at AS user_updated_at
-        FROM memberships
+        FROM ${table} AS memberships
         INNER JOIN users
           ON users.id = memberships.user_id
         WHERE memberships.tenant_id = ?

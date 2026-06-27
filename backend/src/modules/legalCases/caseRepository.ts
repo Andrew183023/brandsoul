@@ -99,6 +99,37 @@ function parseJsonArray(value: unknown): unknown[] {
   return []
 }
 
+function readMetadataString(record: JsonObject, ...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = record[key]
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim()
+    }
+  }
+
+  return undefined
+}
+
+function readMetadataBoolean(record: JsonObject, ...keys: string[]): boolean {
+  for (const key of keys) {
+    const value = record[key]
+    if (value === true) {
+      return true
+    }
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase()
+      if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
+        return true
+      }
+    }
+    if (typeof value === 'number' && value === 1) {
+      return true
+    }
+  }
+
+  return false
+}
+
 function mapCaseAcceptIdempotencyRow(row?: CaseAcceptIdempotencyRow): CaseAcceptIdempotencyRecord | null {
   if (!row) {
     return null
@@ -686,9 +717,7 @@ export class CaseRepository {
         email: row.primary_email ?? undefined,
         phone: row.primary_phone ?? undefined,
         status: row.status,
-        officeId: typeof professionalMetadata.officeId === 'string' && professionalMetadata.officeId.trim().length > 0
-          ? professionalMetadata.officeId.trim()
-          : undefined,
+        officeId: readMetadataString(professionalMetadata, 'officeId', 'office_id'),
         photoUrl: typeof profileMetadata.photoUrl === 'string' && profileMetadata.photoUrl.trim().length > 0
           ? profileMetadata.photoUrl.trim()
           : undefined,
@@ -697,8 +726,9 @@ export class CaseRepository {
           : undefined,
         specialties,
         bio: row.bio ?? undefined,
-        isResponsible: professionalMetadata.isResponsible === true,
-        isPublic: professionalMetadata.isPublic === true,
+        isResponsible: readMetadataBoolean(professionalMetadata, 'isResponsible', 'is_responsible', 'responsible')
+          || readMetadataBoolean(profileMetadata, 'isResponsible', 'is_responsible', 'responsible'),
+        isPublic: readMetadataBoolean(professionalMetadata, 'isPublic', 'is_public', 'public'),
         createdAt: normalizeTimestamp(row.created_at),
         updatedAt: normalizeTimestamp(row.updated_at),
       }
@@ -1381,6 +1411,24 @@ export class CaseRepository {
     )
 
     return rows.map((row) => mapCaseMessageRow(row)).filter((row): row is CaseMessageRecord => Boolean(row))
+  }
+
+  async getLatestMessage(tenantId: number, caseId: string): Promise<CaseMessageRecord | null> {
+    const row = await this.db.get<Parameters<typeof mapCaseMessageRow>[0]>(
+      `
+        SELECT
+          id, tenant_id, case_id, author_professional_id, message_type, message_status, direction, channel,
+          subject, body, content, attachments, sequence_no, sent_at, created_at, updated_at
+        FROM case_messages
+        WHERE tenant_id = ? AND case_id = ?
+        ORDER BY sequence_no DESC, created_at DESC, id DESC
+        LIMIT 1
+      `,
+      tenantId,
+      caseId,
+    )
+
+    return mapCaseMessageRow(row)
   }
 
   async addTimelineEvent(input: CaseTimelineEventInput): Promise<CaseTimelineEventRecord> {

@@ -260,8 +260,8 @@ export type UploadOfficeVideoResponse = {
   }
 }
 
-export type AdminLegalCaseStatus = 'open' | 'pending' | 'dispatched' | 'accepted' | 'in_progress' | 'closed'
-export type AdminLegalCaseTransitionTargetStatus = 'in_progress' | 'pending' | 'on_hold'
+export type AdminLegalCaseStatus = 'open' | 'pending' | 'dispatched' | 'accepted' | 'in_progress' | 'resolved' | 'closed'
+export type AdminLegalCaseTransitionTargetStatus = 'accepted' | 'in_progress' | 'resolved'
 export type AdminLegalCaseAssignmentState = 'unassigned' | 'dispatched' | 'accepted' | 'active' | 'none'
 export type AdminLegalCaseResponseState = 'waiting_office' | 'waiting_client' | 'active' | 'closed'
 

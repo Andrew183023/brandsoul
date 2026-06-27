@@ -155,16 +155,17 @@ export function buildInitialRelationalState(args?: {
   now?: string
 }): OrchestratorRelationalState {
   const now = args?.now ?? new Date().toISOString()
-  const memory = args?.entityProfile?.relational.userMemory ?? initializeUserMemory()
+  const relational = args?.entityProfile?.relational
+  const memory = relational?.userMemory ?? initializeUserMemory()
   const bindingFallback = buildInitialBindingState({
     ownerId: args?.ownerId ?? args?.entityProfile?.ownerId,
     manifestation: args?.entityProfile?.manifestation,
     createdAt: now,
   })
-  const binding = normalizeBindingState(args?.entityProfile?.relational.binding, bindingFallback, now)
-  const timelineLog = normalizeTimelineLog(args?.entityProfile?.relational.timelineLog, buildInitialEntityTimelineLog(now), now)
+  const binding = normalizeBindingState(relational?.binding, bindingFallback, now)
+  const timelineLog = normalizeTimelineLog(relational?.timelineLog, buildInitialEntityTimelineLog(now), now)
   const continuityScore = Math.max(binding.continuityScore, updateContinuityScore(timelineLog))
-  const progression = normalizeProgressionState(args?.entityProfile?.relational.progression, buildInitialProgressionState(now), now)
+  const progression = normalizeProgressionState(relational?.progression, buildInitialProgressionState(now), now)
 
   return {
     memory,

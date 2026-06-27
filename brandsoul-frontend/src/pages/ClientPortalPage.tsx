@@ -236,25 +236,44 @@ export default function ClientPortalPage({ caseId, token }: ClientPortalPageProp
 
   useEffect(() => {
     let cancelled = false
+    async function loadPortalCase(showLoading: boolean) {
+      if (showLoading) {
+        setLoadState({ status: 'loading' })
+      }
 
-    setLoadState({ status: 'loading' })
-    void getClientPortalCase(caseId, token)
-      .then((caseSummary) => {
-        if (cancelled) {
-          return
+      try {
+        const caseSummary = await getClientPortalCase(caseId, token)
+        if (!cancelled) {
+          setLoadState({ status: 'ready', caseSummary })
         }
-        setLoadState({ status: 'ready', caseSummary })
-      })
-      .catch((error) => {
-        if (cancelled) {
-          return
+      } catch (error) {
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : 'Não foi possível carregar este portal agora.'
+          setLoadState({ status: 'error', message })
         }
-        const message = error instanceof Error ? error.message : 'Não foi possível carregar este portal agora.'
-        setLoadState({ status: 'error', message })
-      })
+      }
+    }
+
+    void loadPortalCase(true)
+
+    const intervalId = window.setInterval(() => {
+      void loadPortalCase(false)
+    }, 30_000)
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void loadPortalCase(false)
+      }
+    }
+
+    window.addEventListener('focus', handleVisibilityChange)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
 
     return () => {
       cancelled = true
+      window.clearInterval(intervalId)
+      window.removeEventListener('focus', handleVisibilityChange)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [caseId, token])
 

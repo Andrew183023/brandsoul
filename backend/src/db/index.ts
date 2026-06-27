@@ -2369,9 +2369,10 @@ async function initializePostgresLegalCaseSchema(db: BackendDatabase) {
     ON case_dispatches (tenant_id, case_id, professional_id)
     WHERE status = 'pending'
   `)
+  await db.exec(`DROP INDEX IF EXISTS uq_case_assignments_active`)
   await db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS uq_case_assignments_active
-    ON case_assignments (tenant_id, case_id, professional_id, role)
+    ON case_assignments (tenant_id, case_id, role)
     WHERE unassigned_at IS NULL AND status = 'active'
   `)
   await db.exec(`
@@ -2859,6 +2860,12 @@ async function initializeSqliteLegalCaseSchema(db: BackendDatabase) {
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_case_accept_idempotency_created
     ON case_accept_idempotency (tenant_id, professional_id, created_at)
+  `)
+  await db.exec(`DROP INDEX IF EXISTS uq_case_assignments_active`)
+  await db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_case_assignments_active
+    ON case_assignments (tenant_id, case_id, role)
+    WHERE unassigned_at IS NULL AND status = 'active'
   `)
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_learning_events_case_occurred_at
