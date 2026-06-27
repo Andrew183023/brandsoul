@@ -141,6 +141,29 @@ export function resolveCaseActionErrorMessage(message: string, action: 'assign' 
   return message
 }
 
+function buildCaseReference(caseId: string) {
+  const compact = caseId.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
+  return `CASO-${compact.slice(0, 8) || 'LEGAL'}`
+}
+
+function readNestedString(record: unknown, path: string[]) {
+  let current: unknown = record
+
+  for (const key of path) {
+    if (!current || typeof current !== 'object' || !(key in current)) {
+      return undefined
+    }
+
+    current = (current as Record<string, unknown>)[key]
+  }
+
+  return typeof current === 'string' && current.trim() ? current.trim() : undefined
+}
+
+function isLikelyContactValue(value: string) {
+  return value.includes('@') || /[\d()+-]{6,}/.test(value) || value.startsWith('http')
+}
+
 export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageProps) {
   const authSession = useAuthSession()
   const [cases, setCases] = useState<AdminLegalCase[]>([])
@@ -382,6 +405,55 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
     }
 
     return 'Cliente sem identificação'
+  }
+
+  function resolveSelectedCaseClientName(caseItem: AdminLegalCase, caseMessages: AdminLegalCaseMessage[]) {
+    const metadata = (caseItem as unknown as { metadata?: unknown }).metadata
+    const metadataName = readNestedString(metadata, ['clientName'])
+      ?? readNestedString(metadata, ['fullName'])
+      ?? readNestedString(metadata, ['name'])
+      ?? readNestedString(metadata, ['customer', 'name'])
+      ?? readNestedString(metadata, ['contact', 'name'])
+      ?? readNestedString(metadata, ['publicTriage', 'clientName'])
+
+    if (metadataName) {
+      return metadataName
+    }
+
+    const primaryContact = caseItem.contact?.trim()
+    if (primaryContact && !isLikelyContactValue(primaryContact)) {
+      return primaryContact
+    }
+
+    const firstClientMessage = caseMessages.find((message) => message.role === 'user')?.text?.trim()
+    if (firstClientMessage && firstClientMessage.length <= 56 && !isLikelyContactValue(firstClientMessage)) {
+      return firstClientMessage
+    }
+
+    return 'Cliente não identificado'
+  }
+
+  function resolveSelectedCasePrimaryContact(caseItem: AdminLegalCase) {
+    const metadata = (caseItem as unknown as { metadata?: unknown }).metadata
+    const contactPreference = readNestedString(metadata, ['contactPreference'])
+      ?? readNestedString(metadata, ['publicTriage', 'contactPreference'])
+    const contactValue = readNestedString(metadata, ['contactValue'])
+      ?? readNestedString(metadata, ['publicTriage', 'contactValue'])
+      ?? readNestedString(metadata, ['contact'])
+      ?? readNestedString(metadata, ['contact', 'value'])
+      ?? readNestedString(metadata, ['contact', 'whatsapp'])
+      ?? readNestedString(metadata, ['contact', 'phone'])
+      ?? readNestedString(metadata, ['contact', 'email'])
+
+    if (contactPreference && contactValue) {
+      return `${contactPreference} · ${contactValue}`
+    }
+
+    if (contactValue) {
+      return contactValue
+    }
+
+    return caseItem.contact?.trim() || 'Contato não informado'
   }
 
   function resolveSelectedCaseSummary(caseItem: AdminLegalCase) {
@@ -707,6 +779,9 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
 
   const selectedCaseSummary = selectedCase ? resolveSelectedCaseSummary(selectedCase) : null
   const selectedCaseInitialMessage = resolveInitialClientMessage(selectedCase, messages)
+  const selectedCaseReference = selectedCase ? buildCaseReference(selectedCase.id) : null
+  const selectedCaseClientName = selectedCase ? resolveSelectedCaseClientName(selectedCase, messages) : 'Cliente não identificado'
+  const selectedCasePrimaryContact = selectedCase ? resolveSelectedCasePrimaryContact(selectedCase) : 'Contato não informado'
   const selectedSlaProgress = resolveSlaProgress(selectedPriority)
   const unassignedCaseCount = useMemo(
     () => priorityQueue.entries.filter((entry) => !entry.caseItem.isAssigned).length,
@@ -971,6 +1046,27 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
                   ) : null}
                 </div>
               </header>
+
+              <section className="admin-diagnosis-section admin-cases-cabin__detail-card admin-cases-cabin__identity-card">
+                <div className="admin-cases-cabin__detail-card-header">
+                  <h3>Identificação operacional</h3>
+                  <span>{selectedCaseReference}</span>
+                </div>
+                <div className="admin-cases-cabin__identity-grid">
+                  <article className="admin-domain-card admin-cases-cabin__summary-item">
+                    <strong>Número do caso</strong>
+                    <span>{selectedCaseReference}</span>
+                  </article>
+                  <article className="admin-domain-card admin-cases-cabin__summary-item">
+                    <strong>Cliente</strong>
+                    <span>{selectedCaseClientName}</span>
+                  </article>
+                  <article className="admin-domain-card admin-cases-cabin__summary-item">
+                    <strong>Contato principal</strong>
+                    <span>{selectedCasePrimaryContact}</span>
+                  </article>
+                </div>
+              </section>
 
               <div className="admin-cases-cabin__badge-row" aria-label="Metadados principais do caso">
                 <span className="admin-cases-cabin__meta-badge">Cliente · {resolveQueueClientLabel(selectedCase)}</span>

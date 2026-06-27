@@ -431,11 +431,122 @@ test('public triage, portal projection and lifecycle transitions stay canonical'
     assert.equal(portalBody.case.status, 'open')
     assert.deepEqual(portalBody.case.timeline.map((event) => event.label), ['Triagem recebida'])
 
+    const portalMessagesResponse = await harness.app.inject({
+      method: 'GET',
+      url: `${portalPath}/messages`,
+    })
+    assert.equal(portalMessagesResponse.statusCode, 200)
+    const portalMessagesBody = portalMessagesResponse.json() as {
+      messages: Array<{ role: string; text: string }>
+    }
+    assert.equal(portalMessagesBody.messages.length, 1)
+    assert.equal(portalMessagesBody.messages[0]?.role, 'user')
+    assert.match(portalMessagesBody.messages[0]?.text ?? '', /verbas rescisorias/i)
+
+    const appendPortalMessageResponse = await harness.app.inject({
+      method: 'POST',
+      url: `${portalPath}/messages`,
+      headers: {
+        'content-type': 'application/json',
+      },
+      payload: {
+        text: 'Tenho mais documentos para enviar.',
+      },
+    })
+    assert.equal(appendPortalMessageResponse.statusCode, 200)
+    const appendPortalMessageBody = appendPortalMessageResponse.json() as {
+      messages: Array<{ role: string; text: string }>
+    }
+    assert.equal(appendPortalMessageBody.messages.length, 2)
+    assert.equal(appendPortalMessageBody.messages.at(-1)?.role, 'user')
+    assert.equal(appendPortalMessageBody.messages.at(-1)?.text, 'Tenho mais documentos para enviar.')
+
+    const portalResponseAfterMessage = await harness.app.inject({
+      method: 'GET',
+      url: portalPath,
+    })
+    assert.equal(portalResponseAfterMessage.statusCode, 200)
+    const portalBodyAfterMessage = portalResponseAfterMessage.json() as {
+      case: {
+        timeline: Array<{ label: string }>
+      }
+    }
+    assert.deepEqual(
+      portalBodyAfterMessage.case.timeline.map((event) => event.label),
+      ['Triagem recebida', 'Nova mensagem recebida'],
+    )
+
     const wrongPortalTokenResponse = await harness.app.inject({
       method: 'GET',
       url: `/client/portal/${triageBody.actionResult.caseId}/wrong-token`,
     })
     assert.ok([403, 404].includes(wrongPortalTokenResponse.statusCode))
+
+    const wrongPortalMessageTokenResponse = await harness.app.inject({
+      method: 'POST',
+      url: `/client/portal/${triageBody.actionResult.caseId}/wrong-token/messages`,
+      headers: {
+        'content-type': 'application/json',
+      },
+      payload: {
+        text: 'Tentativa invalida',
+      },
+    })
+    assert.equal(wrongPortalMessageTokenResponse.statusCode, 401)
+
+    const emptyPortalMessageResponse = await harness.app.inject({
+      method: 'POST',
+      url: `${portalPath}/messages`,
+      headers: {
+        'content-type': 'application/json',
+      },
+      payload: {
+        text: '   ',
+      },
+    })
+    assert.equal(emptyPortalMessageResponse.statusCode, 400)
+
+    await harness.app.backendContext.connection.run(
+      `UPDATE case_portal_access_tokens SET expires_at = ? WHERE case_id = ?`,
+      '2000-01-01T00:00:00.000Z',
+      triageBody.actionResult.caseId,
+    )
+
+    const expiredPortalMessageResponse = await harness.app.inject({
+      method: 'POST',
+      url: `${portalPath}/messages`,
+      headers: {
+        'content-type': 'application/json',
+      },
+      payload: {
+        text: 'Mensagem com token expirado',
+      },
+    })
+    assert.equal(expiredPortalMessageResponse.statusCode, 410)
+
+    await harness.app.backendContext.connection.run(
+      `UPDATE case_portal_access_tokens SET expires_at = ? WHERE case_id = ?`,
+      '2099-01-01T00:00:00.000Z',
+      triageBody.actionResult.caseId,
+    )
+
+    await harness.app.backendContext.connection.run(
+      `UPDATE cases SET status = ? WHERE id = ?`,
+      'closed',
+      triageBody.actionResult.caseId,
+    )
+
+    const closedPortalMessageResponse = await harness.app.inject({
+      method: 'POST',
+      url: `${portalPath}/messages`,
+      headers: {
+        'content-type': 'application/json',
+      },
+      payload: {
+        text: 'Mensagem em caso encerrado',
+      },
+    })
+    assert.equal(closedPortalMessageResponse.statusCode, 409)
 
     const replayResponse = await harness.app.inject({
       method: 'POST',

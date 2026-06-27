@@ -12,8 +12,8 @@ import {
   getEntityBusinessConfig,
   getEntityPublicPresence,
   getPublicCase,
-  getPublicCaseMessages,
-  sendPublicCaseMessage,
+  getAuthenticatedPublicCaseMessages,
+  sendAuthenticatedPublicCaseMessage,
 } from '../backend-bridge/api/publicEntityApi'
 import FeedbackBanner from '../components/FeedbackBanner'
 import StatusChip from '../components/StatusChip'
@@ -80,7 +80,7 @@ export default function EntityCasePage({ entityId, caseId }: EntityCasePageProps
         getEntityPublicPresence(entityId),
         getEntityBusinessConfig(entityId),
         getPublicCase(caseId),
-        getPublicCaseMessages(caseId),
+        getAuthenticatedPublicCaseMessages(caseId),
       ])
 
       setEntityName(
@@ -121,7 +121,7 @@ export default function EntityCasePage({ entityId, caseId }: EntityCasePageProps
       setActionFeedback(null)
       setError(null)
 
-      const nextMessages = await sendPublicCaseMessage(caseId, responseText.trim())
+      const nextMessages = await sendAuthenticatedPublicCaseMessage(caseId, responseText.trim())
       setMessages(nextMessages)
       setResponseText('')
       setActionFeedback('Mensagem enviada com sucesso.')
@@ -156,7 +156,7 @@ export default function EntityCasePage({ entityId, caseId }: EntityCasePageProps
 
       setLegalCase(closedCase)
       setActionFeedback('Caso finalizado com sua avaliacao registrada.')
-      const nextMessages = await getPublicCaseMessages(caseId)
+      const nextMessages = await getAuthenticatedPublicCaseMessages(caseId)
       setMessages(nextMessages)
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Erro ao finalizar caso.')

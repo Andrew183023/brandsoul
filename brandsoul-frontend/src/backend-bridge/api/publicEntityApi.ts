@@ -199,7 +199,7 @@ export type ClientPortalTimelineEvent = {
 
 export type ClientPortalCaseSummary = {
   caseId: string
-  status: 'open' | 'pending' | 'dispatched' | 'accepted' | 'in_progress' | 'on_hold' | 'closed'
+  status: 'open' | 'pending' | 'dispatched' | 'accepted' | 'in_progress' | 'on_hold' | 'resolved' | 'closed' | 'archived'
   practiceArea?: string
   officeName: string
   createdAt: string
@@ -334,6 +334,45 @@ export async function getPublicCase(
 
 export async function getPublicCaseMessages(
   caseId: string,
+  token: string,
+  baseUrl = getBackendBaseUrl(),
+): Promise<AdminLegalCaseMessage[]> {
+  const response = await fetch(`${baseUrl}/client/portal/${encodeURIComponent(caseId)}/${encodeURIComponent(token)}/messages`)
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, `Failed to load case messages (${response.status}).`))
+  }
+
+  const payload = await response.json() as AdminLegalCaseMessagesResponse
+  return payload.messages
+}
+
+export async function sendPublicCaseMessage(
+  caseId: string,
+  token: string,
+  text: string,
+  baseUrl = getBackendBaseUrl(),
+): Promise<AdminLegalCaseMessage[]> {
+  const response = await fetch(`${baseUrl}/client/portal/${encodeURIComponent(caseId)}/${encodeURIComponent(token)}/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      text,
+    }),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, `Failed to send case message (${response.status}).`))
+  }
+
+  const payload = await response.json() as AdminLegalCaseMessagesResponse
+  return payload.messages
+}
+
+export async function getAuthenticatedPublicCaseMessages(
+  caseId: string,
   baseUrl = getBackendBaseUrl(),
 ): Promise<AdminLegalCaseMessage[]> {
   const response = await fetch(`${baseUrl}/cases/${encodeURIComponent(caseId)}/messages`, {
@@ -348,7 +387,7 @@ export async function getPublicCaseMessages(
   return payload.messages
 }
 
-export async function sendPublicCaseMessage(
+export async function sendAuthenticatedPublicCaseMessage(
   caseId: string,
   text: string,
   baseUrl = getBackendBaseUrl(),

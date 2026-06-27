@@ -89,13 +89,15 @@ export class LegalBetaCaseService {
   }
 
   private isAllowedStatusTransition(from: CaseStatus, to: CaseStatus) {
-    return (
-      (from === 'open' && to === 'dispatched')
-      || (from === 'dispatched' && to === 'accepted')
-      || (from === 'accepted' && to === 'in_progress')
-      || (from === 'in_progress' && to === 'resolved')
-      || (from === 'resolved' && to === 'closed')
-    )
+    const allowedTransitions: Partial<Record<CaseStatus, CaseStatus[]>> = {
+      open: ['dispatched'],
+      dispatched: ['accepted'],
+      accepted: ['in_progress'],
+      in_progress: ['resolved'],
+      resolved: ['closed'],
+    }
+
+    return allowedTransitions[from]?.includes(to) ?? false
   }
 
   private resolveOperationalResponsible(
@@ -132,7 +134,7 @@ export class LegalBetaCaseService {
         return { status: 'not_found' as const }
       }
 
-      if (current.status === 'closed' || current.status === 'archived') {
+      if (current.status === 'resolved' || current.status === 'closed' || current.status === 'archived') {
         return { status: 'closed' as const }
       }
 
@@ -266,7 +268,7 @@ export class LegalBetaCaseService {
         return { status: 'not_found' as const }
       }
 
-      if (current.status === 'closed' || current.status === 'archived') {
+      if (current.status === 'resolved' || current.status === 'closed' || current.status === 'archived') {
         return { status: 'invalid_state' as const }
       }
 

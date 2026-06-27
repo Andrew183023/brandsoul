@@ -214,6 +214,8 @@ type CaseMessageBody = {
   responseText?: string
 }
 
+const MAX_CLIENT_PORTAL_MESSAGE_LENGTH = 4_000
+
 type CaseAssignBody = {
   lawyerId?: string
 }
@@ -366,6 +368,11 @@ function getCaseClaimToken(request: FastifyRequest) {
   return value.length > 0 ? value : undefined
 }
 
+function readPortalMessageBody(body: CaseMessageBody | undefined) {
+  const candidate = body?.text ?? body?.body ?? body?.message ?? body?.responseText
+  return typeof candidate === 'string' ? candidate.trim() : ''
+}
+
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0
 }
@@ -420,6 +427,76 @@ async function markCasePortalAccessTokenUsed(app: FastifyInstance, tokenId: stri
     now,
     tokenId,
   )
+}
+
+async function resolveValidatedCasePortalAccess(args: {
+  app: FastifyInstance
+  caseId: string
+  token: string
+}) {
+  const portalAccess = await getCasePortalAccessTokenRecord(args.app, args.caseId, args.token)
+  if (!portalAccess) {
+    return {
+      ok: false as const,
+      replyStatus: 401,
+      payload: {
+        status: 'failed',
+        error: {
+          code: 'CLIENT_PORTAL_ACCESS_INVALID',
+          message: 'Token de acesso ao portal inválido.',
+        },
+      },
+    }
+  }
+
+  const expiresAt = Date.parse(normalizePortalTimestamp(portalAccess.expires_at) ?? '')
+  const revokedAt = portalAccess.revoked_at ? Date.parse(normalizePortalTimestamp(portalAccess.revoked_at) ?? '') : Number.NaN
+  const isExpired = Number.isFinite(expiresAt) && expiresAt <= Date.now()
+  const isRevoked = portalAccess.status === 'revoked' || Number.isFinite(revokedAt)
+  const isActive = portalAccess.status === 'active'
+
+  if (isExpired) {
+    return {
+      ok: false as const,
+      replyStatus: 410,
+      payload: {
+        status: 'failed',
+        error: {
+          code: 'CLIENT_PORTAL_ACCESS_EXPIRED',
+          message: 'Este acesso ao portal expirou.',
+        },
+      },
+    }
+  }
+
+  if (!isActive || isRevoked) {
+    return {
+      ok: false as const,
+      replyStatus: 401,
+      payload: {
+        status: 'failed',
+        error: {
+          code: 'CLIENT_PORTAL_ACCESS_INVALID',
+          message: 'Token de acesso ao portal inválido.',
+        },
+      },
+    }
+  }
+
+  return {
+    ok: true as const,
+    portalAccess,
+  }
+}
+
+function mapClientPortalMessageRecord(message: CaseMessageRecord) {
+  return {
+    id: message.id,
+    role: message.direction === 'inbound' ? 'user' : (message.authorProfessionalId ? 'lawyer' : 'system'),
+    text: message.body,
+    actorId: message.authorProfessionalId,
+    createdAt: message.createdAt,
+  }
 }
 
 async function issueCasePortalAccessToken(args: {
@@ -3169,6 +3246,122 @@ export async function registerEntityRoutes(app: FastifyInstance) {
           : undefined,
         timeline: buildClientPortalTimelineProjection(timeline),
       },
+    })
+  })
+
+  app.get<{ Params: { caseId: string; token: string } }>('/client/portal/:caseId/:token/messages', { preHandler: [publicReadRateLimit] }, async (request, reply) => {
+    if (!isSafeIdentifier(request.params.caseId) || !isSafeString(request.params.token, 512)) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_CLIENT_PORTAL_ACCESS',
+          message: 'Link de acesso invalido.',
+        },
+      })
+    }
+
+    const portalAccessResult = await resolveValidatedCasePortalAccess({
+      app,
+      caseId: request.params.caseId,
+      token: request.params.token,
+    })
+    if (!portalAccessResult.ok) {
+      return reply.status(portalAccessResult.replyStatus).send(portalAccessResult.payload)
+    }
+
+    const messages = await getLegalBetaCaseService(app).getCaseMessages(
+      portalAccessResult.portalAccess.tenant_id,
+      request.params.caseId,
+    )
+    await markCasePortalAccessTokenUsed(app, portalAccessResult.portalAccess.id)
+
+    return reply.status(200).send({
+      status: 'ready',
+      caseId: request.params.caseId,
+      messages: messages.map(mapClientPortalMessageRecord),
+    })
+  })
+
+  app.post<{ Params: { caseId: string; token: string }; Body: CaseMessageBody }>('/client/portal/:caseId/:token/messages', { preHandler: [publicActionRateLimit] }, async (request, reply) => {
+    if (!isSafeIdentifier(request.params.caseId) || !isSafeString(request.params.token, 512)) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_CLIENT_PORTAL_ACCESS',
+          message: 'Link de acesso invalido.',
+        },
+      })
+    }
+
+    const portalAccessResult = await resolveValidatedCasePortalAccess({
+      app,
+      caseId: request.params.caseId,
+      token: request.params.token,
+    })
+    if (!portalAccessResult.ok) {
+      return reply.status(portalAccessResult.replyStatus).send(portalAccessResult.payload)
+    }
+
+    const body = readPortalMessageBody(request.body)
+    if (!body) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_CASE_MESSAGE',
+          message: 'Mensagem obrigatoria.',
+        },
+      })
+    }
+
+    if (body.length > MAX_CLIENT_PORTAL_MESSAGE_LENGTH) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_CASE_MESSAGE',
+          message: `Mensagem excede ${MAX_CLIENT_PORTAL_MESSAGE_LENGTH} caracteres.`,
+        },
+      })
+    }
+
+    const messageResult = await getLegalBetaCaseService(app).addMessage({
+      tenantId: portalAccessResult.portalAccess.tenant_id,
+      caseId: request.params.caseId,
+      body,
+      direction: 'inbound',
+    })
+
+    if (messageResult.status === 'not_found') {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'CASE_NOT_FOUND',
+          message: 'Caso nao encontrado.',
+        },
+      })
+    }
+
+    if (messageResult.status === 'closed') {
+      return reply.status(409).send({
+        status: 'failed',
+        error: {
+          code: 'CASE_CLOSED_FOR_MESSAGES',
+          message: 'Este atendimento esta encerrado para novas mensagens.',
+        },
+      })
+    }
+
+    const messages = await getLegalBetaCaseService(app).getCaseMessages(
+      portalAccessResult.portalAccess.tenant_id,
+      request.params.caseId,
+    )
+    await markCasePortalAccessTokenUsed(app, portalAccessResult.portalAccess.id)
+    const latestMessage = messageResult.message ?? messages.at(-1)
+
+    return reply.status(200).send({
+      status: 'ready',
+      caseId: request.params.caseId,
+      message: latestMessage ? mapClientPortalMessageRecord(latestMessage) : undefined,
+      messages: messages.map(mapClientPortalMessageRecord),
     })
   })
 

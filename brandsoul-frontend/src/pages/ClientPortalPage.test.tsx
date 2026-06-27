@@ -6,9 +6,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../backend-bridge/api/publicEntityApi', () => ({
   getClientPortalCase: vi.fn(),
+  getPublicCaseMessages: vi.fn(),
+  sendPublicCaseMessage: vi.fn(),
 }))
 
-import { getClientPortalCase } from '../backend-bridge/api/publicEntityApi'
+import {
+  getClientPortalCase,
+  getPublicCaseMessages,
+  sendPublicCaseMessage,
+} from '../backend-bridge/api/publicEntityApi'
 import ClientPortalPage from './ClientPortalPage'
 
 async function flushPromises() {
@@ -71,6 +77,14 @@ describe('ClientPortalPage', () => {
         },
       ],
     })
+    vi.mocked(getPublicCaseMessages).mockResolvedValue([
+      {
+        id: 'message-1',
+        role: 'lawyer',
+        text: 'Recebemos sua solicitação e vamos analisar.',
+        createdAt: '2026-06-02T13:15:00.000Z',
+      },
+    ])
 
     await act(async () => {
       root.render(<ClientPortalPage caseId="123e4567-e89b-12d3-a456-426614174000" token="token-abc" />)
@@ -89,6 +103,9 @@ describe('ClientPortalPage', () => {
     expect(text).toContain('Direito Trabalhista')
     expect(text).toContain('Progresso do caso')
     expect(text).toContain('Etapa atual: Em atendimento')
+    expect(text).toContain('Mensagens do atendimento')
+    expect(text).toContain('Escritório')
+    expect(text).toContain('Recebemos sua solicitação e vamos analisar.')
     expect(text).toContain('Triagem recebida')
     expect(text).toContain('Responsável definido')
     expect(text).toContain('Encerrado')
@@ -112,6 +129,7 @@ describe('ClientPortalPage', () => {
       responsibleProfessional: null,
       timeline: [],
     })
+    vi.mocked(getPublicCaseMessages).mockResolvedValue([])
 
     await act(async () => {
       root.render(<ClientPortalPage caseId="987e6543-e89b-12d3-a456-426614174000" token="token-xyz" />)
@@ -147,6 +165,7 @@ describe('ClientPortalPage', () => {
         },
       ],
     })
+    vi.mocked(getPublicCaseMessages).mockResolvedValue([])
 
     await act(async () => {
       root.render(<ClientPortalPage caseId="555e6543-e89b-12d3-a456-426614174000" token="token-closed" />)
@@ -156,6 +175,7 @@ describe('ClientPortalPage', () => {
     const text = container.textContent ?? ''
     expect(text).toContain('Etapa atual: Encerrado')
     expect(text).toContain('O caso foi encerrado.')
+    expect(text).toContain('Este atendimento está encerrado para novas mensagens.')
     expect(text).not.toContain('closed')
   })
 
@@ -183,6 +203,7 @@ describe('ClientPortalPage', () => {
         },
       ],
     })
+    vi.mocked(getPublicCaseMessages).mockResolvedValue([])
 
     await act(async () => {
       root.render(<ClientPortalPage caseId="777e6543-e89b-12d3-a456-426614174000" token="token-on-hold" />)
@@ -230,6 +251,7 @@ describe('ClientPortalPage', () => {
         },
       ],
     })
+    vi.mocked(getPublicCaseMessages).mockResolvedValue([])
 
     await act(async () => {
       root.render(<ClientPortalPage caseId={rawCaseId} token="token-long-office" />)
@@ -244,5 +266,91 @@ describe('ClientPortalPage', () => {
     expect(text).toContain('Caso em atendimento')
     expect(text).toContain('Ferreira Rocha Advocacia Unidade Especializada')
     expect(text).not.toContain(rawCaseId)
+  })
+
+  it('allows sending a new portal message while the case is active', async () => {
+    vi.mocked(getClientPortalCase)
+      .mockResolvedValueOnce({
+        caseId: 'portal-case-1',
+        status: 'accepted',
+        practiceArea: 'Direito Civil',
+        officeName: 'BrandSoul Legal',
+        createdAt: '2026-06-02T12:00:00.000Z',
+        updatedAt: '2026-06-02T13:00:00.000Z',
+        responsibleProfessional: null,
+        timeline: [],
+      })
+      .mockResolvedValueOnce({
+        caseId: 'portal-case-1',
+        status: 'in_progress',
+        practiceArea: 'Direito Civil',
+        officeName: 'BrandSoul Legal',
+        createdAt: '2026-06-02T12:00:00.000Z',
+        updatedAt: '2026-06-02T13:30:00.000Z',
+        responsibleProfessional: null,
+        timeline: [
+          {
+            type: 'message_added',
+            label: 'Mensagem registrada',
+            occurredAt: '2026-06-02T13:30:00.000Z',
+          },
+        ],
+      })
+    vi.mocked(getPublicCaseMessages).mockResolvedValue([])
+    vi.mocked(sendPublicCaseMessage).mockResolvedValue([
+      {
+        id: 'message-client-1',
+        role: 'user',
+        text: 'Tenho novos documentos.',
+        createdAt: '2026-06-02T13:30:00.000Z',
+      },
+    ])
+
+    await act(async () => {
+      root.render(<ClientPortalPage caseId="portal-case-1" token="token-send" />)
+    })
+    await flushPromises()
+
+    const textarea = container.querySelector('#client-portal-message-textarea') as HTMLTextAreaElement | null
+    expect(textarea).toBeTruthy()
+
+    await act(async () => {
+      textarea!.value = 'Tenho novos documentos.'
+      textarea!.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    const form = container.querySelector('.client-portal-page__message-form') as HTMLFormElement | null
+    expect(form).toBeTruthy()
+
+    await act(async () => {
+      form!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+    await flushPromises()
+
+    expect(sendPublicCaseMessage).toHaveBeenCalledWith('portal-case-1', 'token-send', 'Tenho novos documentos.')
+    expect(container.textContent ?? '').toContain('Tenho novos documentos.')
+  })
+
+  it('blocks new portal messages when the case is resolved, closed or archived', async () => {
+    vi.mocked(getClientPortalCase).mockResolvedValue({
+      caseId: 'portal-case-closed',
+      status: 'resolved',
+      practiceArea: 'Direito Civil',
+      officeName: 'BrandSoul Legal',
+      createdAt: '2026-06-02T12:00:00.000Z',
+      updatedAt: '2026-06-05T09:00:00.000Z',
+      responsibleProfessional: null,
+      timeline: [],
+    })
+    vi.mocked(getPublicCaseMessages).mockResolvedValue([])
+
+    await act(async () => {
+      root.render(<ClientPortalPage caseId="portal-case-closed" token="token-closed" />)
+    })
+    await flushPromises()
+
+    expect(container.querySelector('#client-portal-message-textarea')).toBeNull()
+    expect(container.textContent ?? '').toContain('Este atendimento está encerrado para novas mensagens.')
+    expect(sendPublicCaseMessage).not.toHaveBeenCalled()
   })
 })

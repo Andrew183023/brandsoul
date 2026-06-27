@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 
 import PublicShell from '../app/shells/PublicShell'
 import {
   getClientPortalCase,
+  getPublicCaseMessages,
+  sendPublicCaseMessage,
   type ClientPortalCaseSummary,
 } from '../backend-bridge/api/publicEntityApi'
+import type { AdminLegalCaseMessage } from '../backend-bridge/api/adminApi'
 import { Alert, Card, Section, Skeleton } from '../lib/designSystem'
 import '../styles/clientPortalPage.css'
 
@@ -30,6 +33,12 @@ const CLIENT_PROGRESS_STAGES: ClientProgressStage[] = [
   { key: 'closed', label: 'Encerrado' },
 ]
 
+const PORTAL_MESSAGING_CLOSED_STATUSES = new Set<ClientPortalCaseSummary['status']>([
+  'resolved',
+  'closed',
+  'archived',
+])
+
 function formatPortalDate(value: string) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) {
@@ -47,6 +56,8 @@ function getPortalCaseStatusLabel(status: ClientPortalCaseSummary['status']) {
   if (status === 'pending') return 'Aguardando informações'
   if (status === 'on_hold') return 'Em pausa'
   if (status === 'in_progress' || status === 'accepted' || status === 'dispatched') return 'Em atendimento'
+  if (status === 'resolved') return 'Resolvido'
+  if (status === 'archived') return 'Arquivado'
   if (status === 'closed') return 'Encerrado'
   return 'Em pausa'
 }
@@ -70,6 +81,14 @@ function getPortalNextStepMessage(status: ClientPortalCaseSummary['status']) {
 
   if (status === 'on_hold') {
     return 'O atendimento encontra-se temporariamente pausado.'
+  }
+
+  if (status === 'resolved') {
+    return 'O atendimento foi concluído e não aceita novas mensagens.'
+  }
+
+  if (status === 'archived') {
+    return 'O histórico deste atendimento foi arquivado pelo escritório.'
   }
 
   if (status === 'closed') {
@@ -135,10 +154,10 @@ function resolvePortalFreshnessTimestamp(caseSummary: ClientPortalCaseSummary) {
 }
 
 function resolveClientProgressState(status: string) {
-  if (status === 'closed' || status === 'archived') {
+  if (status === 'closed' || status === 'archived' || status === 'resolved') {
     return {
       currentStageKey: 'closed' as const,
-      currentStageLabel: 'Encerrado',
+      currentStageLabel: status === 'resolved' ? 'Resolvido' : 'Encerrado',
     }
   }
 
@@ -224,8 +243,25 @@ function ClientCaseProgress({ status }: { status: string }) {
   )
 }
 
+function formatPortalMessageRole(role: AdminLegalCaseMessage['role']) {
+  return role === 'user' ? 'Cliente' : 'Escritório'
+}
+
+function resolvePortalMessageErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message
+  }
+
+  return fallback
+}
+
 export default function ClientPortalPage({ caseId, token }: ClientPortalPageProps) {
   const [loadState, setLoadState] = useState<LoadState>({ status: 'loading' })
+  const [messages, setMessages] = useState<AdminLegalCaseMessage[]>([])
+  const [responseText, setResponseText] = useState('')
+  const [isSending, setIsSending] = useState(false)
+  const [messageError, setMessageError] = useState<string | null>(null)
+  const loadRequestIdRef = useRef(0)
 
   useEffect(() => {
     document.body.classList.add('client-portal-page-active')
@@ -237,17 +273,43 @@ export default function ClientPortalPage({ caseId, token }: ClientPortalPageProp
   useEffect(() => {
     let cancelled = false
     async function loadPortalCase(showLoading: boolean) {
+      const requestId = ++loadRequestIdRef.current
       if (showLoading) {
         setLoadState({ status: 'loading' })
       }
 
       try {
-        const caseSummary = await getClientPortalCase(caseId, token)
+        const [caseSummaryResult, messagesResult] = await Promise.allSettled([
+          getClientPortalCase(caseId, token),
+          getPublicCaseMessages(caseId, token),
+        ])
+
+        if (cancelled || requestId !== loadRequestIdRef.current) {
+          return
+        }
+
+        if (caseSummaryResult.status === 'rejected') {
+          throw caseSummaryResult.reason
+        }
+
+        if (messagesResult.status === 'fulfilled') {
+          setMessages(messagesResult.value)
+          setMessageError(null)
+        } else {
+          if (showLoading) {
+            setMessages([])
+          }
+          setMessageError(resolvePortalMessageErrorMessage(
+            messagesResult.reason,
+            'Não foi possível carregar as mensagens deste atendimento agora.',
+          ))
+        }
+
         if (!cancelled) {
-          setLoadState({ status: 'ready', caseSummary })
+          setLoadState({ status: 'ready', caseSummary: caseSummaryResult.value })
         }
       } catch (error) {
-        if (!cancelled) {
+        if (!cancelled && requestId === loadRequestIdRef.current) {
           const message = error instanceof Error ? error.message : 'Não foi possível carregar este portal agora.'
           setLoadState({ status: 'error', message })
         }
@@ -277,6 +339,41 @@ export default function ClientPortalPage({ caseId, token }: ClientPortalPageProp
     }
   }, [caseId, token])
 
+  async function handleSendMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+
+    if (loadState.status !== 'ready') {
+      return
+    }
+
+    const trimmedResponse = responseText.trim()
+    if (!trimmedResponse || isSending || PORTAL_MESSAGING_CLOSED_STATUSES.has(loadState.caseSummary.status)) {
+      return
+    }
+
+    try {
+      setIsSending(true)
+      setMessageError(null)
+
+      const nextMessages = await sendPublicCaseMessage(caseId, token, trimmedResponse)
+      setMessages(nextMessages)
+      setResponseText('')
+
+      const refreshedCase = await getClientPortalCase(caseId, token)
+      setLoadState({
+        status: 'ready',
+        caseSummary: refreshedCase,
+      })
+    } catch (error) {
+      setMessageError(resolvePortalMessageErrorMessage(
+        error,
+        'Não foi possível enviar sua mensagem agora.',
+      ))
+    } finally {
+      setIsSending(false)
+    }
+  }
+
   const caseReference = useMemo(() => buildPortalCaseReference(caseId), [caseId])
   const freshnessLabel = useMemo(() => {
     if (loadState.status !== 'ready') {
@@ -285,6 +382,8 @@ export default function ClientPortalPage({ caseId, token }: ClientPortalPageProp
 
     return formatPortalFreshness(resolvePortalFreshnessTimestamp(loadState.caseSummary))
   }, [loadState])
+  const isMessagingClosed = loadState.status === 'ready'
+    && PORTAL_MESSAGING_CLOSED_STATUSES.has(loadState.caseSummary.status)
 
   return (
     <PublicShell>
@@ -420,6 +519,66 @@ export default function ClientPortalPage({ caseId, token }: ClientPortalPageProp
                   </ol>
                 </Card>
               </div>
+
+              <Card as="article" className="client-portal-page__detail-card client-portal-page__messages-card">
+                <div className="client-portal-page__detail-card-header">
+                  <p className="client-portal-page__eyebrow">Mensagens do atendimento</p>
+                  <span>{messages.length} mensagem{messages.length === 1 ? '' : 'ens'}</span>
+                </div>
+
+                {messageError ? (
+                  <p className="client-portal-page__message-error" role="alert">{messageError}</p>
+                ) : null}
+
+                {messages.length > 0 ? (
+                  <ol className="client-portal-page__messages-list">
+                    {messages.map((message) => (
+                      <li
+                        key={message.id}
+                        className={`client-portal-page__message client-portal-page__message--${message.role === 'user' ? 'client' : 'office'}`}
+                      >
+                        <div className="client-portal-page__message-meta">
+                          <strong>{formatPortalMessageRole(message.role)}</strong>
+                          <span>{formatPortalDate(message.createdAt)}</span>
+                        </div>
+                        <p className="client-portal-page__message-body">{message.text}</p>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="client-portal-page__message-body">Ainda não há mensagens registradas neste atendimento.</p>
+                )}
+
+                {isMessagingClosed ? (
+                  <p className="client-portal-page__message-closed">
+                    Este atendimento está encerrado para novas mensagens.
+                  </p>
+                ) : (
+                  <form className="client-portal-page__message-form" onSubmit={(event) => void handleSendMessage(event)}>
+                    <label className="client-portal-page__eyebrow" htmlFor="client-portal-message-textarea">
+                      Enviar nova mensagem
+                    </label>
+                    <textarea
+                      id="client-portal-message-textarea"
+                      className="client-portal-page__message-textarea"
+                      value={responseText}
+                      onChange={(event) => setResponseText(event.target.value)}
+                      placeholder="Escreva sua atualização ou dúvida para o escritório."
+                      rows={4}
+                      disabled={isSending}
+                    />
+                    <div className="client-portal-page__message-actions">
+                      <button
+                        type="submit"
+                        className="client-portal-page__status-chip"
+                        disabled={isSending || responseText.trim().length === 0}
+                      >
+                        {isSending ? 'Enviando...' : 'Enviar mensagem'}
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </Card>
             </>
           ) : null}
         </Section>

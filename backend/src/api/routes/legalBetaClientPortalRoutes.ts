@@ -32,6 +32,22 @@ const publicReadRateLimit = createRateLimit({
   key: 'ip',
 })
 
+const publicWriteRateLimit = createRateLimit({
+  namespace: 'legal-beta-client-portal-write',
+  max: 40,
+  windowMs: 60_000,
+  key: 'ip',
+})
+
+const MAX_CLIENT_PORTAL_MESSAGE_LENGTH = 4_000
+
+type PublicPortalMessageBody = {
+  body?: string
+  message?: string
+  text?: string
+  responseText?: string
+}
+
 async function getCasePortalAccessTokenRecord(app: FastifyInstance, caseId: string, token: string) {
   const row = await getConnection(app).get<CasePortalAccessTokenRecord>(
     `
@@ -70,6 +86,82 @@ async function markCasePortalAccessTokenUsed(app: FastifyInstance, tokenId: stri
     now,
     tokenId,
   )
+}
+
+function readPublicPortalMessageBody(body: PublicPortalMessageBody | undefined) {
+  const candidate = body?.text ?? body?.body ?? body?.message ?? body?.responseText
+  return typeof candidate === 'string' ? candidate.trim() : ''
+}
+
+async function resolveValidatedPortalAccess(
+  app: FastifyInstance,
+  caseId: string,
+  token: string,
+) {
+  const portalAccess = await getCasePortalAccessTokenRecord(app, caseId, token)
+  if (!portalAccess) {
+    return {
+      ok: false as const,
+      replyStatus: 401,
+      payload: {
+        status: 'failed',
+        error: {
+          code: 'PORTAL_ACCESS_INVALID',
+          message: 'Portal access token is invalid.',
+        },
+      },
+    }
+  }
+
+  const expiresAt = Date.parse(String(portalAccess.expires_at))
+  if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) {
+    return {
+      ok: false as const,
+      replyStatus: 410,
+      payload: {
+        status: 'failed',
+        error: {
+          code: 'PORTAL_ACCESS_EXPIRED',
+          message: 'Portal access token expired.',
+        },
+      },
+    }
+  }
+
+  if (portalAccess.status !== 'active') {
+    return {
+      ok: false as const,
+      replyStatus: 401,
+      payload: {
+        status: 'failed',
+        error: {
+          code: 'PORTAL_ACCESS_INVALID',
+          message: 'Portal access token is invalid.',
+        },
+      },
+    }
+  }
+
+  return {
+    ok: true as const,
+    portalAccess,
+  }
+}
+
+function mapPublicPortalMessage(message: {
+  id: string
+  direction: 'inbound' | 'outbound' | 'internal'
+  authorProfessionalId?: string
+  body: string
+  createdAt: string
+}) {
+  return {
+    id: message.id,
+    role: message.direction === 'inbound' ? 'user' : (message.authorProfessionalId ? 'lawyer' : 'system'),
+    text: message.body,
+    actorId: message.authorProfessionalId,
+    createdAt: message.createdAt,
+  }
 }
 
 export async function registerLegalBetaClientPortalRoutes(app: FastifyInstance) {
@@ -135,6 +227,88 @@ export async function registerLegalBetaClientPortalRoutes(app: FastifyInstance) 
         responsibleProfessional: caseSummary.responsibleProfessional,
         timeline: caseSummary.timeline,
       },
+    }
+  })
+
+  app.get<{ Params: { caseId: string; token: string } }>('/client/portal/:caseId/:token/messages', { preHandler: [publicReadRateLimit] }, async (request, reply) => {
+    const portalAccessResult = await resolveValidatedPortalAccess(app, request.params.caseId, request.params.token)
+    if (!portalAccessResult.ok) {
+      return reply.status(portalAccessResult.replyStatus).send(portalAccessResult.payload)
+    }
+
+    const messages = await getCaseService(app).getCaseMessages(portalAccessResult.portalAccess.tenant_id, request.params.caseId)
+    await markCasePortalAccessTokenUsed(app, portalAccessResult.portalAccess.id)
+
+    return {
+      status: 'ready',
+      caseId: request.params.caseId,
+      messages: messages.map(mapPublicPortalMessage),
+    }
+  })
+
+  app.post<{ Params: { caseId: string; token: string }; Body: PublicPortalMessageBody }>('/client/portal/:caseId/:token/messages', { preHandler: [publicWriteRateLimit] }, async (request, reply) => {
+    const portalAccessResult = await resolveValidatedPortalAccess(app, request.params.caseId, request.params.token)
+    if (!portalAccessResult.ok) {
+      return reply.status(portalAccessResult.replyStatus).send(portalAccessResult.payload)
+    }
+
+    const body = readPublicPortalMessageBody(request.body)
+    if (!body) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_CASE_MESSAGE',
+          message: 'Message body is required.',
+        },
+      })
+    }
+
+    if (body.length > MAX_CLIENT_PORTAL_MESSAGE_LENGTH) {
+      return reply.status(400).send({
+        status: 'failed',
+        error: {
+          code: 'INVALID_CASE_MESSAGE',
+          message: `Message exceeds ${MAX_CLIENT_PORTAL_MESSAGE_LENGTH} characters.`,
+        },
+      })
+    }
+
+    const messageResult = await getCaseService(app).addMessage({
+      tenantId: portalAccessResult.portalAccess.tenant_id,
+      caseId: request.params.caseId,
+      body,
+      direction: 'inbound',
+    })
+
+    if (messageResult.status === 'not_found') {
+      return reply.status(404).send({
+        status: 'failed',
+        error: {
+          code: 'CASE_NOT_FOUND',
+          message: `Case "${request.params.caseId}" was not found.`,
+        },
+      })
+    }
+
+    if (messageResult.status === 'closed') {
+      return reply.status(409).send({
+        status: 'failed',
+        error: {
+          code: 'CASE_CLOSED_FOR_MESSAGES',
+          message: 'Case is closed for new messages.',
+        },
+      })
+    }
+
+    const messages = await getCaseService(app).getCaseMessages(portalAccessResult.portalAccess.tenant_id, request.params.caseId)
+    await markCasePortalAccessTokenUsed(app, portalAccessResult.portalAccess.id)
+    const latestMessage = messageResult.message ?? messages.at(-1)
+
+    return {
+      status: 'ready',
+      caseId: request.params.caseId,
+      message: latestMessage ? mapPublicPortalMessage(latestMessage) : undefined,
+      messages: messages.map(mapPublicPortalMessage),
     }
   })
 }
