@@ -5,6 +5,8 @@ import type { EntityProfile } from '../../brain/domain/entity/contracts/EntityPr
 
 import { createCaseRepository } from './caseRepository.js'
 import type { CaseMessageRecord, CaseRecord, CaseStatus, CaseTimelineEventRecord } from './caseTypes.js'
+import { buildLegalCaseIdentity } from './legalCanonicalIdentity.js'
+import { buildCanonicalCaseProjection } from './legalCanonicalProjection.js'
 import {
   buildCaseOutcome,
   buildClientPortalTimelineProjection,
@@ -66,13 +68,31 @@ export class LegalBetaCaseService {
       this.resolveAssignedProfessionalId(tenantId, caseRecord),
     ])
 
-    return normalizeLegacyCase({
+    const legacyCase = normalizeLegacyCase({
       tenantId,
       caseRecord,
       messages,
       timeline,
       projectionAssignedProfessionalId: assignedProfessionalId,
     })
+
+    const lastInteractionAt = messages[messages.length - 1]?.createdAt
+      ?? timeline[timeline.length - 1]?.occurredAt
+      ?? caseRecord.updatedAt
+
+    const canonical = buildCanonicalCaseProjection({
+      ...buildLegalCaseIdentity({
+        caseRecord,
+        lastInteractionAt,
+      }),
+      timeline,
+      messages,
+    })
+
+    return {
+      ...legacyCase,
+      canonical,
+    }
   }
 
   async getCaseById(tenantId: number, caseId: string) {
