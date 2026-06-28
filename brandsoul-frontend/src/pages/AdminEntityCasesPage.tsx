@@ -32,6 +32,21 @@ type AdminEntityCasesPageProps = {
   entityId: string
 }
 
+function readCanonicalCase(caseItem: AdminLegalCase | null | undefined) {
+  return caseItem?.canonical?.case
+}
+
+function resolveResponsibleLabel(caseItem: AdminLegalCase | null | undefined) {
+  const responsibleProfessional = readCanonicalCase(caseItem)?.responsibleProfessional
+  if (responsibleProfessional?.displayName) {
+    return responsibleProfessional.oabCredential
+      ? `${responsibleProfessional.displayName} · ${responsibleProfessional.oabCredential}`
+      : responsibleProfessional.displayName
+  }
+
+  return caseItem?.assignedLawyerId ?? 'Nao atribuido'
+}
+
 export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageProps) {
   const authSession = useAuthSession()
   const [cases, setCases] = useState<AdminLegalCase[]>([])
@@ -124,7 +139,9 @@ export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageP
   }, [selectedCaseId])
 
   useEffect(() => {
-    const stableAssignedLawyerId = selectedCase?.assignedLawyerId ?? ''
+    const stableAssignedLawyerId = readCanonicalCase(selectedCase)?.responsibleProfessional?.id
+      ?? selectedCase?.assignedLawyerId
+      ?? ''
 
     if (!stableAssignedLawyerId) {
       setReputation(null)
@@ -161,7 +178,7 @@ export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageP
     return () => {
       cancelled = true
     }
-  }, [entityId, selectedCase?.assignedLawyerId, selectedCase?.updatedAt])
+  }, [entityId, selectedCase?.assignedLawyerId, selectedCase?.updatedAt, selectedCase?.canonical])
 
   const isMutating = isAssigning || isResponding
 
@@ -255,11 +272,15 @@ export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageP
             <ul className="admin-entity-list">
               {cases.map((item) => (
                 <li key={item.id} className="admin-entity-item">
+                  {(() => {
+                    const canonicalCase = readCanonicalCase(item)
+
+                    return (
                   <div className="admin-entity-main">
                     <strong>{item.description}</strong>
-                    <span>{item.id}</span>
-                    <span>{formatDateTime(item.createdAt)}</span>
-                    <span>{item.assignedLawyerId ? `Advogado: ${item.assignedLawyerId}` : 'Sem advogado atribuido'}</span>
+                    <span>{canonicalCase?.caseNumber ?? item.id}</span>
+                    <span>{formatDateTime(canonicalCase?.openedAt ?? item.createdAt)}</span>
+                    <span>{`Advogado: ${resolveResponsibleLabel(item)}`}</span>
                     {item.monetization ? (
                       <span>
                         Monetizacao: {formatCaseMonetizationAmount(item.monetization.amountCents, item.monetization.currency)} ({item.monetization.status})
@@ -277,7 +298,7 @@ export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageP
                       <a href={`/admin/cases/${item.id}`} className="admin-inline-link">
                         Tela dedicada
                       </a>
-                      {item.status === 'open' ? (
+                      {(canonicalCase?.status ?? item.status) === 'open' ? (
                         <button
                           type="button"
                           className="admin-button"
@@ -290,8 +311,12 @@ export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageP
                     </div>
                   </div>
                   <div className="admin-entity-meta">
-                    <StatusChip tone={resolveCaseStatusTone(item.status)}>{formatCaseStatus(item.status)}</StatusChip>
+                    <StatusChip tone={resolveCaseStatusTone(canonicalCase?.status ?? item.status)}>
+                      {formatCaseStatus(canonicalCase?.status ?? item.status)}
+                    </StatusChip>
                   </div>
+                    )
+                  })()}
                 </li>
               ))}
             </ul>
@@ -310,18 +335,24 @@ export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageP
             <FeedbackBanner>Selecione um caso para operar.</FeedbackBanner>
           ) : (
             <>
+              {(() => {
+                const canonicalCase = readCanonicalCase(selectedCase)
+
+                return (
               <div className="admin-domain-grid">
                 <article className="admin-domain-card">
                   <strong>Status</strong>
-                  <StatusChip tone={resolveCaseStatusTone(selectedCase.status)}>{formatCaseStatus(selectedCase.status)}</StatusChip>
+                  <StatusChip tone={resolveCaseStatusTone(canonicalCase?.status ?? selectedCase.status)}>
+                    {formatCaseStatus(canonicalCase?.status ?? selectedCase.status)}
+                  </StatusChip>
                 </article>
                 <article className="admin-domain-card">
                   <strong>Advogado</strong>
-                  <span>{selectedCase.assignedLawyerId ?? 'Nao atribuido'}</span>
+                  <span>{resolveResponsibleLabel(selectedCase)}</span>
                 </article>
                 <article className="admin-domain-card">
                   <strong>Criado em</strong>
-                  <span>{formatDateTime(selectedCase.createdAt)}</span>
+                  <span>{formatDateTime(canonicalCase?.openedAt ?? selectedCase.createdAt)}</span>
                 </article>
                 <article className="admin-domain-card">
                   <strong>Resumo</strong>
@@ -336,9 +367,11 @@ export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageP
                   </span>
                 </article>
               </div>
+                )
+              })()}
 
               <ProfessionalReputationCard
-                lawyerId={selectedCase.assignedLawyerId}
+                lawyerId={readCanonicalCase(selectedCase)?.responsibleProfessional?.id ?? selectedCase.assignedLawyerId}
                 reputation={reputation}
                 isLoading={isReputationLoading}
                 error={reputationError}
@@ -361,10 +394,14 @@ export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageP
                   />
                 </label>
                 <div className="admin-actions">
-                  <button type="submit" className="admin-button" disabled={isMutating || selectedCase.status === 'closed'}>
+                  <button
+                    type="submit"
+                    className="admin-button"
+                    disabled={isMutating || (readCanonicalCase(selectedCase)?.status ?? selectedCase.status) === 'closed'}
+                  >
                     {isResponding ? 'Enviando...' : 'Enviar resposta'}
                   </button>
-                  {selectedCase.status === 'open' ? (
+                  {(readCanonicalCase(selectedCase)?.status ?? selectedCase.status) === 'open' ? (
                     <button
                       type="button"
                       className="admin-button admin-button--ghost"

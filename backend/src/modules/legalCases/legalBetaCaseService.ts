@@ -6,6 +6,7 @@ import type { EntityProfile } from '../../brain/domain/entity/contracts/EntityPr
 import { createCaseRepository } from './caseRepository.js'
 import type { CaseMessageRecord, CaseRecord, CaseStatus, CaseTimelineEventRecord } from './caseTypes.js'
 import { buildLegalCaseIdentity } from './legalCanonicalIdentity.js'
+import { buildCanonicalCaseInputFromPublicTriage } from './legalCanonicalCaseInput.js'
 import { buildCanonicalCaseProjection } from './legalCanonicalProjection.js'
 import {
   buildCaseOutcome,
@@ -17,7 +18,6 @@ import {
   issueCasePortalAccessToken,
   normalizeLegacyCase,
   readEntityBusinessConfig,
-  resolvePublicTriagePriority,
   safeJsonObject,
 } from '../../api/routes/legalBetaSupport.js'
 
@@ -40,6 +40,38 @@ function buildPublicTriageRequestIdWhereClause(db: BackendDatabase) {
   return db.dialect === 'postgres'
     ? "metadata #>> '{publicTriage,requestId}' = ?"
     : "json_extract(metadata, '$.publicTriage.requestId') = ?"
+}
+
+function readCanonicalPublicTriagePayload(canonicalInput: {
+  metadata: Record<string, unknown>
+  contact?: string
+  contactPreference?: string
+  practiceArea?: string
+  initialMessage: { body: string }
+}) {
+  const publicTriage = safeJsonObject(canonicalInput.metadata.publicTriage)
+  const urgency: 'critical' | 'priority' | 'planned' = (
+    publicTriage.urgency === 'critical'
+    || publicTriage.urgency === 'priority'
+    || publicTriage.urgency === 'planned'
+  )
+    ? publicTriage.urgency
+    : 'planned'
+
+  return {
+    businessContext: {
+      officeName: typeof publicTriage.officeName === 'string' ? publicTriage.officeName : undefined,
+    },
+    triage: {
+      practiceArea: canonicalInput.practiceArea,
+      context: typeof publicTriage.context === 'string' ? publicTriage.context : '',
+      urgency,
+      objective: typeof publicTriage.objective === 'string' ? publicTriage.objective : '',
+      contactPreference: canonicalInput.contactPreference ?? '',
+      contactValue: canonicalInput.contact ?? '',
+    },
+    userMessage: canonicalInput.initialMessage.body,
+  }
 }
 
 export class LegalBetaCaseService {
@@ -467,6 +499,16 @@ export class LegalBetaCaseService {
       intakeId: string
     }
 
+    const canonicalInput = buildCanonicalCaseInputFromPublicTriage({
+      requestId: args.requestId,
+      userMessage: args.userMessage,
+      leadId: portfolioCapture.leadId,
+      intakeId: portfolioCapture.intakeId,
+      attribution: args.attribution,
+      triage: args.triage,
+      businessContext: args.businessContext,
+    })
+
     const persisted = await this.db.transaction(async (tx) => {
       const caseRepository = createCaseRepository(tx)
       const publicTriageRequestIdWhereClause = buildPublicTriageRequestIdWhereClause(tx)
@@ -493,23 +535,25 @@ export class LegalBetaCaseService {
         }
 
         const nextMetadata = safeJsonObject(existingCase.metadata)
+        const canonicalMetadata = safeJsonObject(canonicalInput.metadata)
+        const existingPublicTriage = safeJsonObject(nextMetadata.publicTriage)
+        const nextPublicTriage = {
+          ...safeJsonObject(canonicalMetadata.publicTriage),
+          ...existingPublicTriage,
+          attribution: existingPublicTriage.attribution ?? safeJsonObject(canonicalMetadata.publicTriage).attribution,
+        }
         nextMetadata.source = 'public-triage'
         nextMetadata.leadId = portfolioCapture.leadId
         nextMetadata.intakeId = portfolioCapture.intakeId
-        nextMetadata.contact = args.triage?.contactValue?.trim() || nextMetadata.contact
-        nextMetadata.city = args.triage?.city?.trim() || nextMetadata.city
-        nextMetadata.publicTriage = {
-          ...safeJsonObject(nextMetadata.publicTriage),
-          requestId: args.requestId,
-          city: args.triage?.city?.trim() || undefined,
-          contactPreference: args.triage?.contactPreference?.trim() || undefined,
-          contactValue: args.triage?.contactValue?.trim() || undefined,
-          urgency: args.triage?.urgency ?? 'planned',
-          leadId: portfolioCapture.leadId,
-          intakeId: portfolioCapture.intakeId,
-          attribution:
-            safeJsonObject(nextMetadata.publicTriage).attribution
-            ?? args.attribution,
+        nextMetadata.contact = canonicalInput.contact ?? nextMetadata.contact
+        nextMetadata.city = canonicalInput.city ?? nextMetadata.city
+        nextMetadata.publicTriage = nextPublicTriage
+        nextMetadata.canonicalCaseInput = {
+          ...safeJsonObject(canonicalMetadata.canonicalCaseInput),
+          metadata: {
+            ...safeJsonObject(safeJsonObject(canonicalMetadata.canonicalCaseInput).metadata),
+            publicTriage: nextPublicTriage,
+          },
         }
 
         await caseRepository.updateCaseMetadata(tenantId, existingCase.id, nextMetadata)
@@ -521,40 +565,23 @@ export class LegalBetaCaseService {
         }
       }
 
+      const canonicalTriagePayload = readCanonicalPublicTriagePayload(canonicalInput)
+
       const caseRecord = await caseRepository.createCase({
         tenantId,
         entityId: args.entityId,
         requestId: args.requestId,
-        title: buildStructuredPublicTriageTitle(args),
-        description: buildStructuredPublicTriageMessage(args),
-        status: 'open',
-        priority: resolvePublicTriagePriority(args.triage?.urgency ?? 'planned'),
-        practiceArea: args.triage?.practiceArea,
+        caseNumber: canonicalInput.caseNumber,
+        title: buildStructuredPublicTriageTitle(canonicalTriagePayload),
+        description: buildStructuredPublicTriageMessage(canonicalTriagePayload),
+        status: canonicalInput.status,
+        priority: canonicalInput.priority,
+        practiceArea: canonicalInput.practiceArea,
         source: 'public-interaction',
         autoDispatch: false,
-        metadata: {
-          source: 'public-triage',
-          leadId: portfolioCapture.leadId,
-          intakeId: portfolioCapture.intakeId,
-          publicTriage: {
-            requestId: args.requestId,
-            city: args.triage?.city?.trim() || undefined,
-            contactPreference: args.triage?.contactPreference?.trim() || undefined,
-            contactValue: args.triage?.contactValue?.trim() || undefined,
-            urgency: args.triage?.urgency ?? 'planned',
-            leadId: portfolioCapture.leadId,
-            intakeId: portfolioCapture.intakeId,
-            attribution: args.attribution,
-          },
-          city: args.triage?.city?.trim() || undefined,
-          contact: args.triage?.contactValue?.trim() || undefined,
-        },
-        initialMessage: {
-          body: args.userMessage.trim(),
-          direction: 'inbound',
-          messageType: 'note',
-          messageStatus: 'sent',
-        },
+        openedAt: canonicalInput.openedAt,
+        metadata: canonicalInput.metadata,
+        initialMessage: canonicalInput.initialMessage,
       })
 
       await caseRepository.addTimelineEvent({

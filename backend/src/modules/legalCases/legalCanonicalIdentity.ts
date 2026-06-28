@@ -4,6 +4,7 @@ import type {
   LegalCaseIdentity,
   LegalOfficeIdentity,
 } from './legalCanonicalTypes.js'
+import { readCanonicalCaseInput } from './legalCanonicalCaseInput.js'
 
 type OfficeBusinessConfigLike = {
   officeName?: string
@@ -176,30 +177,43 @@ export function buildLegalCaseIdentity(args: {
 }): LegalCaseIdentity {
   const metadata = asRecord(args.caseRecord.metadata)
   const publicTriage = readNestedRecord(metadata, 'publicTriage')
+  const persistedCanonicalInput = readCanonicalCaseInput(asRecord(metadata).canonicalCaseInput)
   const responsibleProfessional = args.responsibleProfessional
     ? mapLegalProfessionalIdentity(args.responsibleProfessional)
     : null
 
   return {
     caseId: args.caseRecord.id,
-    caseNumber: buildLegalCaseNumber(args.caseRecord.id, args.caseRecord.caseNumber),
+    caseNumber: buildLegalCaseNumber(
+      args.caseRecord.id,
+      persistedCanonicalInput?.caseNumber ?? args.caseRecord.caseNumber,
+    ),
     tenantId: args.caseRecord.tenantId,
     entityId: args.caseRecord.entityId ?? '',
     client: {
-      name: readString(metadata, 'clientName', 'fullName', 'name')
+      name: persistedCanonicalInput?.clientName
+        ?? readString(metadata, 'clientName', 'fullName', 'name')
         ?? readString(publicTriage, 'clientName', 'fullName', 'name'),
-      contact: readString(metadata, 'contact') ?? readString(publicTriage, 'contactValue'),
-      contactPreference: readString(publicTriage, 'contactPreference') ?? readString(metadata, 'contactPreference'),
-      city: readString(metadata, 'city') ?? readString(publicTriage, 'city'),
+      contact: persistedCanonicalInput?.contact
+        ?? readString(metadata, 'contact')
+        ?? readString(publicTriage, 'contactValue'),
+      contactPreference: persistedCanonicalInput?.contactPreference
+        ?? readString(publicTriage, 'contactPreference')
+        ?? readString(metadata, 'contactPreference'),
+      city: persistedCanonicalInput?.city
+        ?? readString(metadata, 'city')
+        ?? readString(publicTriage, 'city'),
     },
-    practiceArea: args.caseRecord.practiceArea,
-    city: readString(metadata, 'city') ?? readString(publicTriage, 'city'),
+    practiceArea: args.caseRecord.practiceArea ?? persistedCanonicalInput?.practiceArea,
+    city: persistedCanonicalInput?.city
+      ?? readString(metadata, 'city')
+      ?? readString(publicTriage, 'city'),
     responsibleProfessional,
     priority: args.caseRecord.priority,
     status: args.caseRecord.status,
-    openedAt: args.caseRecord.openedAt,
+    openedAt: persistedCanonicalInput?.openedAt ?? args.caseRecord.openedAt,
     updatedAt: args.caseRecord.updatedAt,
-    lastInteractionAt: args.lastInteractionAt,
+    lastInteractionAt: args.lastInteractionAt ?? persistedCanonicalInput?.lastInteractionAt,
     sla: args.sla,
   }
 }

@@ -34,6 +34,21 @@ type AdminCaseDetailPageProps = {
   caseId: string
 }
 
+function readCanonicalCase(legalCase: AdminLegalCase | null | undefined) {
+  return legalCase?.canonical?.case
+}
+
+function resolveResponsibleLabel(legalCase: AdminLegalCase | null | undefined) {
+  const responsibleProfessional = readCanonicalCase(legalCase)?.responsibleProfessional
+  if (responsibleProfessional?.displayName) {
+    return responsibleProfessional.oabCredential
+      ? `${responsibleProfessional.displayName} · ${responsibleProfessional.oabCredential}`
+      : responsibleProfessional.displayName
+  }
+
+  return legalCase?.assignedLawyerId ?? 'Nao atribuido'
+}
+
 function resolveLoadErrorMessage(message: string) {
   if (message.includes('not found') || message.includes('not found.')) {
     return 'Esse caso nao foi encontrado.'
@@ -98,7 +113,9 @@ export default function AdminCaseDetailPage({ caseId }: AdminCaseDetailPageProps
   }, [caseId])
 
   useEffect(() => {
-    const stableAssignedLawyerId = legalCase?.assignedLawyerId ?? ''
+    const stableAssignedLawyerId = readCanonicalCase(legalCase)?.responsibleProfessional?.id
+      ?? legalCase?.assignedLawyerId
+      ?? ''
     const stableReputationEntityId = legalCase?.entityId ?? ''
 
     if (!stableAssignedLawyerId || !stableReputationEntityId) {
@@ -136,7 +153,7 @@ export default function AdminCaseDetailPage({ caseId }: AdminCaseDetailPageProps
     return () => {
       cancelled = true
     }
-  }, [legalCase?.assignedLawyerId, legalCase?.entityId, legalCase?.updatedAt])
+  }, [legalCase?.assignedLawyerId, legalCase?.entityId, legalCase?.updatedAt, legalCase?.canonical])
 
   const isMutating = isAssigning || isResponding || isClosing
 
@@ -252,12 +269,15 @@ export default function AdminCaseDetailPage({ caseId }: AdminCaseDetailPageProps
     )
   }
 
+  const canonicalCase = readCanonicalCase(legalCase)
+  const canonicalStatus = canonicalCase?.status ?? legalCase.status
+
   return (
     <CaseShell
-      statusLabel={formatCaseStatus(legalCase.status)}
-      statusClassName={resolveCaseStatusClassName(legalCase.status)}
+      statusLabel={formatCaseStatus(canonicalStatus)}
+      statusClassName={resolveCaseStatusClassName(canonicalStatus)}
       title={legalCase.description}
-      subtitle={`Case ${legalCase.id} operado dentro da plataforma.`}
+      subtitle={`Case ${canonicalCase?.caseNumber ?? legalCase.id} operado dentro da plataforma.`}
       headerActions={(
         <>
           <a href={`/admin/entity/${legalCase.entityId}/cases`} className="admin-button admin-button--ghost">
@@ -297,11 +317,11 @@ export default function AdminCaseDetailPage({ caseId }: AdminCaseDetailPageProps
             </label>
 
             <div className="admin-actions">
-              <button type="submit" className="admin-button" disabled={isMutating || legalCase.status === 'closed'}>
+              <button type="submit" className="admin-button" disabled={isMutating || canonicalStatus === 'closed'}>
                 {isResponding ? 'Enviando...' : 'Enviar resposta'}
               </button>
 
-              {legalCase.status === 'open' ? (
+              {canonicalStatus === 'open' ? (
                 <button
                   type="button"
                   className="admin-button admin-button--ghost"
@@ -314,7 +334,7 @@ export default function AdminCaseDetailPage({ caseId }: AdminCaseDetailPageProps
             </div>
           </form>
 
-          {legalCase.status !== 'closed' ? (
+          {canonicalStatus !== 'closed' ? (
             <form className="admin-form" onSubmit={(event) => void handleCloseCase(event)}>
               <div className="admin-card-header">
                 <h3>Finalizar caso</h3>
@@ -356,27 +376,27 @@ export default function AdminCaseDetailPage({ caseId }: AdminCaseDetailPageProps
             <div className="admin-domain-grid">
               <article className="admin-domain-card">
                 <strong>Status</strong>
-                <StatusChip tone={resolveCaseStatusTone(legalCase.status)}>{formatCaseStatus(legalCase.status)}</StatusChip>
+                <StatusChip tone={resolveCaseStatusTone(canonicalStatus)}>{formatCaseStatus(canonicalStatus)}</StatusChip>
               </article>
               <article className="admin-domain-card">
                 <strong>Advogado atribuido</strong>
-                <span>{legalCase.assignedLawyerId ?? 'Nao atribuido'}</span>
+                <span>{resolveResponsibleLabel(legalCase)}</span>
               </article>
               <article className="admin-domain-card">
                 <strong>Cidade</strong>
-                <span>{legalCase.city ?? 'Nao informada'}</span>
+                <span>{canonicalCase?.city ?? legalCase.city ?? 'Nao informada'}</span>
               </article>
               <article className="admin-domain-card">
                 <strong>Contato</strong>
-                <span>{legalCase.contact ?? 'Nao informado'}</span>
+                <span>{canonicalCase?.contact ?? legalCase.contact ?? 'Nao informado'}</span>
               </article>
               <article className="admin-domain-card">
                 <strong>Criado em</strong>
-                <span>{formatDateTime(legalCase.createdAt)}</span>
+                <span>{formatDateTime(canonicalCase?.openedAt ?? legalCase.createdAt)}</span>
               </article>
               <article className="admin-domain-card">
                 <strong>Atualizado em</strong>
-                <span>{formatDateTime(legalCase.updatedAt)}</span>
+                <span>{formatDateTime(canonicalCase?.lastInteractionAt ?? legalCase.updatedAt)}</span>
               </article>
               <article className="admin-domain-card">
                 <strong>Monetizacao</strong>
@@ -390,7 +410,7 @@ export default function AdminCaseDetailPage({ caseId }: AdminCaseDetailPageProps
           </SurfaceCard>
 
           <ProfessionalReputationCard
-            lawyerId={legalCase.assignedLawyerId}
+            lawyerId={canonicalCase?.responsibleProfessional?.id ?? legalCase.assignedLawyerId}
             reputation={reputation}
             isLoading={isReputationLoading}
             error={reputationError}

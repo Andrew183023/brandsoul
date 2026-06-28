@@ -109,3 +109,69 @@ test('buildLegalCaseIdentity consolidates client data from public triage metadat
   assert.equal(identity.responsibleProfessional?.displayName, 'Ana Rocha')
   assert.equal(identity.lastInteractionAt, '2026-06-27T11:30:00.000Z')
 })
+
+test('buildLegalCaseIdentity prioritizes persisted canonicalCaseInput for structured client fields', () => {
+  const caseRecord: CaseRecord = {
+    id: 'case-canonical-12345678',
+    tenantId: 77,
+    entityId: 'office-1',
+    requestId: 'request-2',
+    title: 'Triagem pública',
+    description: 'Resumo legado.',
+    status: 'open',
+    priority: 'urgent',
+    practiceArea: 'Direito Trabalhista',
+    source: 'public-interaction',
+    openedAt: '2026-06-27T10:00:00.000Z',
+    closedAt: undefined,
+    archivedAt: undefined,
+    resolutionReason: undefined,
+    caseNumber: undefined,
+    createdByUserId: undefined,
+    leadProfessionalId: undefined,
+    centelhaContext: {},
+    metadata: {
+      contact: 'legacy-contact',
+      city: 'Legacy City',
+      publicTriage: {
+        clientName: 'Legacy Client',
+        contactPreference: 'Legacy',
+        contactValue: 'legacy-contact',
+        city: 'Legacy City',
+      },
+      canonicalCaseInput: {
+        contact: '5511999999999',
+        contactPreference: 'WhatsApp',
+        city: 'Belo Horizonte',
+        practiceArea: 'Direito Trabalhista',
+        priority: 'urgent',
+        status: 'open',
+        openedAt: '2026-06-27T10:00:00.000Z',
+        lastInteractionAt: '2026-06-27T11:30:00.000Z',
+        checklist: [],
+        summary: 'Demissão sem verbas',
+        metadata: {},
+        initialMessage: {
+          body: 'Mensagem inicial',
+          direction: 'inbound',
+          messageType: 'note',
+          messageStatus: 'sent',
+        },
+      },
+    },
+    createdAt: '2026-06-27T10:00:00.000Z',
+    updatedAt: '2026-06-27T11:00:00.000Z',
+  }
+
+  const identity = buildLegalCaseIdentity({
+    caseRecord,
+    lastInteractionAt: '2026-06-27T12:00:00.000Z',
+  })
+
+  assert.equal(identity.client.name, 'Legacy Client')
+  assert.equal(identity.client.contact, '5511999999999')
+  assert.equal(identity.client.contactPreference, 'WhatsApp')
+  assert.equal(identity.client.city, 'Belo Horizonte')
+  assert.equal(identity.city, 'Belo Horizonte')
+  assert.equal(identity.lastInteractionAt, '2026-06-27T12:00:00.000Z')
+})
