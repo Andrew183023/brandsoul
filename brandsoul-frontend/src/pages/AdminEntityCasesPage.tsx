@@ -20,7 +20,6 @@ import AdminEntityLayout from '../components/AdminEntityLayout'
 import FeedbackBanner from '../components/FeedbackBanner'
 import StatusChip from '../components/StatusChip'
 import SurfaceCard from '../components/SurfaceCard'
-import { useAuthSession } from '../lib/session'
 import {
   formatCaseStatus,
   formatCaseMonetizationAmount,
@@ -47,8 +46,13 @@ function resolveResponsibleLabel(caseItem: AdminLegalCase | null | undefined) {
   return caseItem?.assignedLawyerId ?? 'Nao atribuido'
 }
 
+type VisualCaseStatus = 'pending' | 'open' | 'dispatched' | 'accepted' | 'in_progress' | 'resolved' | 'closed'
+
+function normalizeVisualCaseStatus(status: VisualCaseStatus | 'archived'): VisualCaseStatus {
+  return status === 'archived' ? 'closed' : status
+}
+
 export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageProps) {
-  const authSession = useAuthSession()
   const [cases, setCases] = useState<AdminLegalCase[]>([])
   const [selectedCaseId, setSelectedCaseId] = useState<string | null>(null)
   const [selectedCase, setSelectedCase] = useState<AdminLegalCase | null>(null)
@@ -276,6 +280,7 @@ export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageP
                     const canonicalCase = readCanonicalCase(item)
 
                     return (
+                        <>
                   <div className="admin-entity-main">
                     <strong>{item.description}</strong>
                     <span>{canonicalCase?.caseNumber ?? item.id}</span>
@@ -311,10 +316,11 @@ export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageP
                     </div>
                   </div>
                   <div className="admin-entity-meta">
-                    <StatusChip tone={resolveCaseStatusTone(canonicalCase?.status ?? item.status)}>
-                      {formatCaseStatus(canonicalCase?.status ?? item.status)}
+                    <StatusChip tone={resolveCaseStatusTone(normalizeVisualCaseStatus(canonicalCase?.status ?? item.status))}>
+                      {formatCaseStatus(normalizeVisualCaseStatus(canonicalCase?.status ?? item.status))}
                     </StatusChip>
                   </div>
+                        </>
                     )
                   })()}
                 </li>
@@ -342,8 +348,8 @@ export default function AdminEntityCasesPage({ entityId }: AdminEntityCasesPageP
               <div className="admin-domain-grid">
                 <article className="admin-domain-card">
                   <strong>Status</strong>
-                  <StatusChip tone={resolveCaseStatusTone(canonicalCase?.status ?? selectedCase.status)}>
-                    {formatCaseStatus(canonicalCase?.status ?? selectedCase.status)}
+                  <StatusChip tone={resolveCaseStatusTone(normalizeVisualCaseStatus(canonicalCase?.status ?? selectedCase.status))}>
+                    {formatCaseStatus(normalizeVisualCaseStatus(canonicalCase?.status ?? selectedCase.status))}
                   </StatusChip>
                 </article>
                 <article className="admin-domain-card">

@@ -18,14 +18,6 @@ type OperationCard = {
 }
 
 function resolveOperationHeadline(config: EntityBusinessConfig) {
-  if (config.businessType === 'restaurant') {
-    return 'Operação orientada por catálogo e jornada de consumo.'
-  }
-
-  if (config.businessType === 'store') {
-    return 'Operação orientada por produtos, vitrine e conversão.'
-  }
-
   if (config.businessType === 'legal') {
     return 'Operação orientada por serviços jurídicos, casos e triagem.'
   }
@@ -34,39 +26,8 @@ function resolveOperationHeadline(config: EntityBusinessConfig) {
 }
 
 function resolveOperationCards(config: EntityBusinessConfig): OperationCard[] {
-  const catalogEnabled = config.serviceRules?.catalogEnabled === true
   const bookingEnabled = config.serviceRules?.bookingEnabled === true
   const responseWindow = config.serviceRules?.responseWindowLabel ?? 'Nao configurada'
-
-  if (config.businessType === 'restaurant') {
-    return [
-      {
-        title: 'Catálogo',
-        description: 'A mesma superfície de operação pode atender cardápio, categorias e destaques de consumo sem criar uma tela exclusiva para restaurante.',
-        emphasis: catalogEnabled ? 'Catalogo habilitado' : 'Catalogo ainda nao habilitado',
-      },
-      {
-        title: 'Atendimento',
-        description: 'O tipo do negócio informa o foco operacional, mas a edição continua na mesma arquitetura de entidade.',
-        emphasis: `Modo atual: ${config.serviceRules?.attendanceMode ?? 'mixed'}`,
-      },
-    ]
-  }
-
-  if (config.businessType === 'store') {
-    return [
-      {
-        title: 'Produtos',
-        description: 'A operação usa os mesmos componentes de configuração e projeção para vitrine, itens e CTA de compra.',
-        emphasis: catalogEnabled ? 'Catalogo habilitado' : 'Catalogo ainda nao habilitado',
-      },
-      {
-        title: 'Conversão',
-        description: 'O runtime comercial permanece separado da identidade; aqui fica só a superfície de negócio.',
-        emphasis: `Janela de resposta: ${responseWindow}`,
-      },
-    ]
-  }
 
   if (config.businessType === 'legal') {
     return [

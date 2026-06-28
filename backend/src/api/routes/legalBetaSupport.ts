@@ -521,6 +521,18 @@ export function resolveCaseResponseState(record: CaseRecord, messages: CaseMessa
   return 'active' as const
 }
 
+/**
+ * FT-04 compatibility adapter.
+ *
+ * This function exists only to preserve legacy admin response shape while
+ * canonical.case becomes the operational source of truth.
+ *
+ * Rules:
+ * - Do not add new business semantics here.
+ * - Do not add new fallback chains here.
+ * - New case truth must be resolved in buildLegalCaseIdentity()
+ *   and exposed through buildCanonicalCaseProjection().
+ */
 export function normalizeLegacyCase(args: {
   tenantId: number
   caseRecord: CaseRecord

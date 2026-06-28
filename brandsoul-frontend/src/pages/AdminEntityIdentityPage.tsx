@@ -55,13 +55,6 @@ export default function AdminEntityIdentityPage({ entityId }: AdminEntityIdentit
     }))
   }
 
-  function handleCheckboxField(event: ChangeEvent<HTMLInputElement>) {
-    const { name, checked } = event.target
-    setFormState((current) => ({
-      ...current,
-      [name]: checked,
-    }))
-  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -101,14 +94,20 @@ export default function AdminEntityIdentityPage({ entityId }: AdminEntityIdentit
       ) : null}
       {(uiState === 'empty' || uiState === 'ready') ? (
         <AdminBusinessConfigForm
-          entityId={entityId}
+          officeId={entityId}
+          onOfficeMediaUpload={() => undefined}
+          onOfficeMediaMove={() => undefined}
+          onOfficeMediaSetCover={() => undefined}
+          onOfficeMediaRemove={() => undefined}
+          onInstitutionalVideoUpload={() => undefined}
+          onTrustEvidenceToggle={() => undefined}
+          onTrustEvidenceApprovalToggle={() => undefined}
           uiState={uiState}
           formState={formState}
           error={error}
           successMessage={successMessage}
           isSaving={isSaving}
           onTextField={handleTextField}
-          onCheckboxField={handleCheckboxField}
           onSubmit={(event) => void handleSubmit(event)}
         />
       ) : null}

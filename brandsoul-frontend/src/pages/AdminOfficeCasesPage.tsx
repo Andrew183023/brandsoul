@@ -504,6 +504,8 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
       return canonicalClientName
     }
 
+    // FT-04 compatibility fallback only.
+    // New business truth must come from canonical.case.clientName.
     const metadata = (caseItem as unknown as { metadata?: unknown }).metadata
     const metadataName = readNestedString(metadata, ['clientName'])
       ?? readNestedString(metadata, ['fullName'])
@@ -535,6 +537,8 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
       return canonicalContact
     }
 
+    // FT-04 compatibility fallback only.
+    // New business truth must come from canonical.case.contact.
     const metadata = (caseItem as unknown as { metadata?: unknown }).metadata
     const contactPreference = readNestedString(metadata, ['contactPreference'])
       ?? readNestedString(metadata, ['publicTriage', 'contactPreference'])

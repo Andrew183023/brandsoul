@@ -61,6 +61,12 @@ function resolveLoadErrorMessage(message: string) {
   return message
 }
 
+type VisualCaseStatus = 'pending' | 'open' | 'dispatched' | 'accepted' | 'in_progress' | 'resolved' | 'closed'
+
+function normalizeVisualCaseStatus(status: VisualCaseStatus | 'archived'): VisualCaseStatus {
+  return status === 'archived' ? 'closed' : status
+}
+
 export default function AdminCaseDetailPage({ caseId }: AdminCaseDetailPageProps) {
   const authSession = useAuthSession()
   const [legalCase, setLegalCase] = useState<AdminLegalCase | null>(null)
@@ -218,7 +224,7 @@ export default function AdminCaseDetailPage({ caseId }: AdminCaseDetailPageProps
       setError(null)
 
       const closedBy = authSession?.user?.name?.trim() || authSession?.user?.email?.trim() || 'participante'
-      const payload = await closeCase(caseId, {
+      await closeCase(caseId, {
         rating: closeRating,
         feedback: closeFeedback.trim() || undefined,
         closedBy,
@@ -274,8 +280,8 @@ export default function AdminCaseDetailPage({ caseId }: AdminCaseDetailPageProps
 
   return (
     <CaseShell
-      statusLabel={formatCaseStatus(canonicalStatus)}
-      statusClassName={resolveCaseStatusClassName(canonicalStatus)}
+      statusLabel={formatCaseStatus(normalizeVisualCaseStatus(canonicalStatus))}
+      statusClassName={resolveCaseStatusClassName(normalizeVisualCaseStatus(canonicalStatus))}
       title={legalCase.description}
       subtitle={`Case ${canonicalCase?.caseNumber ?? legalCase.id} operado dentro da plataforma.`}
       headerActions={(
@@ -376,7 +382,7 @@ export default function AdminCaseDetailPage({ caseId }: AdminCaseDetailPageProps
             <div className="admin-domain-grid">
               <article className="admin-domain-card">
                 <strong>Status</strong>
-                <StatusChip tone={resolveCaseStatusTone(canonicalStatus)}>{formatCaseStatus(canonicalStatus)}</StatusChip>
+                <StatusChip tone={resolveCaseStatusTone(normalizeVisualCaseStatus(canonicalStatus))}>{formatCaseStatus(normalizeVisualCaseStatus(canonicalStatus))}</StatusChip>
               </article>
               <article className="admin-domain-card">
                 <strong>Advogado atribuido</strong>
