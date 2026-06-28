@@ -467,6 +467,7 @@ export class LegalBetaCaseService {
       contactPreference: string
       contactValue: string
       clientName?: string
+      preferredName?: string
       practiceArea?: string
       city?: string
     }
@@ -546,13 +547,25 @@ export class LegalBetaCaseService {
         nextMetadata.source = 'public-triage'
         nextMetadata.leadId = portfolioCapture.leadId
         nextMetadata.intakeId = portfolioCapture.intakeId
+        nextMetadata.clientName = canonicalInput.clientName ?? nextMetadata.clientName
+        nextMetadata.preferredName = safeJsonObject(canonicalInput.metadata).preferredName ?? nextMetadata.preferredName
         nextMetadata.contact = canonicalInput.contact ?? nextMetadata.contact
         nextMetadata.city = canonicalInput.city ?? nextMetadata.city
         nextMetadata.publicTriage = nextPublicTriage
         nextMetadata.canonicalCaseInput = {
           ...safeJsonObject(canonicalMetadata.canonicalCaseInput),
+          clientName: canonicalInput.clientName ?? safeJsonObject(canonicalMetadata.canonicalCaseInput).clientName,
+          contact: canonicalInput.contact ?? safeJsonObject(canonicalMetadata.canonicalCaseInput).contact,
+          contactPreference:
+            canonicalInput.contactPreference ?? safeJsonObject(canonicalMetadata.canonicalCaseInput).contactPreference,
+          city: canonicalInput.city ?? safeJsonObject(canonicalMetadata.canonicalCaseInput).city,
+          practiceArea: canonicalInput.practiceArea ?? safeJsonObject(canonicalMetadata.canonicalCaseInput).practiceArea,
           metadata: {
             ...safeJsonObject(safeJsonObject(canonicalMetadata.canonicalCaseInput).metadata),
+            clientName: canonicalInput.clientName ?? nextMetadata.clientName,
+            preferredName: safeJsonObject(canonicalInput.metadata).preferredName ?? nextMetadata.preferredName,
+            city: canonicalInput.city ?? nextMetadata.city,
+            contact: canonicalInput.contact ?? nextMetadata.contact,
             publicTriage: nextPublicTriage,
           },
         }

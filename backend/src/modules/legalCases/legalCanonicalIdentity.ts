@@ -191,6 +191,9 @@ export function buildLegalCaseIdentity(args: {
     tenantId: args.caseRecord.tenantId,
     entityId: args.caseRecord.entityId ?? '',
     client: {
+      // FT-04 compatibility fallback:
+      // New business truth must come from canonical.case, using metadata only while
+      // older persisted cases are still being migrated.
       name: persistedCanonicalInput?.clientName
         ?? readString(metadata, 'clientName', 'fullName', 'name')
         ?? readString(publicTriage, 'clientName', 'fullName', 'name'),

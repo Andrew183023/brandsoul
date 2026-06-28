@@ -85,6 +85,8 @@ type PublicInteractionRequest = {
     objective: string
     contactPreference: string
     contactValue: string
+    clientName?: string
+    preferredName?: string
     practiceArea?: string
     city?: string
   }

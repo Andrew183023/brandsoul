@@ -52,6 +52,7 @@ type PublicTriageBuilderArgs = {
     contactPreference: string
     contactValue: string
     clientName?: string
+    preferredName?: string
     practiceArea?: string
     city?: string
   }
@@ -172,6 +173,7 @@ export function buildCanonicalCaseInputFromPublicTriage(args: PublicTriageBuilde
   const contact = args.triage?.contactValue?.trim() || undefined
   const contactPreference = args.triage?.contactPreference?.trim() || undefined
   const clientName = args.triage?.clientName?.trim() || undefined
+  const preferredName = args.triage?.preferredName?.trim() || undefined
   const city = args.triage?.city?.trim() || undefined
   const practiceArea = args.triage?.practiceArea?.trim() || undefined
   const urgency = args.triage?.urgency ?? 'planned'
@@ -207,6 +209,7 @@ export function buildCanonicalCaseInputFromPublicTriage(args: PublicTriageBuilde
     city,
     contact,
     clientName,
+    preferredName,
     publicTriage: {
       requestId: args.requestId,
       userMessage: args.userMessage.trim(),
@@ -217,6 +220,7 @@ export function buildCanonicalCaseInputFromPublicTriage(args: PublicTriageBuilde
       contactPreference,
       contactValue: contact,
       clientName,
+      preferredName,
       urgency,
       officeName: args.businessContext?.officeName?.trim() || undefined,
       leadId: args.leadId,

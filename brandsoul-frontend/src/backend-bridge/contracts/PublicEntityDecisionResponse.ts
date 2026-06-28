@@ -6,6 +6,18 @@ export type PublicEntityInteractionRequest = {
   businessContext?: {
     businessType?: string
     description?: string
+    officeName?: string
+    legalAreas?: string[]
+    servedCities?: string[]
+    intake?: {
+      intakeCriteria?: string
+      priorityRules?: string
+    }
+    availability?: {
+      responseWindowLabel?: string
+      operatingHours?: string
+    }
+    publicationStatus?: string
     catalogSummary?: {
       categories: string[]
       featuredItems: string[]
@@ -28,6 +40,17 @@ export type PublicEntityInteractionRequest = {
       currentUrl?: string
       pathname?: string
     }
+  }
+  triage?: {
+    clientName?: string
+    preferredName?: string
+    city?: string
+    practiceArea?: string
+    context: string
+    urgency: 'critical' | 'priority' | 'planned'
+    objective: string
+    contactPreference: string
+    contactValue: string
   }
 }
 

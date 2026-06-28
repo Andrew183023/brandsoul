@@ -102,15 +102,20 @@ type InstitutionalVideo = {
 
 type TrustEvidenceItem = OfficeTrustEvidenceItem
 
-type IntakeStepId = 'situation' | 'urgency' | 'objective' | 'contact' | 'review'
+type IntakeStepId = 'identification' | 'context' | 'urgency' | 'objective' | 'contact' | 'review'
 
 type IntakeUrgency = 'critical' | 'priority' | 'planned'
 
 type IntakeDraft = {
-  situation: string
+  clientName: string
+  preferredName: string
+  city: string
+  practiceArea: string
+  context: string
   urgency: IntakeUrgency | ''
   objective: string
-  contact: string
+  contactPreference: 'whatsapp' | 'telefone' | 'email' | 'outro' | ''
+  contactValue: string
 }
 
 type PublicTriageAttribution = {
@@ -172,9 +177,15 @@ type IntakeStep = {
 
 const INTAKE_STEPS: IntakeStep[] = [
   {
-    id: 'situation',
-    title: 'Contexto inicial',
-    why: 'Entender o quadro principal evita retrabalho e reduz ansiedade na triagem.',
+    id: 'identification',
+    title: 'Identificação',
+    why: 'A identificação inicial evita retrabalho e permite que o caso já nasça com dados operacionais mínimos.',
+    next: 'Na próxima etapa você descreve o contexto do caso.',
+  },
+  {
+    id: 'context',
+    title: 'Contexto',
+    why: 'Entender o quadro principal melhora a análise inicial e a leitura do primeiro dossiê do caso.',
     next: 'Na próxima etapa você define a urgência percebida.',
   },
   {
@@ -191,8 +202,8 @@ const INTAKE_STEPS: IntakeStep[] = [
   },
   {
     id: 'contact',
-    title: 'Preferencia de contato',
-    why: 'Definir um canal reduz interrupcoes e melhora previsibilidade do retorno.',
+    title: 'Contato',
+    why: 'Separar canal e valor do contato melhora a consistência operacional do caso desde a origem.',
     next: 'Na revisão final você envia o resumo com um clique.',
   },
   {
@@ -204,10 +215,15 @@ const INTAKE_STEPS: IntakeStep[] = [
 ]
 
 const EMPTY_INTAKE_DRAFT: IntakeDraft = {
-  situation: '',
+  clientName: '',
+  preferredName: '',
+  city: '',
+  practiceArea: '',
+  context: '',
   urgency: '',
   objective: '',
-  contact: '',
+  contactPreference: '',
+  contactValue: '',
 }
 
 const PUBLIC_PRESENCE_RETRY_POLICY = {
@@ -591,42 +607,44 @@ function resolveIntakeUrgencyLabel(value: IntakeUrgency | '') {
   return 'Não informado'
 }
 
-function buildIntakeNarrative(draft: IntakeDraft) {
-  return [
-    'Triagem jurídica:',
-    `- Contexto: ${draft.situation.trim()}`,
-    `- Urgência: ${resolveIntakeUrgencyLabel(draft.urgency)}`,
-    `- Objetivo: ${draft.objective.trim()}`,
-    `- Contato preferencial: ${draft.contact.trim()}`,
-  ].join('\n')
+function resolveIntakeContactPreferenceLabel(value: IntakeDraft['contactPreference']) {
+  if (value === 'whatsapp') return 'WhatsApp'
+  if (value === 'telefone') return 'Telefone'
+  if (value === 'email') return 'Email'
+  if (value === 'outro') return 'Outro'
+  return 'Não informado'
+}
+
+function buildIntakeSummary(draft: IntakeDraft) {
+  return draft.context.trim()
 }
 
 function buildStructuredTriageRequest(args: {
   draft: IntakeDraft
   officeName?: string
-  practiceArea?: string
-  city?: string
   responseWindowLabel?: string
   operatingHours?: string
   intakeCriteria?: string
   priorityRules?: string
 }) {
   return {
-    userMessage: buildIntakeNarrative(args.draft),
+    userMessage: buildIntakeSummary(args.draft),
     triage: {
-      context: args.draft.situation.trim(),
+      clientName: args.draft.clientName.trim(),
+      preferredName: args.draft.preferredName.trim() || undefined,
+      city: args.draft.city.trim(),
+      practiceArea: args.draft.practiceArea.trim(),
+      context: args.draft.context.trim(),
       urgency: args.draft.urgency || 'planned',
       objective: args.draft.objective.trim(),
-      contactPreference: 'Contato preferencial',
-      contactValue: args.draft.contact.trim(),
-      practiceArea: args.practiceArea,
-      city: args.city,
+      contactPreference: args.draft.contactPreference,
+      contactValue: args.draft.contactValue.trim(),
     },
     businessContext: {
       businessType: 'legal' as const,
       officeName: args.officeName,
-      legalAreas: args.practiceArea ? [args.practiceArea] : undefined,
-      servedCities: args.city ? [args.city] : undefined,
+      legalAreas: args.draft.practiceArea.trim() ? [args.draft.practiceArea.trim()] : undefined,
+      servedCities: args.draft.city.trim() ? [args.draft.city.trim()] : undefined,
       intake: {
         intakeCriteria: args.intakeCriteria,
         priorityRules: args.priorityRules,
@@ -728,12 +746,23 @@ function parseIntakeDraft(raw: string | null): { stepIndex: number; draft: Intak
     return {
       stepIndex: safeStepIndex,
       draft: {
-        situation: typeof parsed.draft?.situation === 'string' ? parsed.draft.situation : '',
+        clientName: typeof parsed.draft?.clientName === 'string' ? parsed.draft.clientName : '',
+        preferredName: typeof parsed.draft?.preferredName === 'string' ? parsed.draft.preferredName : '',
+        city: typeof parsed.draft?.city === 'string' ? parsed.draft.city : '',
+        practiceArea: typeof parsed.draft?.practiceArea === 'string' ? parsed.draft.practiceArea : '',
+        context: typeof parsed.draft?.context === 'string' ? parsed.draft.context : '',
         urgency: parsed.draft?.urgency === 'critical' || parsed.draft?.urgency === 'priority' || parsed.draft?.urgency === 'planned'
           ? parsed.draft.urgency
           : '',
         objective: typeof parsed.draft?.objective === 'string' ? parsed.draft.objective : '',
-        contact: typeof parsed.draft?.contact === 'string' ? parsed.draft.contact : '',
+        contactPreference:
+          parsed.draft?.contactPreference === 'whatsapp'
+          || parsed.draft?.contactPreference === 'telefone'
+          || parsed.draft?.contactPreference === 'email'
+          || parsed.draft?.contactPreference === 'outro'
+            ? parsed.draft.contactPreference
+            : '',
+        contactValue: typeof parsed.draft?.contactValue === 'string' ? parsed.draft.contactValue : '',
       },
       requestId: typeof parsed.requestId === 'string' && parsed.requestId.trim().length > 0
         ? parsed.requestId.trim()
@@ -750,10 +779,15 @@ function createPublicShadowRequestId() {
 }
 
 function hasIntakeDraftContent(draft: IntakeDraft) {
-  return draft.situation.trim().length > 0
+  return draft.clientName.trim().length > 0
+    || draft.preferredName.trim().length > 0
+    || draft.city.trim().length > 0
+    || draft.practiceArea.trim().length > 0
+    || draft.context.trim().length > 0
     || draft.urgency.length > 0
     || draft.objective.trim().length > 0
-    || draft.contact.trim().length > 0
+    || draft.contactPreference.length > 0
+    || draft.contactValue.trim().length > 0
 }
 
 function normalizeDecisionLabel(value: string) {
@@ -1533,6 +1567,33 @@ function UrgencySelector(props: {
   )
 }
 
+function ContactPreferenceSelector(props: {
+  value: IntakeDraft['contactPreference']
+  onChange: (value: NonNullable<IntakeDraft['contactPreference']>) => void
+}) {
+  return (
+    <fieldset className="office-intake-urgency-selector">
+      <legend>Escolha o canal principal</legend>
+      <label>
+        <input type="radio" name="contactPreference" value="whatsapp" checked={props.value === 'whatsapp'} onChange={() => props.onChange('whatsapp')} />
+        WhatsApp
+      </label>
+      <label>
+        <input type="radio" name="contactPreference" value="telefone" checked={props.value === 'telefone'} onChange={() => props.onChange('telefone')} />
+        Telefone
+      </label>
+      <label>
+        <input type="radio" name="contactPreference" value="email" checked={props.value === 'email'} onChange={() => props.onChange('email')} />
+        Email
+      </label>
+      <label>
+        <input type="radio" name="contactPreference" value="outro" checked={props.value === 'outro'} onChange={() => props.onChange('outro')} />
+        Outro
+      </label>
+    </fieldset>
+  )
+}
+
 function ReviewSubmitPanel(props: {
   draft: IntakeDraft
   onSubmit: () => void
@@ -1546,10 +1607,13 @@ function ReviewSubmitPanel(props: {
     <section className="office-intake-review-panel">
       <h3>Revisão final</h3>
       <ul>
-        <li><strong>Contexto:</strong> {draft.situation || 'Não informado'}</li>
+        <li><strong>Nome:</strong> {draft.clientName || 'Não informado'}</li>
+        <li><strong>Cidade:</strong> {draft.city || 'Não informada'}</li>
+        <li><strong>Área jurídica:</strong> {draft.practiceArea || 'Não informada'}</li>
+        <li><strong>Resumo:</strong> {draft.context || 'Não informado'}</li>
         <li><strong>Urgência:</strong> {resolveIntakeUrgencyLabel(draft.urgency)}</li>
         <li><strong>Objetivo:</strong> {draft.objective || 'Não informado'}</li>
-        <li><strong>Contato:</strong> {draft.contact || 'Não informado'}</li>
+        <li><strong>Contato:</strong> {draft.contactPreference && draft.contactValue ? `${resolveIntakeContactPreferenceLabel(draft.contactPreference)} · ${draft.contactValue}` : 'Não informado'}</li>
       </ul>
       <div className="office-intake-review-panel__actions">
         <button type="button" className="office-button office-button--secondary" onClick={onBack}>Editar etapa anterior</button>
@@ -2285,10 +2349,16 @@ const seoPayload = useMemo(() => {
 
   const currentIntakeStep = INTAKE_STEPS[intakeStepIndex] ?? INTAKE_STEPS[0]
   const intakeCanAdvance =
-    (currentIntakeStep.id === 'situation' && intakeDraft.situation.trim().length > 0) ||
+    (currentIntakeStep.id === 'identification'
+      && intakeDraft.clientName.trim().length > 0
+      && intakeDraft.city.trim().length > 0
+      && intakeDraft.practiceArea.trim().length > 0) ||
+    (currentIntakeStep.id === 'context' && intakeDraft.context.trim().length > 0) ||
     (currentIntakeStep.id === 'urgency' && intakeDraft.urgency.length > 0) ||
     (currentIntakeStep.id === 'objective' && intakeDraft.objective.trim().length > 0) ||
-    (currentIntakeStep.id === 'contact' && intakeDraft.contact.trim().length > 0) ||
+    (currentIntakeStep.id === 'contact'
+      && intakeDraft.contactPreference.length > 0
+      && intakeDraft.contactValue.trim().length > 0) ||
     currentIntakeStep.id === 'review'
   const intakeMobilePrimaryLabel = currentIntakeStep.id === 'review'
     ? (intakeSubmitting ? 'Enviando triagem...' : 'Enviar triagem')
@@ -2331,8 +2401,6 @@ const seoPayload = useMemo(() => {
     const payload = buildStructuredTriageRequest({
       draft: intakeDraft,
       officeName: businessConfig?.officeName ?? presence?.entity.name,
-      practiceArea: specialties[0],
-      city: coverage[0]?.label,
       responseWindowLabel: canonicalProjection.operational.responseWindowLabel,
       operatingHours: businessConfig?.operatingHours,
       intakeCriteria: businessConfig?.triagePolicies?.intakeCriteria,
@@ -2372,7 +2440,7 @@ const seoPayload = useMemo(() => {
         status: 'success',
         message: 'Agora o escritório recebeu suas informações iniciais para avaliar o próximo passo.',
         responseWindowLabel: canonicalProjection.operational.responseWindowLabel,
-        contactLabel: contactOption ? `${contactOption.label}: ${contactOption.value}` : 'Triagem inicial pela plataforma',
+        contactLabel: `${resolveIntakeContactPreferenceLabel(intakeDraft.contactPreference)}: ${intakeDraft.contactValue.trim()}`,
         caseId: triageResponse.actionResult?.caseId,
         portalUrl: triageResponse.actionResult?.portalUrl,
         portalAccess: triageResponse.actionResult?.portalAccess,
@@ -2800,15 +2868,62 @@ const seoPayload = useMemo(() => {
             <IntakeStepper currentStepIndex={intakeStepIndex} steps={INTAKE_STEPS} />
           </details>
 
-          {currentIntakeStep.id === 'situation' ? (
+          {currentIntakeStep.id === 'identification' ? (
+            <QuestionBlock title="Vamos iniciar sua triagem jurídica" why={currentIntakeStep.why} next={currentIntakeStep.next}>
+              <p className="office-intake-question-block__why">
+                Antes de entendermos seu caso, precisamos identificar quem está solicitando o atendimento.
+              </p>
+              <div className="office-intake-question-block__control">
+                <label className="ds-sr-only" htmlFor="office-intake-client-name">Nome completo</label>
+                <input
+                  id="office-intake-client-name"
+                  className="office-intake-input"
+                  value={intakeDraft.clientName}
+                  onChange={(event) => setIntakeDraft((current) => ({ ...current, clientName: event.target.value }))}
+                  placeholder="Nome completo"
+                />
+                <label className="ds-sr-only" htmlFor="office-intake-preferred-name">Como prefere ser chamado</label>
+                <input
+                  id="office-intake-preferred-name"
+                  className="office-intake-input"
+                  value={intakeDraft.preferredName}
+                  onChange={(event) => setIntakeDraft((current) => ({ ...current, preferredName: event.target.value }))}
+                  placeholder="Como prefere ser chamado (opcional)"
+                />
+                <label className="ds-sr-only" htmlFor="office-intake-city">Cidade</label>
+                <input
+                  id="office-intake-city"
+                  className="office-intake-input"
+                  value={intakeDraft.city}
+                  onChange={(event) => setIntakeDraft((current) => ({ ...current, city: event.target.value }))}
+                  placeholder="Cidade"
+                />
+                <label className="ds-sr-only" htmlFor="office-intake-practice-area">Área jurídica</label>
+                <input
+                  id="office-intake-practice-area"
+                  className="office-intake-input"
+                  value={intakeDraft.practiceArea}
+                  onChange={(event) => setIntakeDraft((current) => ({ ...current, practiceArea: event.target.value }))}
+                  placeholder="Área jurídica"
+                />
+              </div>
+            </QuestionBlock>
+          ) : null}
+
+          {currentIntakeStep.id === 'context' ? (
             <QuestionBlock title={currentIntakeStep.title} why={currentIntakeStep.why} next={currentIntakeStep.next}>
-              <label className="ds-sr-only" htmlFor="office-intake-situation">Contexto inicial</label>
+              <p className="office-intake-question-block__why">
+                Conte com suas palavras o que aconteceu.
+                {' '}
+                Quanto mais detalhes, melhor será a análise inicial.
+              </p>
+              <label className="ds-sr-only" htmlFor="office-intake-context">Contexto inicial</label>
               <textarea
-                id="office-intake-situation"
+                id="office-intake-context"
                 className="office-intake-textarea"
-                value={intakeDraft.situation}
-                onChange={(event) => setIntakeDraft((current) => ({ ...current, situation: event.target.value }))}
-                placeholder="Descreva o contexto principal em linguagem simples"
+                value={intakeDraft.context}
+                onChange={(event) => setIntakeDraft((current) => ({ ...current, context: event.target.value }))}
+                placeholder="Conte com suas palavras o que aconteceu"
               />
             </QuestionBlock>
           ) : null}
@@ -2837,13 +2952,17 @@ const seoPayload = useMemo(() => {
 
           {currentIntakeStep.id === 'contact' ? (
             <QuestionBlock title={currentIntakeStep.title} why={currentIntakeStep.why} next={currentIntakeStep.next}>
-              <label className="ds-sr-only" htmlFor="office-intake-contact">Canal de contato</label>
+              <ContactPreferenceSelector
+                value={intakeDraft.contactPreference}
+                onChange={(value) => setIntakeDraft((current) => ({ ...current, contactPreference: value }))}
+              />
+              <label className="ds-sr-only" htmlFor="office-intake-contact-value">Valor do contato</label>
               <input
-                id="office-intake-contact"
+                id="office-intake-contact-value"
                 className="office-intake-input"
-                value={intakeDraft.contact}
-                onChange={(event) => setIntakeDraft((current) => ({ ...current, contact: event.target.value }))}
-                placeholder="Ex.: WhatsApp +55..., e-mail ou telefone"
+                value={intakeDraft.contactValue}
+                onChange={(event) => setIntakeDraft((current) => ({ ...current, contactValue: event.target.value }))}
+                placeholder="Informe o valor do contato"
               />
             </QuestionBlock>
           ) : null}
