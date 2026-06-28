@@ -613,23 +613,38 @@ export class LegalBetaCaseService {
     const businessConfig = entity ? readEntityBusinessConfig(entity.entityProfile as EntityProfile) : undefined
     const officeName = businessConfig?.officeName ?? (entity ? buildPublicOfficeProfile(entity.id, entity.entityProfile as EntityProfile).name : 'Escritório BrandSoul Legal')
     const professionals = await this.caseRepository.listDetailedProfessionalsForTenant(args.tenantId)
-    const responsibleProfessional = professionals.find((professional) => professional.id === assignedProfessionalId)
+    const responsibleProfessional = professionals.find((professional) => professional.id === assignedProfessionalId) ?? null
+    const lastInteractionAt = messages[messages.length - 1]?.createdAt
+      ?? timeline[timeline.length - 1]?.occurredAt
+      ?? caseRecord.updatedAt
+    const clientPortalTimeline = buildClientPortalTimelineProjection(timeline)
+    const canonical = buildCanonicalCaseProjection({
+      ...buildLegalCaseIdentity({
+        caseRecord,
+        responsibleProfessional,
+        lastInteractionAt,
+      }),
+      timeline: clientPortalTimeline,
+    })
 
     return {
-      caseId: caseRecord.id,
-      status: caseRecord.status === 'archived' ? 'closed' : caseRecord.status,
-      practiceArea: caseRecord.practiceArea,
+      caseId: canonical.case.caseId,
+      status: canonical.case.status === 'archived' ? 'closed' : canonical.case.status,
+      practiceArea: canonical.case.practiceArea,
       officeName,
-      createdAt: caseRecord.createdAt,
+      createdAt: canonical.case.openedAt,
       updatedAt: caseRecord.updatedAt,
-      responsibleProfessional: responsibleProfessional ? {
-        id: responsibleProfessional.id,
-        displayName: responsibleProfessional.displayName,
-        photoUrl: responsibleProfessional.photoUrl,
-        oabCredential: responsibleProfessional.oabCredential,
-        specialty: responsibleProfessional.specialties[0],
-      } : undefined,
-      timeline: buildClientPortalTimelineProjection(timeline),
+      responsibleProfessional: canonical.case.responsibleProfessional
+        ? {
+            id: canonical.case.responsibleProfessional.id,
+            displayName: canonical.case.responsibleProfessional.displayName,
+            photoUrl: canonical.case.responsibleProfessional.photoUrl,
+            oabCredential: canonical.case.responsibleProfessional.oabCredential,
+            specialty: canonical.case.responsibleProfessional.specialty,
+          }
+        : undefined,
+      timeline: canonical.case.timeline,
+      canonical,
       _messages: messages,
     }
   }

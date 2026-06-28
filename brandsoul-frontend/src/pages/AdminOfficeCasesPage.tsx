@@ -18,6 +18,7 @@ import {
   respondToCase,
   updateCaseStatus,
   type AdminLegalCase,
+  type AdminCanonicalCaseTimelineEntry,
   type AdminLegalCaseMessage,
   type AdminLawyerReputation,
 } from '../backend-bridge/api/adminApi'
@@ -162,6 +163,84 @@ function readNestedString(record: unknown, path: string[]) {
 
 function isLikelyContactValue(value: string) {
   return value.includes('@') || /[\d()+-]{6,}/.test(value) || value.startsWith('http')
+}
+
+function readCanonicalCase(caseItem: AdminLegalCase | null | undefined) {
+  return caseItem?.canonical?.case
+}
+
+function isLegacyTimelineEntry(
+  entry: AdminCanonicalCaseTimelineEntry,
+): entry is Extract<AdminCanonicalCaseTimelineEntry, { summary: string; createdAt: string }> {
+  return 'summary' in entry && typeof entry.summary === 'string'
+}
+
+function buildCanonicalTimelineSummary(eventType: string) {
+  if (eventType === 'assigned') {
+    return 'Caso atribuído'
+  }
+
+  if (eventType === 'reassigned') {
+    return 'Responsável reatribuído'
+  }
+
+  if (eventType === 'accepted') {
+    return 'Caso aceito'
+  }
+
+  if (eventType === 'rejected') {
+    return 'Caso recusado'
+  }
+
+  if (eventType === 'status_changed') {
+    return 'Status atualizado'
+  }
+
+  if (eventType === 'message_added') {
+    return 'Nova mensagem registrada'
+  }
+
+  if (eventType === 'closed') {
+    return 'Caso encerrado'
+  }
+
+  if (eventType === 'reopened') {
+    return 'Caso reaberto'
+  }
+
+  if (eventType === 'archived') {
+    return 'Caso arquivado'
+  }
+
+  if (eventType === 'feedback_received') {
+    return 'Feedback recebido'
+  }
+
+  if (eventType === 'matched') {
+    return 'Caso vinculado'
+  }
+
+  return 'Caso criado'
+}
+
+function resolveCanonicalTimeline(caseItem: AdminLegalCase) {
+  const canonicalTimeline = readCanonicalCase(caseItem)?.timeline
+  if (!Array.isArray(canonicalTimeline) || canonicalTimeline.length === 0) {
+    return caseItem.timeline
+  }
+
+  return canonicalTimeline.map((entry) => {
+    if (isLegacyTimelineEntry(entry)) {
+      return entry
+    }
+
+    return {
+      id: entry.id,
+      type: 'status_changed' as const,
+      createdAt: entry.occurredAt,
+      summary: buildCanonicalTimelineSummary(entry.eventType),
+    }
+  })
 }
 
 export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageProps) {
@@ -393,8 +472,20 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
       : professional.displayName
   }
 
+  function resolveCaseResponsibleProfessionalId(caseItem: AdminLegalCase) {
+    return readCanonicalCase(caseItem)?.responsibleProfessional?.id
+      ?? caseItem.assignedProfessionalId
+      ?? caseItem.assignedLawyerId
+  }
+
   function resolveQueueClientLabel(caseItem: AdminLegalCase) {
-    const normalizedContact = caseItem.contact?.trim()
+    const canonicalCase = readCanonicalCase(caseItem)
+    const canonicalClientName = canonicalCase?.clientName?.trim()
+    if (canonicalClientName) {
+      return canonicalClientName
+    }
+
+    const normalizedContact = canonicalCase?.contact?.trim() || caseItem.contact?.trim()
     if (normalizedContact) {
       return normalizedContact
     }
@@ -408,6 +499,11 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
   }
 
   function resolveSelectedCaseClientName(caseItem: AdminLegalCase, caseMessages: AdminLegalCaseMessage[]) {
+    const canonicalClientName = readCanonicalCase(caseItem)?.clientName?.trim()
+    if (canonicalClientName) {
+      return canonicalClientName
+    }
+
     const metadata = (caseItem as unknown as { metadata?: unknown }).metadata
     const metadataName = readNestedString(metadata, ['clientName'])
       ?? readNestedString(metadata, ['fullName'])
@@ -434,6 +530,11 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
   }
 
   function resolveSelectedCasePrimaryContact(caseItem: AdminLegalCase) {
+    const canonicalContact = readCanonicalCase(caseItem)?.contact?.trim()
+    if (canonicalContact) {
+      return canonicalContact
+    }
+
     const metadata = (caseItem as unknown as { metadata?: unknown }).metadata
     const contactPreference = readNestedString(metadata, ['contactPreference'])
       ?? readNestedString(metadata, ['publicTriage', 'contactPreference'])
@@ -473,7 +574,22 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
     const firstClientMessage = caseMessages.find((message) => message.role === 'user')
       ?? caseItem.messages.find((message) => message.role === 'user')
 
-    return firstClientMessage?.text?.trim() || caseItem.description || 'Nenhuma mensagem inicial registrada.'
+    const canonicalFirstMessage = readCanonicalCase(caseItem)?.messages.find((message) => {
+      if ('role' in message) {
+        return message.role === 'user'
+      }
+
+      return message.direction === 'inbound'
+    })
+
+    const canonicalFirstMessageBody = canonicalFirstMessage && 'body' in canonicalFirstMessage
+      ? canonicalFirstMessage.body?.trim()
+      : undefined
+
+    return firstClientMessage?.text?.trim()
+      || canonicalFirstMessageBody
+      || caseItem.description
+      || 'Nenhuma mensagem inicial registrada.'
   }
 
   function resolveSlaProgress(priorityEntry: typeof selectedPriority) {
@@ -570,7 +686,7 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
   }, [selectedCaseId])
 
   useEffect(() => {
-    const stableAssignedLawyerId = selectedCase?.assignedProfessionalId ?? selectedCase?.assignedLawyerId ?? ''
+    const stableAssignedLawyerId = selectedCase ? resolveCaseResponsibleProfessionalId(selectedCase) ?? '' : ''
 
     if (!stableAssignedLawyerId) {
       setReputation(null)
@@ -607,7 +723,7 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
     return () => {
       cancelled = true
     }
-  }, [officeId, selectedCase?.assignedProfessionalId, selectedCase?.assignedLawyerId, selectedCase?.updatedAt])
+  }, [officeId, selectedCase, selectedCase?.updatedAt])
 
   async function refreshSelectedCase(caseId: string, feedback?: string) {
     const requestId = ++selectedCaseLoadRequestIdRef.current
@@ -779,10 +895,15 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
 
   const selectedCaseSummary = selectedCase ? resolveSelectedCaseSummary(selectedCase) : null
   const selectedCaseInitialMessage = resolveInitialClientMessage(selectedCase, messages)
-  const selectedCaseReference = selectedCase ? buildCaseReference(selectedCase.id) : null
+  const selectedCaseReference = selectedCase
+    ? (readCanonicalCase(selectedCase)?.caseNumber?.trim() || buildCaseReference(selectedCase.id))
+    : null
   const selectedCaseClientName = selectedCase ? resolveSelectedCaseClientName(selectedCase, messages) : 'Cliente não identificado'
   const selectedCasePrimaryContact = selectedCase ? resolveSelectedCasePrimaryContact(selectedCase) : 'Contato não informado'
   const selectedSlaProgress = resolveSlaProgress(selectedPriority)
+  const selectedCaseCanonical = readCanonicalCase(selectedCase)
+  const selectedCaseResponsibleProfessionalId = selectedCase ? resolveCaseResponsibleProfessionalId(selectedCase) : undefined
+  const selectedCaseTimeline = selectedCase ? resolveCanonicalTimeline(selectedCase) : []
   const unassignedCaseCount = useMemo(
     () => priorityQueue.entries.filter((entry) => !entry.caseItem.isAssigned).length,
     [priorityQueue.entries],
@@ -989,6 +1110,7 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
                 const item = entry.caseItem
                 const isSelected = selectedCaseId === item.id
                 const queueSlaProgress = resolveSlaProgress(entry)
+                const queueCanonicalCase = readCanonicalCase(item)
 
                 return (
                   <li key={item.id}>
@@ -997,14 +1119,14 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
                         className={`admin-cases-cabin__queue-ticket ${isSelected ? 'is-selected' : ''}`}
                         onClick={() => setSelectedCaseId(item.id)}
                         disabled={isMutating}
-                      >
+                    >
                       <div className="admin-cases-cabin__queue-ticket-header">
-                        <strong>{item.practiceArea?.trim() || 'Caso jurídico geral'}</strong>
+                        <strong>{queueCanonicalCase?.practiceArea?.trim() || item.practiceArea?.trim() || 'Caso jurídico geral'}</strong>
                         <StatusChip tone={resolvePriorityTone(entry.level)}>{formatPriorityBadgeLabel(entry.level)}</StatusChip>
                       </div>
                       <span>{resolveQueueClientLabel(item)}</span>
                       <span>{resolveQueueAgeLabel(entry)}</span>
-                      <span>{resolveProfessionalLabelById(item.assignedProfessionalId ?? item.assignedLawyerId)}</span>
+                      <span>{resolveProfessionalLabelById(resolveCaseResponsibleProfessionalId(item))}</span>
                       <div className="admin-cases-cabin__queue-ticket-sla">
                         <div className="admin-cases-cabin__sla-bar" aria-hidden="true">
                           <span style={{ width: `${Math.round((queueSlaProgress ?? 0) * 100)}%` }} />
@@ -1022,7 +1144,7 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
         <SurfaceCard tone="admin" className="admin-card admin-workbench-column admin-cases-cabin__detail">
           <div className="admin-card-header">
             <h2>Caso</h2>
-            <span>{selectedCase ? formatDateTime(selectedCase.updatedAt) : 'nenhum caso selecionado'}</span>
+            <span>{selectedCase ? formatDateTime(selectedCaseCanonical?.lastInteractionAt ?? selectedCase.updatedAt) : 'nenhum caso selecionado'}</span>
           </div>
 
           {isCaseLoading ? (
@@ -1034,8 +1156,8 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
               <header className="admin-cases-cabin__case-header">
                 <div>
                   <p className="admin-cases-cabin__eyebrow">Ficha operacional</p>
-                  <h3>{resolveQueueClientLabel(selectedCase)}</h3>
-                  <p className="admin-cases-cabin__case-subtitle">{selectedCase.practiceArea?.trim() || 'Caso jurídico geral'}</p>
+                  <h3>{selectedCaseClientName}</h3>
+                  <p className="admin-cases-cabin__case-subtitle">{selectedCaseCanonical?.practiceArea?.trim() || selectedCase.practiceArea?.trim() || 'Caso jurídico geral'}</p>
                 </div>
                 <div className="admin-cases-cabin__case-header-chips">
                   <StatusChip tone={resolveCaseStatusTone(selectedCase.status)}>{formatCaseStatus(selectedCase.status)}</StatusChip>
@@ -1069,10 +1191,10 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
               </section>
 
               <div className="admin-cases-cabin__badge-row" aria-label="Metadados principais do caso">
-                <span className="admin-cases-cabin__meta-badge">Cliente · {resolveQueueClientLabel(selectedCase)}</span>
-                <span className="admin-cases-cabin__meta-badge">Área · {selectedCase.practiceArea?.trim() || 'Geral'}</span>
-                <span className="admin-cases-cabin__meta-badge">Responsável · {resolveProfessionalLabelById(selectedCase.assignedProfessionalId ?? selectedCase.assignedLawyerId)}</span>
-                <span className="admin-cases-cabin__meta-badge">Abertura · {formatDateTime(selectedCase.createdAt)}</span>
+                <span className="admin-cases-cabin__meta-badge">Cliente · {selectedCaseClientName}</span>
+                <span className="admin-cases-cabin__meta-badge">Área · {selectedCaseCanonical?.practiceArea?.trim() || selectedCase.practiceArea?.trim() || 'Geral'}</span>
+                <span className="admin-cases-cabin__meta-badge">Responsável · {resolveProfessionalLabelById(selectedCaseResponsibleProfessionalId)}</span>
+                <span className="admin-cases-cabin__meta-badge">Abertura · {formatDateTime(selectedCaseCanonical?.openedAt ?? selectedCase.createdAt)}</span>
                 <span className="admin-cases-cabin__meta-badge">SLA · {selectedPriority ? formatSlaRemainingLabel(selectedPriority.metrics.slaRemainingMinutes) : 'Não calculado'}</span>
               </div>
 
@@ -1105,11 +1227,11 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
               <section className="admin-diagnosis-section admin-cases-cabin__detail-card">
                 <div className="admin-cases-cabin__detail-card-header">
                   <h3>Timeline operacional</h3>
-                  <span>{selectedCase.timeline.length} evento(s)</span>
+                  <span>{selectedCaseTimeline.length} evento(s)</span>
                 </div>
-                {selectedCase.timeline.length > 0 ? (
+                {selectedCaseTimeline.length > 0 ? (
                   <ol className="admin-cases-cabin__timeline">
-                    {selectedCase.timeline.map((entry) => (
+                    {selectedCaseTimeline.map((entry) => (
                       <li key={entry.id} className="admin-cases-cabin__timeline-item">
                         <span className="admin-cases-cabin__timeline-dot" aria-hidden="true" />
                         <div className="admin-cases-cabin__timeline-body">
@@ -1127,7 +1249,7 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
               <section className="admin-diagnosis-section admin-cases-cabin__detail-card">
                 <div className="admin-cases-cabin__detail-card-header">
                   <h3>Mensagem inicial</h3>
-                  <span>{selectedCase.contact?.trim() || selectedCase.city?.trim() || 'Sem contato visível'}</span>
+                  <span>{selectedCasePrimaryContact || selectedCaseCanonical?.city?.trim() || selectedCase.city?.trim() || 'Sem contato visível'}</span>
                 </div>
                 <p className="admin-diagnosis-copy">{selectedCaseInitialMessage}</p>
               </section>
@@ -1164,15 +1286,15 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
                   </article>
                   <article className="admin-domain-card admin-cases-cabin__summary-item">
                     <strong>Responsável</strong>
-                    <span>{resolveProfessionalLabelById(selectedCase.assignedProfessionalId ?? selectedCase.assignedLawyerId)}</span>
+                    <span>{resolveProfessionalLabelById(selectedCaseResponsibleProfessionalId)}</span>
                   </article>
                   <article className="admin-domain-card admin-cases-cabin__summary-item">
                     <strong>Abertura</strong>
-                    <span>{formatDateTime(selectedCase.createdAt)}</span>
+                    <span>{formatDateTime(selectedCaseCanonical?.openedAt ?? selectedCase.createdAt)}</span>
                   </article>
                   <article className="admin-domain-card admin-cases-cabin__summary-item">
                     <strong>Última atualização</strong>
-                    <span>{formatDateTime(selectedCase.updatedAt)}</span>
+                    <span>{formatDateTime(selectedCaseCanonical?.lastInteractionAt ?? selectedCase.updatedAt)}</span>
                   </article>
                   <article className="admin-domain-card admin-cases-cabin__summary-item">
                     <strong>Cobrança</strong>
@@ -1206,7 +1328,7 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
                   aria-expanded={activeWorkbenchPanel === 'attendance'}
                 >
                   <span>{activeWorkbenchPanel === 'attendance' ? '▼' : '▶'} Atendimento</span>
-                  <small>{resolveProfessionalLabelById(selectedCase.assignedProfessionalId ?? selectedCase.assignedLawyerId)}</small>
+                  <small>{resolveProfessionalLabelById(selectedCaseResponsibleProfessionalId)}</small>
                 </button>
                 {activeWorkbenchPanel === 'attendance' ? (
                   <div className="admin-cases-cabin__accordion-content">
@@ -1258,7 +1380,7 @@ export default function AdminOfficeCasesPage({ officeId }: AdminOfficeCasesPageP
                     </form>
 
                     <ProfessionalReputationCard
-                      lawyerId={selectedCase.assignedProfessionalId ?? selectedCase.assignedLawyerId}
+                      lawyerId={selectedCaseResponsibleProfessionalId}
                       reputation={reputation}
                       isLoading={isReputationLoading}
                       error={reputationError}

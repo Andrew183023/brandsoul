@@ -301,6 +301,63 @@ export type AdminLegalCaseMonetization = {
   paidAt?: string
 }
 
+export type AdminCanonicalResponsibleProfessional = {
+  id: string
+  displayName: string
+  oabCredential?: string
+  email?: string
+  phone?: string
+  photoUrl?: string
+  specialty?: string
+  specialties: string[]
+  isResponsible: boolean
+  isPublic: boolean
+  status: string
+}
+
+export type AdminCanonicalCaseSla = {
+  targetMinutes: number
+  dueAt?: string
+  breachedAt?: string
+  status?: string
+}
+
+export type AdminCanonicalCaseTimelineEntry = AdminLegalCaseTimelineEntry | {
+  id: string
+  eventType: string
+  occurredAt: string
+  payload?: JsonRecord
+}
+
+export type AdminCanonicalCaseMessage = AdminLegalCaseMessage | {
+  id: string
+  direction: 'inbound' | 'outbound' | 'internal'
+  body: string
+  authorProfessionalId?: string
+  createdAt: string
+}
+
+export type AdminCanonicalCaseProjection = {
+  case: {
+    caseNumber: string
+    caseId: string
+    entityId: string
+    clientName?: string
+    contact?: string
+    practiceArea?: string
+    city?: string
+    priority: 'low' | 'normal' | 'high' | 'urgent'
+    status: AdminLegalCaseStatus | 'archived'
+    sla?: AdminCanonicalCaseSla
+    openedAt: string
+    lastInteractionAt?: string
+    responsibleProfessional?: AdminCanonicalResponsibleProfessional | null
+    checklist: JsonRecord[]
+    timeline: AdminCanonicalCaseTimelineEntry[]
+    messages: AdminCanonicalCaseMessage[]
+  }
+}
+
 export type AdminLegalCase = {
   id: string
   entityId: string
@@ -322,6 +379,7 @@ export type AdminLegalCase = {
   timeline: AdminLegalCaseTimelineEntry[]
   outcome?: AdminLegalCaseOutcome
   monetization?: AdminLegalCaseMonetization
+  canonical?: AdminCanonicalCaseProjection
 }
 
 export type AdminLegalCaseListResponse = {

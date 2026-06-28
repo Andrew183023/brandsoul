@@ -214,18 +214,29 @@ export async function registerLegalBetaClientPortalRoutes(app: FastifyInstance) 
     }
 
     await markCasePortalAccessTokenUsed(app, portalAccess.id)
+    const canonicalCase = caseSummary.canonical?.case
 
     return {
       status: 'ready',
       case: {
-        caseId: caseSummary.caseId,
-        status: caseSummary.status,
-        practiceArea: caseSummary.practiceArea,
+        caseId: canonicalCase?.caseId ?? caseSummary.caseId,
+        status: canonicalCase?.status === 'archived'
+          ? 'closed'
+          : (canonicalCase?.status ?? caseSummary.status),
+        practiceArea: canonicalCase?.practiceArea ?? caseSummary.practiceArea,
         officeName: caseSummary.officeName,
-        createdAt: caseSummary.createdAt,
+        createdAt: canonicalCase?.openedAt ?? caseSummary.createdAt,
         updatedAt: caseSummary.updatedAt,
-        responsibleProfessional: caseSummary.responsibleProfessional,
-        timeline: caseSummary.timeline,
+        responsibleProfessional: canonicalCase?.responsibleProfessional
+          ? {
+              id: canonicalCase.responsibleProfessional.id,
+              displayName: canonicalCase.responsibleProfessional.displayName,
+              photoUrl: canonicalCase.responsibleProfessional.photoUrl,
+              oabCredential: canonicalCase.responsibleProfessional.oabCredential,
+              specialty: canonicalCase.responsibleProfessional.specialty,
+            }
+          : caseSummary.responsibleProfessional,
+        timeline: Array.isArray(canonicalCase?.timeline) ? canonicalCase.timeline : caseSummary.timeline,
       },
     }
   })
