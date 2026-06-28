@@ -179,7 +179,7 @@ export function buildCanonicalCaseInputFromPublicTriage(args: PublicTriageBuilde
 
   const canonicalCaseInput: CanonicalCaseInput = {
     caseNumber: undefined,
-    clientName: undefined,
+    clientName,
     contact,
     contactPreference,
     city,
@@ -206,6 +206,7 @@ export function buildCanonicalCaseInputFromPublicTriage(args: PublicTriageBuilde
     intakeId: args.intakeId,
     city,
     contact,
+    clientName,
     publicTriage: {
       requestId: args.requestId,
       userMessage: args.userMessage.trim(),
@@ -215,6 +216,7 @@ export function buildCanonicalCaseInputFromPublicTriage(args: PublicTriageBuilde
       practiceArea,
       contactPreference,
       contactValue: contact,
+      clientName,
       urgency,
       officeName: args.businessContext?.officeName?.trim() || undefined,
       leadId: args.leadId,
