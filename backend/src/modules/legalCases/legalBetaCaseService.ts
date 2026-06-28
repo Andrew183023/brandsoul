@@ -466,6 +466,7 @@ export class LegalBetaCaseService {
       objective: string
       contactPreference: string
       contactValue: string
+      clientName?: string
       practiceArea?: string
       city?: string
     }

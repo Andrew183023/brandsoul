@@ -51,6 +51,7 @@ type PublicTriageBuilderArgs = {
     objective: string
     contactPreference: string
     contactValue: string
+    clientName?: string
     practiceArea?: string
     city?: string
   }
@@ -170,6 +171,7 @@ export function buildCanonicalCaseInputFromPublicTriage(args: PublicTriageBuilde
   const openedAt = args.openedAt ?? new Date().toISOString()
   const contact = args.triage?.contactValue?.trim() || undefined
   const contactPreference = args.triage?.contactPreference?.trim() || undefined
+  const clientName = args.triage?.clientName?.trim() || undefined
   const city = args.triage?.city?.trim() || undefined
   const practiceArea = args.triage?.practiceArea?.trim() || undefined
   const urgency = args.triage?.urgency ?? 'planned'
