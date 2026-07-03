@@ -249,7 +249,8 @@ const sqliteSchema = `
     detected_at TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    CHECK (urgency IN ('low', 'medium', 'high', 'critical'))
+    CHECK (urgency IN ('low', 'medium', 'high', 'critical')),
+    FOREIGN KEY (entity_id) REFERENCES entity_profile(id) ON DELETE RESTRICT
   );
 
   CREATE TABLE IF NOT EXISTS entity_portfolio_lead (
@@ -273,6 +274,7 @@ const sqliteSchema = `
     updated_at TEXT NOT NULL,
     CHECK (routing_status IN ('stored', 'intake_requested', 'outreach_requested')),
     CHECK (status IN ('routed', 'qualified', 'contacted', 'converted', 'lost')),
+    FOREIGN KEY (entity_id) REFERENCES entity_profile(id) ON DELETE RESTRICT,
     FOREIGN KEY (signal_id) REFERENCES entity_portfolio_lead_signal(signal_id) ON DELETE CASCADE
   );
 
@@ -287,6 +289,7 @@ const sqliteSchema = `
     payload_json TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
+    FOREIGN KEY (entity_id) REFERENCES entity_profile(id) ON DELETE RESTRICT,
     FOREIGN KEY (lead_id) REFERENCES entity_portfolio_lead(lead_id) ON DELETE CASCADE,
     FOREIGN KEY (signal_id) REFERENCES entity_portfolio_lead_signal(signal_id) ON DELETE CASCADE
   );
@@ -1927,6 +1930,7 @@ async function initializePostgresLegalCaseSchema(db: BackendDatabase) {
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       tenant_id INTEGER NOT NULL,
       case_number TEXT,
+      request_id TEXT,
       entity_id TEXT,
       created_by_user_id INTEGER,
       title TEXT NOT NULL,
@@ -1940,6 +1944,17 @@ async function initializePostgresLegalCaseSchema(db: BackendDatabase) {
       archived_at TIMESTAMPTZ,
       resolution_reason TEXT,
       lead_professional_id UUID,
+      client_display_name TEXT,
+      client_canonical_name TEXT,
+      client_display_phone TEXT,
+      client_canonical_phone TEXT,
+      client_display_whatsapp TEXT,
+      client_canonical_whatsapp TEXT,
+      client_display_email TEXT,
+      client_canonical_email TEXT,
+      client_display_city TEXT,
+      client_canonical_city TEXT,
+      client_search_key TEXT,
       centelha_context JSONB NOT NULL DEFAULT '{}'::jsonb,
       metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -2021,6 +2036,47 @@ async function initializePostgresLegalCaseSchema(db: BackendDatabase) {
         REFERENCES cases(id, tenant_id)
         ON DELETE CASCADE,
       CHECK (status IN ('active', 'revoked', 'expired'))
+    )
+  `)
+
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS public_triage_fingerprints (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id INTEGER NOT NULL,
+      entity_id TEXT NOT NULL,
+      fingerprint TEXT NOT NULL,
+      fingerprint_version TEXT NOT NULL,
+      source TEXT NOT NULL,
+      time_bucket TIMESTAMPTZ NOT NULL,
+      request_id TEXT NOT NULL,
+      case_id UUID,
+      status TEXT NOT NULL DEFAULT 'pending',
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      FOREIGN KEY (case_id, tenant_id)
+        REFERENCES cases(id, tenant_id)
+        ON DELETE SET NULL,
+      CHECK (status IN ('pending', 'case_created', 'reused', 'expired', 'failed'))
+    )
+  `)
+
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS public_triage_spam_events (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id INTEGER,
+      entity_id TEXT NOT NULL,
+      ip_key TEXT,
+      contact_key TEXT,
+      fingerprint TEXT,
+      request_id TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      decision TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at TIMESTAMPTZ NOT NULL,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      CHECK (decision IN ('allow', 'cooldown', 'rate_limited', 'blocked'))
     )
   `)
 
@@ -2146,6 +2202,17 @@ async function initializePostgresLegalCaseSchema(db: BackendDatabase) {
   await db.exec(`ALTER TABLE cases ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`)
   await db.exec(`ALTER TABLE cases ADD COLUMN IF NOT EXISTS resolution_reason TEXT`)
   await db.exec(`ALTER TABLE cases ADD COLUMN IF NOT EXISTS case_number TEXT`)
+  await db.exec(`ALTER TABLE cases ADD COLUMN IF NOT EXISTS client_display_name TEXT`)
+  await db.exec(`ALTER TABLE cases ADD COLUMN IF NOT EXISTS client_canonical_name TEXT`)
+  await db.exec(`ALTER TABLE cases ADD COLUMN IF NOT EXISTS client_display_phone TEXT`)
+  await db.exec(`ALTER TABLE cases ADD COLUMN IF NOT EXISTS client_canonical_phone TEXT`)
+  await db.exec(`ALTER TABLE cases ADD COLUMN IF NOT EXISTS client_display_whatsapp TEXT`)
+  await db.exec(`ALTER TABLE cases ADD COLUMN IF NOT EXISTS client_canonical_whatsapp TEXT`)
+  await db.exec(`ALTER TABLE cases ADD COLUMN IF NOT EXISTS client_display_email TEXT`)
+  await db.exec(`ALTER TABLE cases ADD COLUMN IF NOT EXISTS client_canonical_email TEXT`)
+  await db.exec(`ALTER TABLE cases ADD COLUMN IF NOT EXISTS client_display_city TEXT`)
+  await db.exec(`ALTER TABLE cases ADD COLUMN IF NOT EXISTS client_canonical_city TEXT`)
+  await db.exec(`ALTER TABLE cases ADD COLUMN IF NOT EXISTS client_search_key TEXT`)
 
   await db.exec(`
     DO $$
@@ -2221,7 +2288,11 @@ async function initializePostgresLegalCaseSchema(db: BackendDatabase) {
         AND rel.relname = 'case_timeline'
         AND con.contype = 'c'
         AND con.conname = 'case_timeline_event_type_check'
-        AND pg_get_constraintdef(con.oid) NOT LIKE '%reassigned%';
+        AND (
+          pg_get_constraintdef(con.oid) NOT LIKE '%reassigned%'
+          OR pg_get_constraintdef(con.oid) NOT LIKE '%portal_access_created%'
+          OR pg_get_constraintdef(con.oid) NOT LIKE '%portal_access_used%'
+        );
 
       IF constraint_name IS NOT NULL THEN
         EXECUTE format('ALTER TABLE case_timeline DROP CONSTRAINT %I', constraint_name);
@@ -2234,7 +2305,7 @@ async function initializePostgresLegalCaseSchema(db: BackendDatabase) {
     db,
     'case_timeline',
     'case_timeline_event_type_check',
-    `CHECK (event_type IN ('created', 'message_added', 'status_changed', 'matched', 'assigned', 'reassigned', 'accepted', 'rejected', 'closed', 'reopened', 'archived', 'feedback_received')) NOT VALID`,
+    `CHECK (event_type IN ('created', 'message_added', 'status_changed', 'matched', 'assigned', 'reassigned', 'accepted', 'rejected', 'closed', 'reopened', 'archived', 'feedback_received', 'portal_access_created', 'portal_access_used')) NOT VALID`,
   )
 
   await db.exec(`
@@ -2323,8 +2394,37 @@ async function initializePostgresLegalCaseSchema(db: BackendDatabase) {
     ON cases (tenant_id, entity_id)
   `)
   await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_cases_tenant_entity_request
+    ON cases (tenant_id, entity_id, request_id)
+  `)
+  await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_cases_tenant_status_priority_created
     ON cases (tenant_id, status, priority, created_at DESC)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_cases_tenant_client_canonical_phone
+    ON cases (tenant_id, client_canonical_phone)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_cases_tenant_client_canonical_whatsapp
+    ON cases (tenant_id, client_canonical_whatsapp)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_cases_tenant_client_canonical_email
+    ON cases (tenant_id, client_canonical_email)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_cases_tenant_client_search_key
+    ON cases (tenant_id, client_search_key)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_cases_tenant_client_canonical_city
+    ON cases (tenant_id, client_canonical_city)
+  `)
+  await db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_cases_public_request_unique
+    ON cases (tenant_id, request_id)
+    WHERE request_id IS NOT NULL AND source = 'public-interaction'
   `)
   await db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_cases_tenant_case_number_unique
@@ -2361,6 +2461,43 @@ async function initializePostgresLegalCaseSchema(db: BackendDatabase) {
     ON case_portal_access_tokens (tenant_id, case_id, status, expires_at)
   `)
   await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_public_triage_fingerprints_lookup
+    ON public_triage_fingerprints (tenant_id, entity_id, fingerprint)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_public_triage_fingerprints_lookup_expiry
+    ON public_triage_fingerprints (tenant_id, entity_id, fingerprint, expires_at)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_public_triage_fingerprints_case
+    ON public_triage_fingerprints (case_id)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_public_triage_fingerprints_request
+    ON public_triage_fingerprints (request_id)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_public_triage_spam_events_ip
+    ON public_triage_spam_events (ip_key, expires_at)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_public_triage_spam_events_contact
+    ON public_triage_spam_events (contact_key, expires_at)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_public_triage_spam_events_entity
+    ON public_triage_spam_events (entity_id, expires_at)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_public_triage_spam_events_request
+    ON public_triage_spam_events (request_id)
+  `)
+  await db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_public_triage_fingerprints_active_unique
+    ON public_triage_fingerprints (tenant_id, entity_id, fingerprint, time_bucket)
+    WHERE status IN ('pending', 'case_created', 'reused')
+  `)
+  await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_case_accept_idempotency_created
     ON case_accept_idempotency (tenant_id, professional_id, created_at DESC)
   `)
@@ -2380,6 +2517,13 @@ async function initializePostgresLegalCaseSchema(db: BackendDatabase) {
     ON case_messages (tenant_id, case_id, sequence_no)
   `)
   await db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_case_messages_public_triage_request_unique
+    ON case_messages (tenant_id, case_id, (content->>'requestId'))
+    WHERE channel = 'public_triage'
+      AND content->>'source' = 'public_triage'
+      AND content->>'requestId' IS NOT NULL
+  `)
+  await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_case_messages_case_created
     ON case_messages (tenant_id, case_id, created_at DESC, id DESC)
   `)
@@ -2394,6 +2538,18 @@ async function initializePostgresLegalCaseSchema(db: BackendDatabase) {
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_case_timeline_event_type
     ON case_timeline (tenant_id, event_type, occurred_at DESC)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_entity_portfolio_lead_signal_entity_request
+    ON entity_portfolio_lead_signal (entity_id, (payload_json->>'requestId'))
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_entity_portfolio_lead_entity_request
+    ON entity_portfolio_lead (entity_id, (payload_json->>'requestId'))
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_entity_portfolio_lead_intake_entity_request
+    ON entity_portfolio_lead_intake (entity_id, (payload_json->>'requestId'))
   `)
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_reputation_tenant_score
@@ -2630,6 +2786,25 @@ async function initializePostgresLegalCaseSchema(db: BackendDatabase) {
       'cases_entity_profile_fkey',
       'FOREIGN KEY (entity_id, tenant_id) REFERENCES entity_profile(id, owner_tenant_id) ON DELETE RESTRICT',
     )
+
+    await postgresAddConstraintIfMissing(
+      db,
+      'entity_portfolio_lead_signal',
+      'entity_portfolio_lead_signal_entity_fkey',
+      'FOREIGN KEY (entity_id) REFERENCES entity_profile(id) ON DELETE RESTRICT',
+    )
+    await postgresAddConstraintIfMissing(
+      db,
+      'entity_portfolio_lead',
+      'entity_portfolio_lead_entity_fkey',
+      'FOREIGN KEY (entity_id) REFERENCES entity_profile(id) ON DELETE RESTRICT',
+    )
+    await postgresAddConstraintIfMissing(
+      db,
+      'entity_portfolio_lead_intake',
+      'entity_portfolio_lead_intake_entity_fkey',
+      'FOREIGN KEY (entity_id) REFERENCES entity_profile(id) ON DELETE RESTRICT',
+    )
   }
 }
 
@@ -2643,6 +2818,7 @@ async function initializeSqliteLegalCaseSchema(db: BackendDatabase) {
       id TEXT PRIMARY KEY,
       tenant_id INTEGER NOT NULL,
       case_number TEXT,
+      request_id TEXT,
       entity_id TEXT,
       created_by_user_id INTEGER,
       title TEXT NOT NULL,
@@ -2656,10 +2832,22 @@ async function initializeSqliteLegalCaseSchema(db: BackendDatabase) {
       archived_at TEXT,
       resolution_reason TEXT,
       lead_professional_id TEXT,
+      client_display_name TEXT,
+      client_canonical_name TEXT,
+      client_display_phone TEXT,
+      client_canonical_phone TEXT,
+      client_display_whatsapp TEXT,
+      client_canonical_whatsapp TEXT,
+      client_display_email TEXT,
+      client_canonical_email TEXT,
+      client_display_city TEXT,
+      client_canonical_city TEXT,
+      client_search_key TEXT,
       centelha_context TEXT NOT NULL DEFAULT '{}',
       metadata TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (entity_id) REFERENCES entity_profile(id) ON DELETE RESTRICT
     )
   `)
 
@@ -2755,6 +2943,43 @@ async function initializeSqliteLegalCaseSchema(db: BackendDatabase) {
   `)
 
   await db.exec(`
+    CREATE TABLE IF NOT EXISTS public_triage_fingerprints (
+      id TEXT PRIMARY KEY,
+      tenant_id INTEGER NOT NULL,
+      entity_id TEXT NOT NULL,
+      fingerprint TEXT NOT NULL,
+      fingerprint_version TEXT NOT NULL,
+      source TEXT NOT NULL,
+      time_bucket TEXT NOT NULL,
+      request_id TEXT NOT NULL,
+      case_id TEXT,
+      status TEXT NOT NULL DEFAULT 'pending',
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      metadata TEXT NOT NULL DEFAULT '{}',
+      FOREIGN KEY (case_id) REFERENCES cases(id) ON DELETE SET NULL
+    )
+  `)
+
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS public_triage_spam_events (
+      id TEXT PRIMARY KEY,
+      tenant_id INTEGER,
+      entity_id TEXT NOT NULL,
+      ip_key TEXT,
+      contact_key TEXT,
+      fingerprint TEXT,
+      request_id TEXT NOT NULL,
+      reason TEXT NOT NULL,
+      decision TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      metadata TEXT NOT NULL DEFAULT '{}'
+    )
+  `)
+
+  await db.exec(`
     CREATE TABLE IF NOT EXISTS case_accept_idempotency (
       tenant_id INTEGER NOT NULL,
       case_id TEXT NOT NULL,
@@ -2829,17 +3054,70 @@ async function initializeSqliteLegalCaseSchema(db: BackendDatabase) {
     ON cases (tenant_id, entity_id)
   `)
   await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_cases_tenant_entity_request
+    ON cases (tenant_id, entity_id, request_id)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_cases_tenant_client_canonical_phone
+    ON cases (tenant_id, client_canonical_phone)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_cases_tenant_client_canonical_whatsapp
+    ON cases (tenant_id, client_canonical_whatsapp)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_cases_tenant_client_canonical_email
+    ON cases (tenant_id, client_canonical_email)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_cases_tenant_client_search_key
+    ON cases (tenant_id, client_search_key)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_cases_tenant_client_canonical_city
+    ON cases (tenant_id, client_canonical_city)
+  `)
+  await db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_cases_public_request_unique
+    ON cases (tenant_id, request_id)
+    WHERE request_id IS NOT NULL AND source = 'public-interaction'
+  `)
+  await db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS cases_single_lead_idx
     ON cases (id)
     WHERE lead_professional_id IS NOT NULL
   `)
+  await db.exec(`DROP INDEX IF EXISTS idx_case_messages_case_sequence`)
   await db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_case_messages_case_sequence
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_case_messages_case_sequence
     ON case_messages (tenant_id, case_id, sequence_no)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_case_messages_case_created
+    ON case_messages (tenant_id, case_id, created_at DESC, id DESC)
+  `)
+  await db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_case_messages_public_triage_request_unique
+    ON case_messages (tenant_id, case_id, json_extract(content, '$.requestId'))
+    WHERE channel = 'public_triage'
+      AND json_extract(content, '$.source') = 'public_triage'
+      AND json_extract(content, '$.requestId') IS NOT NULL
   `)
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_case_timeline_case_occurred_at
     ON case_timeline (tenant_id, case_id, occurred_at)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_entity_portfolio_lead_signal_entity_request
+    ON entity_portfolio_lead_signal (entity_id, json_extract(payload_json, '$.requestId'))
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_entity_portfolio_lead_entity_request
+    ON entity_portfolio_lead (entity_id, json_extract(payload_json, '$.requestId'))
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_entity_portfolio_lead_intake_entity_request
+    ON entity_portfolio_lead_intake (entity_id, json_extract(payload_json, '$.requestId'))
   `)
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_case_assignments_case_status
@@ -2856,6 +3134,43 @@ async function initializeSqliteLegalCaseSchema(db: BackendDatabase) {
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_case_portal_access_tokens_case_status
     ON case_portal_access_tokens (tenant_id, case_id, status, expires_at)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_public_triage_fingerprints_lookup
+    ON public_triage_fingerprints (tenant_id, entity_id, fingerprint)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_public_triage_fingerprints_lookup_expiry
+    ON public_triage_fingerprints (tenant_id, entity_id, fingerprint, expires_at)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_public_triage_fingerprints_case
+    ON public_triage_fingerprints (case_id)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_public_triage_fingerprints_request
+    ON public_triage_fingerprints (request_id)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_public_triage_spam_events_ip
+    ON public_triage_spam_events (ip_key, expires_at)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_public_triage_spam_events_contact
+    ON public_triage_spam_events (contact_key, expires_at)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_public_triage_spam_events_entity
+    ON public_triage_spam_events (entity_id, expires_at)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_public_triage_spam_events_request
+    ON public_triage_spam_events (request_id)
+  `)
+  await db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_public_triage_fingerprints_active_unique
+    ON public_triage_fingerprints (tenant_id, entity_id, fingerprint, time_bucket)
+    WHERE status IN ('pending', 'case_created', 'reused')
   `)
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_case_accept_idempotency_created
@@ -2923,6 +3238,271 @@ async function seedSpecialtyRadiusDefaults(db: BackendDatabase) {
   }
 }
 
+function parseCaseBackfillJsonObject(value: unknown): Record<string, unknown> {
+  if (!value) {
+    return {}
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value) as unknown
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>
+      }
+    } catch {
+      return {}
+    }
+
+    return {}
+  }
+
+  if (typeof value === 'object' && !Array.isArray(value)) {
+    return value as Record<string, unknown>
+  }
+
+  return {}
+}
+
+function readCaseBackfillString(record: Record<string, unknown>, ...keys: string[]) {
+  for (const key of keys) {
+    const value = record[key]
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value.trim()
+    }
+  }
+
+  return undefined
+}
+
+function isBlankStructuredContactValue(value: string | null | undefined) {
+  return typeof value !== 'string' || value.trim().length === 0
+}
+
+type StructuredContactIdentityColumns = {
+  displayName?: string
+  canonicalName?: string
+  displayPhone?: string
+  canonicalPhone?: string
+  displayWhatsapp?: string
+  canonicalWhatsapp?: string
+  displayEmail?: string
+  canonicalEmail?: string
+  displayCity?: string
+  canonicalCity?: string
+  searchKey?: string
+}
+
+function mergeStructuredContactIdentity(
+  current: StructuredContactIdentityColumns,
+  candidate: StructuredContactIdentityColumns | undefined,
+) {
+  if (!candidate) {
+    return current
+  }
+
+  return {
+    displayName: isBlankStructuredContactValue(current.displayName) ? candidate.displayName : current.displayName,
+    canonicalName: isBlankStructuredContactValue(current.canonicalName) ? candidate.canonicalName : current.canonicalName,
+    displayPhone: isBlankStructuredContactValue(current.displayPhone) ? candidate.displayPhone : current.displayPhone,
+    canonicalPhone: isBlankStructuredContactValue(current.canonicalPhone) ? candidate.canonicalPhone : current.canonicalPhone,
+    displayWhatsapp: isBlankStructuredContactValue(current.displayWhatsapp) ? candidate.displayWhatsapp : current.displayWhatsapp,
+    canonicalWhatsapp: isBlankStructuredContactValue(current.canonicalWhatsapp) ? candidate.canonicalWhatsapp : current.canonicalWhatsapp,
+    displayEmail: isBlankStructuredContactValue(current.displayEmail) ? candidate.displayEmail : current.displayEmail,
+    canonicalEmail: isBlankStructuredContactValue(current.canonicalEmail) ? candidate.canonicalEmail : current.canonicalEmail,
+    displayCity: isBlankStructuredContactValue(current.displayCity) ? candidate.displayCity : current.displayCity,
+    canonicalCity: isBlankStructuredContactValue(current.canonicalCity) ? candidate.canonicalCity : current.canonicalCity,
+    searchKey: isBlankStructuredContactValue(current.searchKey) ? candidate.searchKey : current.searchKey,
+  }
+}
+
+function structuredIdentityChanged(
+  before: StructuredContactIdentityColumns,
+  after: StructuredContactIdentityColumns,
+) {
+  return before.displayName !== after.displayName
+    || before.canonicalName !== after.canonicalName
+    || before.displayPhone !== after.displayPhone
+    || before.canonicalPhone !== after.canonicalPhone
+    || before.displayWhatsapp !== after.displayWhatsapp
+    || before.canonicalWhatsapp !== after.canonicalWhatsapp
+    || before.displayEmail !== after.displayEmail
+    || before.canonicalEmail !== after.canonicalEmail
+    || before.displayCity !== after.displayCity
+    || before.canonicalCity !== after.canonicalCity
+    || before.searchKey !== after.searchKey
+}
+
+function buildStructuredIdentityFromColumns(row: {
+  client_display_name?: string | null
+  client_canonical_name?: string | null
+  client_display_phone?: string | null
+  client_canonical_phone?: string | null
+  client_display_whatsapp?: string | null
+  client_canonical_whatsapp?: string | null
+  client_display_email?: string | null
+  client_canonical_email?: string | null
+  client_display_city?: string | null
+  client_canonical_city?: string | null
+  client_search_key?: string | null
+}): StructuredContactIdentityColumns {
+  return {
+    displayName: row.client_display_name ?? undefined,
+    canonicalName: row.client_canonical_name ?? undefined,
+    displayPhone: row.client_display_phone ?? undefined,
+    canonicalPhone: row.client_canonical_phone ?? undefined,
+    displayWhatsapp: row.client_display_whatsapp ?? undefined,
+    canonicalWhatsapp: row.client_canonical_whatsapp ?? undefined,
+    displayEmail: row.client_display_email ?? undefined,
+    canonicalEmail: row.client_canonical_email ?? undefined,
+    displayCity: row.client_display_city ?? undefined,
+    canonicalCity: row.client_canonical_city ?? undefined,
+    searchKey: row.client_search_key ?? undefined,
+  }
+}
+
+export async function backfillCaseStructuredContactIdentity(db: BackendDatabase) {
+  const [
+    { buildCanonicalContactIdentity },
+    { readCanonicalCaseInputContactSnapshot },
+  ] = await Promise.all([
+    import('../modules/legalCases/legalContactNormalization.js'),
+    import('../modules/legalCases/legalCanonicalCaseInput.js'),
+  ])
+
+  const rows = await db.all<Array<{
+    id: string
+    tenant_id: number
+    metadata: unknown
+    client_display_name: string | null
+    client_canonical_name: string | null
+    client_display_phone: string | null
+    client_canonical_phone: string | null
+    client_display_whatsapp: string | null
+    client_canonical_whatsapp: string | null
+    client_display_email: string | null
+    client_canonical_email: string | null
+    client_display_city: string | null
+    client_canonical_city: string | null
+    client_search_key: string | null
+  }>>(
+    `
+      SELECT
+        id,
+        tenant_id,
+        metadata,
+        client_display_name,
+        client_canonical_name,
+        client_display_phone,
+        client_canonical_phone,
+        client_display_whatsapp,
+        client_canonical_whatsapp,
+        client_display_email,
+        client_canonical_email,
+        client_display_city,
+        client_canonical_city,
+        client_search_key
+      FROM cases
+    `,
+  )
+
+  for (const row of rows) {
+    const metadata = parseCaseBackfillJsonObject(row.metadata)
+    const canonicalCaseInputRecord = parseCaseBackfillJsonObject(metadata.canonicalCaseInput)
+    const canonicalCaseInputSnapshot = readCanonicalCaseInputContactSnapshot(canonicalCaseInputRecord)
+    const publicTriage = parseCaseBackfillJsonObject(metadata.publicTriage)
+
+    const before = buildStructuredIdentityFromColumns(row)
+    let next = { ...before }
+
+    next = mergeStructuredContactIdentity(next, canonicalCaseInputSnapshot?.contactIdentity)
+    next = mergeStructuredContactIdentity(
+      next,
+      buildCanonicalContactIdentity({
+        name: canonicalCaseInputSnapshot?.clientName,
+        whatsapp: canonicalCaseInputSnapshot?.contactPreference?.toLowerCase() === 'whatsapp'
+          ? canonicalCaseInputSnapshot.contact
+          : undefined,
+        phone: ['telefone', 'phone'].includes(canonicalCaseInputSnapshot?.contactPreference?.toLowerCase() ?? '')
+          ? canonicalCaseInputSnapshot?.contact
+          : undefined,
+        email: canonicalCaseInputSnapshot?.contactPreference?.toLowerCase() === 'email'
+          ? canonicalCaseInputSnapshot?.contact
+          : undefined,
+        city: canonicalCaseInputSnapshot?.city,
+      }),
+    )
+    next = mergeStructuredContactIdentity(
+      next,
+      buildCanonicalContactIdentity({
+        name: readCaseBackfillString(publicTriage, 'clientName', 'preferredName'),
+        whatsapp: readCaseBackfillString(publicTriage, 'contactPreference')?.toLowerCase() === 'whatsapp'
+          ? readCaseBackfillString(publicTriage, 'contactValue')
+          : undefined,
+        phone: ['telefone', 'phone'].includes(readCaseBackfillString(publicTriage, 'contactPreference')?.toLowerCase() ?? '')
+          ? readCaseBackfillString(publicTriage, 'contactValue')
+          : undefined,
+        email: readCaseBackfillString(publicTriage, 'contactPreference')?.toLowerCase() === 'email'
+          ? readCaseBackfillString(publicTriage, 'contactValue')
+          : undefined,
+        city: readCaseBackfillString(publicTriage, 'city'),
+      }),
+    )
+    next = mergeStructuredContactIdentity(
+      next,
+      buildCanonicalContactIdentity({
+        name: readCaseBackfillString(metadata, 'clientName', 'fullName', 'name', 'preferredName'),
+        whatsapp: readCaseBackfillString(metadata, 'contactPreference')?.toLowerCase() === 'whatsapp'
+          ? readCaseBackfillString(metadata, 'contact')
+          : undefined,
+        phone: ['telefone', 'phone'].includes(readCaseBackfillString(metadata, 'contactPreference')?.toLowerCase() ?? '')
+          ? readCaseBackfillString(metadata, 'contact')
+          : undefined,
+        email: readCaseBackfillString(metadata, 'contactPreference')?.toLowerCase() === 'email'
+          ? readCaseBackfillString(metadata, 'contact')
+          : undefined,
+        city: readCaseBackfillString(metadata, 'city'),
+      }),
+    )
+
+    if (!structuredIdentityChanged(before, next)) {
+      continue
+    }
+
+    await db.run(
+      `
+        UPDATE cases
+        SET
+          client_display_name = ?,
+          client_canonical_name = ?,
+          client_display_phone = ?,
+          client_canonical_phone = ?,
+          client_display_whatsapp = ?,
+          client_canonical_whatsapp = ?,
+          client_display_email = ?,
+          client_canonical_email = ?,
+          client_display_city = ?,
+          client_canonical_city = ?,
+          client_search_key = ?
+        WHERE id = ?
+          AND tenant_id = ?
+      `,
+      next.displayName ?? null,
+      next.canonicalName ?? null,
+      next.displayPhone ?? null,
+      next.canonicalPhone ?? null,
+      next.displayWhatsapp ?? null,
+      next.canonicalWhatsapp ?? null,
+      next.displayEmail ?? null,
+      next.canonicalEmail ?? null,
+      next.displayCity ?? null,
+      next.canonicalCity ?? null,
+      next.searchKey ?? null,
+      row.id,
+      row.tenant_id,
+    )
+  }
+}
+
 export async function initializeDatabase(db: BackendDatabase) {
   await initializeBaseSchema(db)
   await initializeSqliteLegalCaseSchema(db)
@@ -2940,6 +3520,18 @@ export async function initializeDatabase(db: BackendDatabase) {
   await ensureColumn(db, 'entity_orchestrator_approval_queue', 'proposal_hash', 'TEXT')
   await ensureColumn(db, 'entity_orchestrator_approval_queue', 'payload_hash', 'TEXT')
   await ensureColumn(db, 'entity_orchestrator_approval_queue', 'risk_level', 'TEXT')
+  await ensureColumn(db, 'cases', 'request_id', 'TEXT')
+  await ensureColumn(db, 'cases', 'client_display_name', 'TEXT')
+  await ensureColumn(db, 'cases', 'client_canonical_name', 'TEXT')
+  await ensureColumn(db, 'cases', 'client_display_phone', 'TEXT')
+  await ensureColumn(db, 'cases', 'client_canonical_phone', 'TEXT')
+  await ensureColumn(db, 'cases', 'client_display_whatsapp', 'TEXT')
+  await ensureColumn(db, 'cases', 'client_canonical_whatsapp', 'TEXT')
+  await ensureColumn(db, 'cases', 'client_display_email', 'TEXT')
+  await ensureColumn(db, 'cases', 'client_canonical_email', 'TEXT')
+  await ensureColumn(db, 'cases', 'client_display_city', 'TEXT')
+  await ensureColumn(db, 'cases', 'client_canonical_city', 'TEXT')
+  await ensureColumn(db, 'cases', 'client_search_key', 'TEXT')
   await ensureColumn(db, 'entity_portfolio_lead', 'status', "TEXT NOT NULL DEFAULT 'routed'")
   await ensureColumn(db, 'entity_portfolio_lead', 'qualified_at', 'TEXT')
   await ensureColumn(db, 'entity_portfolio_lead', 'contacted_at', 'TEXT')
@@ -3029,11 +3621,27 @@ export async function initializeDatabase(db: BackendDatabase) {
   await ensureColumn(db, 'flow_auth_audit_event', 'metadata_json', "TEXT NOT NULL DEFAULT '{}'")
   await ensureColumn(db, 'flow_auth_audit_event', 'created_at', 'TEXT')
   await migrateAdaptiveEquilibriumEvidenceSchema(db)
+  if (db.dialect === 'postgres') {
+    await db.exec(`
+      UPDATE cases
+      SET request_id = metadata #>> '{publicTriage,requestId}'
+      WHERE request_id IS NULL
+        AND metadata #>> '{publicTriage,requestId}' IS NOT NULL
+    `)
+  } else {
+    await db.exec(`
+      UPDATE cases
+      SET request_id = json_extract(metadata, '$.publicTriage.requestId')
+      WHERE request_id IS NULL
+        AND json_extract(metadata, '$.publicTriage.requestId') IS NOT NULL
+    `)
+  }
   await db.run("UPDATE entity_portfolio_lead SET status = 'routed' WHERE status IS NULL OR TRIM(status) = ''")
   await initializePostgresLegalCaseSchema(db)
   await migratePostgresPortfolioProposalSchema(db)
   await migratePostgresSemanticReplayResultSchema(db)
   await ensureIndexes(db, indexStatements)
+  await backfillCaseStructuredContactIdentity(db)
   await seedSpecialtyRadiusDefaults(db)
   await validateAdaptiveEquilibriumEvidenceSchema(db)
 }

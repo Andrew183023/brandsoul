@@ -1,4 +1,5 @@
 import type {
+  CanonicalContactIdentity,
   LegalCanonicalProfessionalIdentity,
   LegalCaseIdentity,
   LegalOfficeIdentity,
@@ -49,6 +50,7 @@ export type LegalCanonicalCaseProjection<
     entityId: string
     clientName?: string
     contact?: string
+    contactIdentity?: CanonicalContactIdentity
     practiceArea?: string
     city?: string
     priority: LegalCaseIdentity['priority']
@@ -123,6 +125,11 @@ export function buildCanonicalCaseProjection<
       entityId: identity.entityId,
       clientName: identity.client.name,
       contact: identity.client.contact,
+      contactIdentity: identity.client.contactIdentity
+        ? {
+            ...identity.client.contactIdentity,
+          }
+        : undefined,
       practiceArea: identity.practiceArea,
       city: identity.city,
       priority: identity.priority,

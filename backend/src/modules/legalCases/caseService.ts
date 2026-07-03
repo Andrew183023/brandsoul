@@ -1,15 +1,19 @@
 import type { BackendDatabase } from '../../db/index.js'
 import { getLegalCaseDispatchTimeoutSeconds } from '../../config/env.js'
+import type { ObservabilityService } from '../../services/observabilityService.js'
 import { buildSemanticFingerprint, getSemanticMutationExecutor } from '../../sovereignty/semanticMutationExecutor.js'
 
 import { CaseRepository, createCaseRepository } from './caseRepository.js'
 import { getLawyerInboxChannel, publish, type LawyerInboxEvent, type LawyerInboxEventType } from './lawyerInboxEvents.js'
+import { createLegalCanonicalTimelineWriteService } from './legalCanonicalTimelineWriteService.js'
+import { LegalMetricsRecorder } from './legalMetricsRecorder.js'
 import { createMatchingService } from './matchingService.js'
 import type {
   AcceptCaseResult,
   AddCaseMessageInput,
   AssignmentResponseStatus,
   CaseAssignmentRecord,
+  CaseMessageDirection,
   CaseMessageRecord,
   CaseRecord,
   CreateCaseInput,
@@ -38,6 +42,8 @@ function readCreateCaseReplayKey(input: CreateCaseInput): string | null {
     return directRequestId
   }
 
+  // Legacy compatibility fallback only.
+  // New operational identity must come from structured columns / canonical identity.
   const publicTriageRequestId = typeof input.metadata?.publicTriage === 'object'
     && input.metadata?.publicTriage
     && typeof (input.metadata.publicTriage as Record<string, unknown>).requestId === 'string'
@@ -126,8 +132,94 @@ function isSqliteAcceptContentionError(error: unknown) {
     || message.includes('database is locked')
  }
 
+export async function persistCanonicalCaseWithInitialHistory(
+  repository: CaseRepository,
+  input: CreateCaseInput,
+): Promise<{
+  legalCase: CaseRecord
+  initialMessage: CaseMessageRecord | null
+}> {
+  const timelineWriter = createLegalCanonicalTimelineWriteService(repository['db'] as BackendDatabase)
+  // Legacy compatibility fallback only.
+  // New operational identity must come from structured columns / canonical identity.
+  const publicTriageMetadata = (
+    input.metadata?.publicTriage
+    && typeof input.metadata.publicTriage === 'object'
+    && !Array.isArray(input.metadata.publicTriage)
+  )
+    ? input.metadata.publicTriage as JsonObject
+    : undefined
+  const initialMessageContent = (
+    input.initialMessage?.content
+    && typeof input.initialMessage.content === 'object'
+    && !Array.isArray(input.initialMessage.content)
+  )
+    ? input.initialMessage.content
+    : undefined
+  const legalCase = await repository.createCase(input)
+  let initialMessage: CaseMessageRecord | null = null
+
+  if (input.initialMessage?.body) {
+    initialMessage = await repository.addMessage({
+      tenantId: input.tenantId,
+      caseId: legalCase.id,
+      authorProfessionalId: input.initialMessage.authorProfessionalId,
+      body: input.initialMessage.body,
+      messageType: input.initialMessage.messageType,
+      messageStatus: input.initialMessage.messageStatus,
+      direction: input.initialMessage.direction,
+      channel: input.initialMessage.channel,
+      subject: input.initialMessage.subject,
+      content: input.initialMessage.content,
+      attachments: input.initialMessage.attachments,
+      sentAt: input.initialMessage.sentAt,
+    })
+  }
+
+  await timelineWriter.recordCaseCreated({
+    tenantId: input.tenantId,
+    caseId: legalCase.id,
+    actorProfessionalId: input.initialMessage?.authorProfessionalId ?? input.leadProfessionalId,
+    entityId: legalCase.entityId ?? null,
+    status: legalCase.status,
+    priority: legalCase.priority,
+    // Legacy compatibility fallback only.
+    // New operational identity must come from structured columns / canonical identity.
+    source: typeof input.metadata?.source === 'string' ? input.metadata.source : undefined,
+    requestId: input.requestId ?? (typeof publicTriageMetadata?.requestId === 'string' ? publicTriageMetadata.requestId : undefined),
+    // Legacy compatibility fallback only.
+    // New operational identity must come from structured columns / canonical identity.
+    leadId: typeof input.metadata?.leadId === 'string' ? input.metadata.leadId : undefined,
+    // Legacy compatibility fallback only.
+    // New operational identity must come from structured columns / canonical identity.
+    intakeId: typeof input.metadata?.intakeId === 'string' ? input.metadata.intakeId : undefined,
+  })
+
+  if (initialMessage) {
+    await timelineWriter.recordMessageAdded({
+      tenantId: input.tenantId,
+      caseId: legalCase.id,
+      actorProfessionalId: input.initialMessage?.authorProfessionalId,
+      messageId: initialMessage.id,
+      sequenceNo: initialMessage.sequenceNo,
+      messageType: initialMessage.messageType,
+      direction: initialMessage.direction,
+      source: typeof initialMessageContent?.source === 'string' ? initialMessageContent.source : undefined,
+      requestId: typeof initialMessageContent?.requestId === 'string' ? initialMessageContent.requestId : undefined,
+      leadId: typeof initialMessageContent?.leadId === 'string' ? initialMessageContent.leadId : undefined,
+      intakeId: typeof initialMessageContent?.intakeId === 'string' ? initialMessageContent.intakeId : undefined,
+    })
+  }
+
+  return {
+    legalCase,
+    initialMessage,
+  }
+}
+
 export class CaseService {
   private static readonly dispatchTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
+  private readonly legalMetricsRecorder?: LegalMetricsRecorder
 
   static clearAllDispatchTimeoutsForTesting() {
     for (const handle of CaseService.dispatchTimeouts.values()) {
@@ -143,7 +235,138 @@ export class CaseService {
   constructor(
     private readonly db: BackendDatabase,
     private readonly repositoryFactory: (db: BackendDatabase) => CaseRepository = createCaseRepository,
-  ) {}
+    private readonly observability?: ObservabilityService,
+  ) {
+    this.legalMetricsRecorder = observability
+      ? new LegalMetricsRecorder(observability)
+      : undefined
+  }
+
+  private recordAssignmentMetric(args: {
+    metricName:
+      | 'legal_assignment_created_total'
+      | 'legal_assignment_accepted_total'
+      | 'legal_assignment_rejected_total'
+      | 'legal_assignment_reassigned_total'
+      | 'legal_assignment_expired_total'
+    tenantId: number
+    entityId?: string | null
+    operation: 'assign' | 'accept' | 'reject' | 'reassign' | 'expire'
+    result: 'success' | 'failed'
+    source?: string
+  }) {
+    this.legalMetricsRecorder?.increment(args.metricName, {
+      tenant_id: String(args.tenantId),
+      entity_id: args.entityId ?? 'unknown',
+      operation: args.operation,
+      result: args.result,
+      ...(args.source ? { source: args.source } : {}),
+    })
+  }
+
+  private resolveMessageMetricSource(args: {
+    direction?: CaseMessageDirection
+    channel?: string
+    content?: JsonObject
+    authorProfessionalId?: string
+  }) {
+    const contentSource = typeof args.content?.source === 'string'
+      ? args.content.source.trim().toLowerCase()
+      : ''
+    const channelSource = typeof args.channel === 'string'
+      ? args.channel.trim().toLowerCase()
+      : ''
+    const explicitSource = channelSource || contentSource
+    if (explicitSource) {
+      return explicitSource
+    }
+
+    if (args.direction === 'outbound') {
+      return args.authorProfessionalId ? 'professional' : 'case_service'
+    }
+
+    return 'case_service'
+  }
+
+  private resolveMessageMetricOperation(direction?: CaseMessageDirection) {
+    if (direction === 'inbound') {
+      return 'message_received' as const
+    }
+    if (direction === 'outbound') {
+      return 'message_sent' as const
+    }
+    return null
+  }
+
+  private recordMessageMetric(args: {
+    metricName:
+      | 'legal_message_received_total'
+      | 'legal_message_sent_total'
+      | 'legal_message_failed_total'
+    tenantId: number
+    entityId?: string | null
+    source?: string
+    operation: 'message_received' | 'message_sent'
+    result: 'success' | 'failed'
+    reason?: string
+  }) {
+    this.legalMetricsRecorder?.increment(args.metricName, {
+      tenant_id: String(args.tenantId),
+      entity_id: args.entityId ?? 'unknown',
+      source: args.source ?? 'case_service',
+      operation: args.operation,
+      result: args.result,
+      ...(args.reason ? { reason: args.reason } : {}),
+    })
+  }
+
+  private recordCaseLifecycleMetric(args: {
+    metricName:
+      | 'legal_case_created_total'
+      | 'legal_case_reused_total'
+      | 'legal_case_status_changed_total'
+      | 'legal_case_closed_total'
+    tenantId: number
+    entityId?: string | null
+    source?: string
+    operation: 'case_created' | 'case_reused' | 'status_changed' | 'case_closed'
+    status?: string
+    result: 'success'
+    reason?: string
+  }) {
+    this.legalMetricsRecorder?.increment(args.metricName, {
+      tenant_id: String(args.tenantId),
+      entity_id: args.entityId ?? 'unknown',
+      source: args.source ?? 'case_service',
+      operation: args.operation,
+      ...(args.status ? { status: args.status } : {}),
+      result: args.result,
+      ...(args.reason ? { reason: args.reason } : {}),
+    })
+  }
+
+  private recordTransactionMetric(args: {
+    metricName:
+      | 'legal_transaction_failures_total'
+      | 'legal_transaction_rollbacks_total'
+    tenantId: number
+    entityId?: string | null
+    source?: string
+    operation: 'create_case' | 'add_message' | 'status_change' | 'close_case' | 'assign' | 'public_triage'
+    stage: 'transaction' | 'rollback'
+    result: 'failed'
+    reason: 'exception'
+  }) {
+    this.legalMetricsRecorder?.increment(args.metricName, {
+      tenant_id: String(args.tenantId),
+      entity_id: args.entityId ?? 'unknown',
+      source: args.source ?? 'case_service',
+      operation: args.operation,
+      stage: args.stage,
+      result: args.result,
+      reason: args.reason,
+    })
+  }
 
   private getDispatchTimeoutMs() {
     return Math.round(getLegalCaseDispatchTimeoutSeconds() * 1000)
@@ -170,17 +393,23 @@ export class CaseService {
   private async handleDispatchTimeout(tenantId: number, caseId: string, dispatchId: string) {
     let expiredAssignmentId: string | null = null
     let expiredAssignmentProfessionalId: string | null = null
+    let expiredAssignmentEntityId: string | null = null
 
     await this.db.transaction(async (tx) => {
       const repository = this.repositoryFactory(tx)
+      const timelineWriter = createLegalCanonicalTimelineWriteService(tx)
       const dispatch = await repository.getCaseDispatchById(tenantId, dispatchId)
       if (!dispatch || dispatch.caseId !== caseId || dispatch.status !== 'pending') {
         return
       }
 
       await repository.updateCaseDispatchStatus(tenantId, dispatchId, 'expired')
+      const legalCase = await repository.getCaseById(tenantId, caseId)
+      expiredAssignmentEntityId = legalCase?.entityId ?? null
       const assignments = await repository.listAssignmentsByCase(tenantId, caseId)
       const linkedAssignment = assignments.find((assignment) => {
+        // Legacy compatibility fallback only.
+        // New operational identity must come from structured columns / canonical identity.
         const assignmentDispatchId = typeof assignment.metadata?.dispatchId === 'string'
           ? assignment.metadata.dispatchId
           : null
@@ -192,16 +421,14 @@ export class CaseService {
         expiredAssignmentProfessionalId = updatedAssignment?.professionalId ?? null
       }
 
-      await repository.addTimelineEvent({
+      await timelineWriter.recordAssignmentDecision({
         tenantId,
         caseId,
-        eventType: 'rejected',
+        type: 'rejected',
         actorProfessionalId: dispatch.professionalId,
-        payload: {
-          dispatchId,
-          professionalId: dispatch.professionalId,
-          status: 'expired',
-        },
+        dispatchId,
+        professionalId: dispatch.professionalId,
+        status: 'expired',
       })
     })
 
@@ -210,6 +437,14 @@ export class CaseService {
       this.publishLawyerInboxEvent(tenantId, expiredAssignmentProfessionalId, 'assignment.expired', {
         caseId,
         assignmentId: expiredAssignmentId,
+      })
+      this.recordAssignmentMetric({
+        metricName: 'legal_assignment_expired_total',
+        tenantId,
+        entityId: expiredAssignmentEntityId,
+        operation: 'expire',
+        result: 'success',
+        source: 'case_service',
       })
     }
     await this.advanceAutoDispatch(tenantId, caseId, 'timeout')
@@ -244,21 +479,21 @@ export class CaseService {
       return
     }
 
-    await repository.addTimelineEvent({
+    const timelineWriter = createLegalCanonicalTimelineWriteService(repository['db'] as BackendDatabase)
+    await timelineWriter.recordStatusChanged({
       tenantId: input.tenantId,
       caseId: input.caseId,
-      eventType: 'status_changed',
       actorProfessionalId: input.actorProfessionalId,
-      payload: {
-        fromStatus: input.fromStatus,
-        toStatus: input.toStatus,
-        reason: input.reason ?? null,
-      },
+      from: input.fromStatus as CaseRecord['status'],
+      to: input.toStatus as CaseRecord['status'],
+      reason: input.reason ?? undefined,
     })
   }
 
   private resolveAutoDispatchMetadata(caseRecord: CaseRecord): AutoDispatchState | null {
     const metadata = (caseRecord.metadata ?? {}) as CaseMetadataWithAutoDispatch
+    // Legacy compatibility fallback only.
+    // New operational identity must come from structured columns / canonical identity.
     const state = metadata.autoDispatch
     if (!state) {
       return null
@@ -316,6 +551,8 @@ export class CaseService {
 
       createdAssignments.push(dispatchResult.assignment)
 
+      // Legacy compatibility fallback only.
+      // New operational identity must come from structured columns / canonical identity.
       const dispatchId = typeof dispatchResult.assignment.metadata?.dispatchId === 'string'
         ? dispatchResult.assignment.metadata.dispatchId
         : null
@@ -366,7 +603,7 @@ export class CaseService {
       entityId,
     })
 
-    const matchingService = createMatchingService(this.db)
+    const matchingService = createMatchingService(this.db, this.observability)
     const candidates = await matchingService.matchCaseToProfessionals(tenantId, caseId)
     const topCandidates = candidates.slice(0, 3).map((candidate) => candidate.professionalId)
     console.info('case.match_candidates_found', {
@@ -399,6 +636,7 @@ export class CaseService {
 
     const dispatchResult = await this.db.transaction(async (tx) => {
       const repository = this.repositoryFactory(tx)
+      const timelineWriter = createLegalCanonicalTimelineWriteService(tx)
       const legalCase = await repository.getCaseById(tenantId, caseId)
       if (!legalCase) {
         return null
@@ -416,14 +654,11 @@ export class CaseService {
         return null
       }
 
-      await repository.addTimelineEvent({
+      await timelineWriter.recordMatched({
         tenantId,
         caseId,
-        eventType: 'matched',
-        payload: {
-          strategy: state.strategy,
-          candidateIds: topCandidates,
-        },
+        strategy: state.strategy,
+        candidateIds: topCandidates,
       })
 
       return this.broadcastDispatchBatch(repository, caseWithState, topCandidates, state)
@@ -433,6 +668,14 @@ export class CaseService {
       this.publishLawyerInboxEvent(tenantId, assignment.professionalId, 'assignment.created', {
         caseId,
         assignmentId: assignment.id,
+      })
+      this.recordAssignmentMetric({
+        metricName: 'legal_assignment_created_total',
+        tenantId,
+        entityId: dispatchResult?.caseRecord.entityId ?? entityId ?? null,
+        operation: 'assign',
+        result: 'success',
+        source: 'case_service',
       })
     }
 
@@ -457,7 +700,7 @@ export class CaseService {
         return null
       }
 
-      const matchingService = createMatchingService(tx)
+      const matchingService = createMatchingService(tx, this.observability)
       const candidates = await matchingService.matchCaseToProfessionals(tenantId, caseId)
       const nextBatch = candidates
         .map((candidate) => candidate.professionalId)
@@ -518,111 +761,128 @@ export class CaseService {
         caseId,
         assignmentId: assignment.id,
       })
+      this.recordAssignmentMetric({
+        metricName: 'legal_assignment_created_total',
+        tenantId,
+        entityId: dispatchResult?.caseRecord.entityId ?? null,
+        operation: 'assign',
+        result: 'success',
+        source: 'case_service',
+      })
     }
 
     return dispatchResult
   }
 
   async createCase(input: CreateCaseInput): Promise<CaseRecord> {
-    const { result: createdCase } = await getSemanticMutationExecutor().executeSemanticMutation({
-      authoritySource: 'backend/src/modules/legalCases/caseService.ts#createCase',
-      intent: {
-        intentId: buildCreateCaseSemanticIntentId(input),
-        intentType: 'legal.case.create',
-        domain: 'legal_case',
-        actor: 'public',
-        targetRef: {
-          entityId: input.entityId ?? undefined,
-          tenantId: String(input.tenantId),
-        },
-        semanticPurpose: 'open a legal case record and establish the initial case timeline',
-        expectedInstitutionalEffect: ['legal_case_opened', 'initial_case_timeline_recorded'],
-        riskLevel: 'high',
-        replayRelevant: true,
-        continuityRelevant: true,
-        authRelevant: false,
-        createdAt: new Date().toISOString(),
-      },
-      captureBeforeState: () => ({
-        tenantId: input.tenantId,
-        entityId: input.entityId ?? null,
-      }),
-      executePersistence: () => this.db.transaction(async (tx) => {
-        const repository = this.repositoryFactory(tx)
-        const legalCase = await repository.createCase(input)
-        let initialMessage: CaseMessageRecord | null = null
-
-        if (input.initialMessage?.body) {
-          initialMessage = await repository.addMessage({
-            tenantId: input.tenantId,
-            caseId: legalCase.id,
-            authorProfessionalId: input.initialMessage.authorProfessionalId,
-            body: input.initialMessage.body,
-            messageType: input.initialMessage.messageType,
-            messageStatus: input.initialMessage.messageStatus,
-            direction: input.initialMessage.direction,
-            channel: input.initialMessage.channel,
-            subject: input.initialMessage.subject,
-            content: input.initialMessage.content,
-            attachments: input.initialMessage.attachments,
-            sentAt: input.initialMessage.sentAt,
-          })
-        }
-
-        await repository.addTimelineEvent({
-          tenantId: input.tenantId,
-          caseId: legalCase.id,
-          eventType: 'created',
-          actorProfessionalId: input.initialMessage?.authorProfessionalId ?? input.leadProfessionalId,
-          payload: {
-            entityId: legalCase.entityId ?? null,
-            status: legalCase.status,
-            priority: legalCase.priority,
-          },
-        })
-
-        if (initialMessage) {
-          await repository.addTimelineEvent({
-            tenantId: input.tenantId,
-            caseId: legalCase.id,
-            eventType: 'message_added',
-            actorProfessionalId: input.initialMessage?.authorProfessionalId,
-            payload: {
-              messageId: initialMessage.id,
-              sequenceNo: initialMessage.sequenceNo,
-              messageType: initialMessage.messageType,
-              direction: initialMessage.direction,
-            },
-          })
-        }
-
-        return legalCase
-      }),
-      captureAfterState: (persisted) => ({
-        caseId: persisted.id,
-        tenantId: persisted.tenantId,
-        status: persisted.status,
-        entityId: persisted.entityId ?? null,
-      }),
-      deriveEffect: ({ intent, beforeState, afterState, sovereignAttestation }) => ({
-        effectId: `${intent.intentId}:effect`,
-        intentId: intent.intentId,
-        effectType: 'legal.case.create.completed',
-        domain: intent.domain,
-        beforeFingerprint: buildSemanticFingerprint(beforeState),
-        afterFingerprint: buildSemanticFingerprint(afterState),
-        changedFields: ['case', 'case_message', 'case_timeline'],
-        institutionalMeaning: 'a legal case now exists as an institutional service obligation for the tenant',
-        replayFingerprint: buildSemanticFingerprint({
-          intentType: intent.intentType,
-          beforeState,
-          afterState,
-        }),
-        continuityLineageHash: sovereignAttestation.lineageHash,
-        mutationLineageHash: '',
-        verified: false,
-      }),
+    const messageOperation = this.resolveMessageMetricOperation(input.initialMessage?.direction)
+    const messageSource = this.resolveMessageMetricSource({
+      direction: input.initialMessage?.direction,
+      channel: input.initialMessage?.channel,
+      content: input.initialMessage?.content,
+      authorProfessionalId: input.initialMessage?.authorProfessionalId,
     })
+
+    let createdCase: CaseRecord
+    let transactionStarted = false
+    let mutationStarted = false
+    try {
+      const persistenceResult = await getSemanticMutationExecutor().executeSemanticMutation({
+        authoritySource: 'backend/src/modules/legalCases/caseService.ts#createCase',
+        intent: {
+          intentId: buildCreateCaseSemanticIntentId(input),
+          intentType: 'legal.case.create',
+          domain: 'legal_case',
+          actor: 'public',
+          targetRef: {
+            entityId: input.entityId ?? undefined,
+            tenantId: String(input.tenantId),
+          },
+          semanticPurpose: 'open a legal case record and establish the initial case timeline',
+          expectedInstitutionalEffect: ['legal_case_opened', 'initial_case_timeline_recorded'],
+          riskLevel: 'high',
+          replayRelevant: true,
+          continuityRelevant: true,
+          authRelevant: false,
+          createdAt: new Date().toISOString(),
+        },
+        captureBeforeState: () => ({
+          tenantId: input.tenantId,
+          entityId: input.entityId ?? null,
+        }),
+        executePersistence: () => {
+          transactionStarted = true
+          return this.db.transaction(async (tx) => {
+          const repository = this.repositoryFactory(tx)
+          mutationStarted = true
+          const { legalCase } = await persistCanonicalCaseWithInitialHistory(repository, input)
+          return legalCase
+          })
+        },
+        captureAfterState: (persisted) => ({
+          caseId: persisted.id,
+          tenantId: persisted.tenantId,
+          status: persisted.status,
+          entityId: persisted.entityId ?? null,
+        }),
+        deriveEffect: ({ intent, beforeState, afterState, sovereignAttestation }) => ({
+          effectId: `${intent.intentId}:effect`,
+          intentId: intent.intentId,
+          effectType: 'legal.case.create.completed',
+          domain: intent.domain,
+          beforeFingerprint: buildSemanticFingerprint(beforeState),
+          afterFingerprint: buildSemanticFingerprint(afterState),
+          changedFields: ['case', 'case_message', 'case_timeline'],
+          institutionalMeaning: 'a legal case now exists as an institutional service obligation for the tenant',
+          replayFingerprint: buildSemanticFingerprint({
+            intentType: intent.intentType,
+            beforeState,
+            afterState,
+          }),
+          continuityLineageHash: sovereignAttestation.lineageHash,
+          mutationLineageHash: '',
+          verified: false,
+        }),
+      })
+      createdCase = persistenceResult.result
+    } catch (error) {
+      if (transactionStarted) {
+        this.recordTransactionMetric({
+          metricName: 'legal_transaction_failures_total',
+          tenantId: input.tenantId,
+          entityId: input.entityId ?? null,
+          source: 'case_service',
+          operation: 'create_case',
+          stage: 'transaction',
+          result: 'failed',
+          reason: 'exception',
+        })
+      }
+      if (mutationStarted) {
+        this.recordTransactionMetric({
+          metricName: 'legal_transaction_rollbacks_total',
+          tenantId: input.tenantId,
+          entityId: input.entityId ?? null,
+          source: 'case_service',
+          operation: 'create_case',
+          stage: 'rollback',
+          result: 'failed',
+          reason: 'exception',
+        })
+      }
+      if (input.initialMessage?.body && messageOperation) {
+        this.recordMessageMetric({
+          metricName: 'legal_message_failed_total',
+          tenantId: input.tenantId,
+          entityId: input.entityId ?? null,
+          source: messageSource,
+          operation: messageOperation,
+          result: 'failed',
+          reason: 'write_failed',
+        })
+      }
+      throw error
+    }
 
     console.info('case.created', {
       tenantId: createdCase.tenantId,
@@ -630,6 +890,15 @@ export class CaseService {
       entityId: createdCase.entityId,
       candidateCount: null,
       professionalIds: [],
+    })
+
+    this.recordCaseLifecycleMetric({
+      metricName: 'legal_case_created_total',
+      tenantId: input.tenantId,
+      entityId: createdCase.entityId ?? null,
+      source: 'case_service',
+      operation: 'case_created',
+      result: 'success',
     })
 
     if (input.autoDispatch === true) {
@@ -647,62 +916,154 @@ export class CaseService {
       })
     }
 
+    if (input.initialMessage?.body && messageOperation) {
+      this.recordMessageMetric({
+        metricName: messageOperation === 'message_received'
+          ? 'legal_message_received_total'
+          : 'legal_message_sent_total',
+        tenantId: input.tenantId,
+        entityId: createdCase.entityId ?? null,
+        source: messageSource,
+        operation: messageOperation,
+        result: 'success',
+      })
+    }
+
     return (await this.repositoryFactory(this.db).getCaseById(input.tenantId, createdCase.id)) ?? createdCase
   }
 
   async addMessage(input: AddCaseMessageInput): Promise<CaseMessageRecord> {
-    return this.db.transaction(async (tx) => {
-      const repository = this.repositoryFactory(tx)
-      const legalCase = await repository.getCaseById(input.tenantId, input.caseId)
-      if (!legalCase) {
-        throw new Error(`Case ${input.caseId} not found.`)
-      }
+    const messageOperation = this.resolveMessageMetricOperation(input.direction)
+    const messageSource = this.resolveMessageMetricSource({
+      direction: input.direction,
+      channel: input.channel,
+      content: input.content,
+      authorProfessionalId: input.authorProfessionalId,
+    })
 
-      const message = await repository.addMessage(input)
+    let persisted: {
+      message: CaseMessageRecord
+      entityId: string | null
+      statusChangedTo?: string
+    }
+    let mutationStarted = false
+    try {
+      persisted = await this.db.transaction(async (tx) => {
+        const repository = this.repositoryFactory(tx)
+        const timelineWriter = createLegalCanonicalTimelineWriteService(tx)
+        const legalCase = await repository.getCaseById(input.tenantId, input.caseId)
+        if (!legalCase) {
+          throw new Error(`Case ${input.caseId} not found.`)
+        }
 
-      if (legalCase.status === 'accepted') {
-        const updatedCase = await repository.updateCaseStatus(input.tenantId, input.caseId, 'in_progress')
-        await this.appendCaseStatusChangedEvent(repository, {
+        mutationStarted = true
+        const message = await repository.addMessage(input)
+
+        if (legalCase.status === 'accepted') {
+          const updatedCase = await repository.updateCaseStatus(input.tenantId, input.caseId, 'in_progress')
+          await this.appendCaseStatusChangedEvent(repository, {
+            tenantId: input.tenantId,
+            caseId: input.caseId,
+            actorProfessionalId: input.authorProfessionalId,
+            fromStatus: legalCase.status,
+            toStatus: updatedCase?.status ?? 'in_progress',
+            reason: 'message_progression',
+          })
+        }
+
+        await timelineWriter.recordMessageAdded({
           tenantId: input.tenantId,
           caseId: input.caseId,
           actorProfessionalId: input.authorProfessionalId,
-          fromStatus: legalCase.status,
-          toStatus: updatedCase?.status ?? 'in_progress',
-          reason: 'message_progression',
-        })
-      }
-
-      await repository.addTimelineEvent({
-        tenantId: input.tenantId,
-        caseId: input.caseId,
-        eventType: 'message_added',
-        actorProfessionalId: input.authorProfessionalId,
-        payload: {
           messageId: message.id,
           sequenceNo: message.sequenceNo,
           messageType: message.messageType,
           direction: message.direction,
-        },
-      })
+        })
 
-      if (legalCase.leadProfessionalId && legalCase.leadProfessionalId !== input.authorProfessionalId) {
-        await repository.addLearningEvent({
+        if (legalCase.leadProfessionalId && legalCase.leadProfessionalId !== input.authorProfessionalId) {
+          await repository.addLearningEvent({
+            tenantId: input.tenantId,
+            professionalId: legalCase.leadProfessionalId,
+            caseId: input.caseId,
+            eventType: 'message_added',
+            source: 'case_message',
+            payload: {
+              messageId: message.id,
+              sequenceNo: message.sequenceNo,
+              messageType: message.messageType,
+              direction: message.direction,
+            },
+          })
+        }
+
+        return {
+          message,
+          entityId: legalCase.entityId ?? null,
+          statusChangedTo: legalCase.status === 'accepted' ? 'in_progress' : undefined,
+        }
+      })
+    } catch (error) {
+      if (mutationStarted) {
+        this.recordTransactionMetric({
+          metricName: 'legal_transaction_failures_total',
           tenantId: input.tenantId,
-          professionalId: legalCase.leadProfessionalId,
-          caseId: input.caseId,
-          eventType: 'message_added',
-          source: 'case_message',
-          payload: {
-            messageId: message.id,
-            sequenceNo: message.sequenceNo,
-            messageType: message.messageType,
-            direction: message.direction,
-          },
+          source: 'case_service',
+          operation: 'add_message',
+          stage: 'transaction',
+          result: 'failed',
+          reason: 'exception',
+        })
+        this.recordTransactionMetric({
+          metricName: 'legal_transaction_rollbacks_total',
+          tenantId: input.tenantId,
+          source: 'case_service',
+          operation: 'add_message',
+          stage: 'rollback',
+          result: 'failed',
+          reason: 'exception',
         })
       }
+      if (messageOperation) {
+        this.recordMessageMetric({
+          metricName: 'legal_message_failed_total',
+          tenantId: input.tenantId,
+          source: messageSource,
+          operation: messageOperation,
+          result: 'failed',
+          reason: 'write_failed',
+        })
+      }
+      throw error
+    }
 
-      return message
-    })
+    if (messageOperation) {
+      this.recordMessageMetric({
+        metricName: messageOperation === 'message_received'
+          ? 'legal_message_received_total'
+          : 'legal_message_sent_total',
+        tenantId: input.tenantId,
+        entityId: persisted.entityId,
+        source: messageSource,
+        operation: messageOperation,
+        result: 'success',
+      })
+    }
+
+    if (persisted.statusChangedTo) {
+      this.recordCaseLifecycleMetric({
+        metricName: 'legal_case_status_changed_total',
+        tenantId: input.tenantId,
+        entityId: persisted.entityId,
+        source: 'case_service',
+        operation: 'status_changed',
+        status: persisted.statusChangedTo,
+        result: 'success',
+        reason: 'message_progression',
+      })
+    }
+
+    return persisted.message
   }
 
   async transitionCaseStatus(input: {
@@ -725,7 +1086,8 @@ export class CaseService {
       }
     }
 
-    return this.db.transaction(async (tx) => {
+    let mutationStarted = false
+    const result = await this.db.transaction(async (tx) => {
       const repository = this.repositoryFactory(tx)
       const currentCase = await repository.getCaseById(input.tenantId, input.caseId)
       if (!currentCase) {
@@ -743,10 +1105,12 @@ export class CaseService {
       if (currentCase.status === input.status) {
         return {
           status: 'updated' as const,
+          changed: false as const,
           caseRecord: currentCase,
         }
       }
 
+      mutationStarted = true
       const updatedCase = await repository.updateCaseStatus(input.tenantId, input.caseId, input.status)
       if (!updatedCase) {
         return { status: 'not_found' as const }
@@ -763,9 +1127,47 @@ export class CaseService {
 
       return {
         status: 'updated' as const,
+        changed: true as const,
         caseRecord: updatedCase,
       }
+    }).catch((error) => {
+      if (mutationStarted) {
+        this.recordTransactionMetric({
+          metricName: 'legal_transaction_failures_total',
+          tenantId: input.tenantId,
+          source: 'case_service',
+          operation: 'status_change',
+          stage: 'transaction',
+          result: 'failed',
+          reason: 'exception',
+        })
+        this.recordTransactionMetric({
+          metricName: 'legal_transaction_rollbacks_total',
+          tenantId: input.tenantId,
+          source: 'case_service',
+          operation: 'status_change',
+          stage: 'rollback',
+          result: 'failed',
+          reason: 'exception',
+        })
+      }
+      throw error
     })
+
+    if (result.status === 'updated' && result.changed) {
+      this.recordCaseLifecycleMetric({
+        metricName: 'legal_case_status_changed_total',
+        tenantId: input.tenantId,
+        entityId: result.caseRecord.entityId ?? null,
+        source: 'case_service',
+        operation: 'status_changed',
+        status: result.caseRecord.status,
+        result: 'success',
+        reason: input.reason ?? 'manual',
+      })
+    }
+
+    return result
   }
 
   async closeCase(input: {
@@ -779,7 +1181,8 @@ export class CaseService {
     | { status: 'already_closed'; caseRecord: CaseRecord }
     | { status: 'closed'; caseRecord: CaseRecord }
   > {
-    return this.db.transaction(async (tx) => {
+    let mutationStarted = false
+    const result = await this.db.transaction(async (tx) => {
       const repository = this.repositoryFactory(tx)
       const currentCase = await repository.getCaseById(input.tenantId, input.caseId)
       if (!currentCase) {
@@ -793,6 +1196,7 @@ export class CaseService {
         }
       }
 
+      mutationStarted = true
       const closedCase = await repository.closeCase(
         input.tenantId,
         input.caseId,
@@ -822,22 +1226,67 @@ export class CaseService {
         reason: 'case_closed',
       })
 
-      await repository.addTimelineEvent({
+      const timelineWriter = createLegalCanonicalTimelineWriteService(tx)
+      await timelineWriter.recordClosed({
         tenantId: input.tenantId,
         caseId: input.caseId,
-        eventType: 'closed',
         actorProfessionalId: input.actorProfessionalId,
-        payload: {
-          resolutionReason: input.resolutionReason ?? null,
-          status: effectiveCase.status,
-        },
+        resolutionReason: input.resolutionReason ?? null,
+        status: effectiveCase.status,
       })
 
       return {
         status: 'closed' as const,
         caseRecord: effectiveCase,
       }
+    }).catch((error) => {
+      if (mutationStarted) {
+        this.recordTransactionMetric({
+          metricName: 'legal_transaction_failures_total',
+          tenantId: input.tenantId,
+          source: 'case_service',
+          operation: 'close_case',
+          stage: 'transaction',
+          result: 'failed',
+          reason: 'exception',
+        })
+        this.recordTransactionMetric({
+          metricName: 'legal_transaction_rollbacks_total',
+          tenantId: input.tenantId,
+          source: 'case_service',
+          operation: 'close_case',
+          stage: 'rollback',
+          result: 'failed',
+          reason: 'exception',
+        })
+      }
+      throw error
     })
+
+    if (result.status === 'closed') {
+      this.recordCaseLifecycleMetric({
+        metricName: 'legal_case_status_changed_total',
+        tenantId: input.tenantId,
+        entityId: result.caseRecord.entityId ?? null,
+        source: 'case_service',
+        operation: 'status_changed',
+        status: result.caseRecord.status,
+        result: 'success',
+        reason: 'close',
+      })
+      this.recordCaseLifecycleMetric({
+        metricName: 'legal_case_closed_total',
+        tenantId: input.tenantId,
+        entityId: result.caseRecord.entityId ?? null,
+        source: 'case_service',
+        operation: 'case_closed',
+        status: result.caseRecord.status,
+        result: 'success',
+        reason: input.resolutionReason ? 'resolution' : 'manual',
+      })
+    }
+
+    return result
   }
 
   async dispatchCase(
@@ -852,6 +1301,7 @@ export class CaseService {
     },
   ): Promise<{ caseRecord: CaseRecord; assignment: CaseAssignmentRecord } | null> {
     const executeDispatch = async (repository: CaseRepository) => {
+      const timelineWriter = createLegalCanonicalTimelineWriteService(repository['db'] as BackendDatabase)
       const legalCase = await repository.getCaseById(tenantId, caseId)
       if (!legalCase) {
         return null
@@ -882,19 +1332,18 @@ export class CaseService {
         },
       })
 
-      await repository.addTimelineEvent({
+      await timelineWriter.recordAssignmentChanged({
         tenantId,
         caseId,
-        eventType: 'assigned',
+        type: 'assigned',
         actorProfessionalId: assignedByProfessionalId,
-        payload: {
-          assignmentId: assignment.id,
-          dispatchId: dispatch.id,
-          professionalId: assignment.professionalId,
-          role: assignment.role,
-          status: assignment.status,
-          expiresAt: dispatch.expiresAt,
-        },
+        professionalId: assignment.professionalId,
+        assignedByProfessionalId,
+        assignmentId: assignment.id,
+        dispatchId: dispatch.id,
+        role: assignment.role,
+        status: assignment.status,
+        expiresAt: dispatch.expiresAt,
       })
 
       await repository.addLearningEvent({
@@ -944,6 +1393,14 @@ export class CaseService {
         caseId,
         assignmentId: result.assignment.id,
       })
+      this.recordAssignmentMetric({
+        metricName: 'legal_assignment_created_total',
+        tenantId,
+        entityId: result.caseRecord.entityId ?? null,
+        operation: 'assign',
+        result: 'success',
+        source: 'case_service',
+      })
     }
 
     return result
@@ -961,6 +1418,7 @@ export class CaseService {
   > {
     const result = await this.db.transaction(async (tx) => {
       const repository = this.repositoryFactory(tx)
+      const timelineWriter = createLegalCanonicalTimelineWriteService(tx)
       const legalCase = await repository.getCaseById(tenantId, caseId)
       if (!legalCase) {
         return { status: 'not_found' as const }
@@ -1012,6 +1470,30 @@ export class CaseService {
       }
     })
 
+    if (result.status === 'assigned') {
+      this.recordAssignmentMetric({
+        metricName: 'legal_assignment_created_total',
+        tenantId,
+        entityId: result.caseRecord.entityId ?? null,
+        operation: 'assign',
+        result: 'success',
+        source: 'case_service',
+      })
+
+      if (result.caseRecord.status === 'dispatched') {
+        this.recordCaseLifecycleMetric({
+          metricName: 'legal_case_status_changed_total',
+          tenantId,
+          entityId: result.caseRecord.entityId ?? null,
+          source: 'case_service',
+          operation: 'status_changed',
+          status: result.caseRecord.status,
+          result: 'success',
+          reason: 'assignment',
+        })
+      }
+    }
+
     return result
   }
 
@@ -1020,6 +1502,7 @@ export class CaseService {
 
     const result = await this.db.transaction<RespondToAssignmentResult>(async (tx) => {
       const repository = this.repositoryFactory(tx)
+      const timelineWriter = createLegalCanonicalTimelineWriteService(tx)
       const assignment = await repository.getAssignmentById(tenantId, assignmentId)
 
       if (!assignment) {
@@ -1035,6 +1518,8 @@ export class CaseService {
         }
       }
 
+      // Legacy compatibility fallback only.
+      // New operational identity must come from structured columns / canonical identity.
       const dispatchId = typeof assignment.metadata?.dispatchId === 'string'
         ? assignment.metadata.dispatchId
         : null
@@ -1104,17 +1589,15 @@ export class CaseService {
         }
       }
 
-      await repository.addTimelineEvent({
+      await timelineWriter.recordAssignmentDecision({
         tenantId,
         caseId: assignment.caseId,
-        eventType: status,
+        type: status,
         actorProfessionalId: assignment.professionalId,
-        payload: {
-          assignmentId: updatedAssignment.id,
-          dispatchId,
-          professionalId: updatedAssignment.professionalId,
-          status: updatedAssignment.status,
-        },
+        assignmentId: updatedAssignment.id,
+        dispatchId: dispatchId ?? undefined,
+        professionalId: updatedAssignment.professionalId,
+        status: updatedAssignment.status,
       })
 
       if (dispatchId) {
@@ -1229,13 +1712,35 @@ export class CaseService {
       await this.advanceAutoDispatch(tenantId, result.caseRecord.id, 'rejected')
     }
 
+    if (result.status === 'accepted' || result.status === 'rejected') {
+      this.recordAssignmentMetric({
+        metricName: result.status === 'accepted'
+          ? 'legal_assignment_accepted_total'
+          : 'legal_assignment_rejected_total',
+        tenantId,
+        entityId: result.caseRecord.entityId ?? null,
+        operation: result.status === 'accepted' ? 'accept' : 'reject',
+        result: 'success',
+        source: 'case_service',
+      })
+      this.recordCaseLifecycleMetric({
+        metricName: 'legal_case_status_changed_total',
+        tenantId,
+        entityId: result.caseRecord.entityId ?? null,
+        source: 'case_service',
+        operation: 'status_changed',
+        status: result.caseRecord.status,
+        result: 'success',
+        reason: 'assignment',
+      })
+    }
+
     for (const event of postCommitEvents) {
       this.publishLawyerInboxEvent(tenantId, event.professionalId, event.type, {
         caseId: event.caseId,
         assignmentId: event.assignmentId,
       })
     }
-
     return result
   }
 
@@ -1251,8 +1756,9 @@ export class CaseService {
     const postCommitEvents: Array<{ professionalId: string; type: LawyerInboxEventType; caseId: string; assignmentId: string }> = []
 
     try {
-      const result = await this.db.transaction<AcceptCaseResult>(async (tx) => {
-        const repository = this.repositoryFactory(tx)
+    const result = await this.db.transaction<AcceptCaseResult>(async (tx) => {
+      const repository = this.repositoryFactory(tx)
+      const timelineWriter = createLegalCanonicalTimelineWriteService(tx)
 
         const completeIdempotentResult = async (
           result: Exclude<AcceptCaseResult, { status: 'replayed' }>,
@@ -1331,6 +1837,8 @@ export class CaseService {
           })
         }
 
+        // Legacy compatibility fallback only.
+        // New operational identity must come from structured columns / canonical identity.
         const dispatchId = typeof assignment.metadata?.dispatchId === 'string'
           ? assignment.metadata.dispatchId
           : null
@@ -1390,18 +1898,16 @@ export class CaseService {
           })
         }
 
-        await repository.addTimelineEvent({
+        await timelineWriter.recordAssignmentDecision({
           tenantId,
           caseId,
-          eventType: 'accepted',
+          type: 'accepted',
           actorProfessionalId: professionalId,
-          payload: {
-            assignmentId: updatedAssignment.id,
-            dispatchId: acceptedDispatch.id,
-            professionalId,
-            status: updatedAssignment.status,
-            source: 'case.accepted',
-          },
+          assignmentId: updatedAssignment.id,
+          dispatchId: acceptedDispatch.id,
+          professionalId,
+          status: updatedAssignment.status,
+          source: 'case.accepted',
         })
 
         const acceptedCase = await repository.getCaseById(tenantId, caseId)
@@ -1440,6 +1946,27 @@ export class CaseService {
         })
       }
 
+      if (result.status === 'accepted') {
+        this.recordAssignmentMetric({
+          metricName: 'legal_assignment_accepted_total',
+          tenantId,
+          entityId: result.caseRecord.entityId ?? null,
+          operation: 'accept',
+          result: 'success',
+          source: 'case_service',
+        })
+        this.recordCaseLifecycleMetric({
+          metricName: 'legal_case_status_changed_total',
+          tenantId,
+          entityId: result.caseRecord.entityId ?? null,
+          source: 'case_service',
+          operation: 'status_changed',
+          status: result.caseRecord.status,
+          result: 'success',
+          reason: 'assignment',
+        })
+      }
+
       return result
     } catch (error) {
       if (!isSqliteAcceptContentionError(error)) {
@@ -1473,6 +2000,7 @@ export class CaseService {
 
     const result = await this.db.transaction<RejectCaseResult>(async (tx) => {
       const repository = this.repositoryFactory(tx)
+      const timelineWriter = createLegalCanonicalTimelineWriteService(tx)
       const assignment = await repository.getLatestAssignmentForCaseProfessional(tenantId, caseId, professionalId)
 
       if (!assignment) {
@@ -1488,6 +2016,8 @@ export class CaseService {
         }
       }
 
+      // Legacy compatibility fallback only.
+      // New operational identity must come from structured columns / canonical identity.
       const dispatchId = typeof assignment.metadata?.dispatchId === 'string'
         ? assignment.metadata.dispatchId
         : null
@@ -1519,18 +2049,16 @@ export class CaseService {
         }
       }
 
-      await repository.addTimelineEvent({
+      await timelineWriter.recordAssignmentDecision({
         tenantId,
         caseId,
-        eventType: 'rejected',
+        type: 'rejected',
         actorProfessionalId: professionalId,
-        payload: {
-          assignmentId: updatedAssignment.id,
-          dispatchId: rejectedDispatch.id,
-          professionalId,
-          status: updatedAssignment.status,
-          source: 'case.rejected',
-        },
+        assignmentId: updatedAssignment.id,
+        dispatchId: rejectedDispatch.id,
+        professionalId,
+        status: updatedAssignment.status,
+        source: 'case.rejected',
       })
 
       const currentCase = await repository.getCaseById(tenantId, caseId)
@@ -1596,6 +2124,6 @@ export class CaseService {
   }
 }
 
-export function createCaseService(db: BackendDatabase) {
-  return new CaseService(db)
+export function createCaseService(db: BackendDatabase, observability?: ObservabilityService) {
+  return new CaseService(db, createCaseRepository, observability)
 }

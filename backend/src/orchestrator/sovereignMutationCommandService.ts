@@ -1470,7 +1470,10 @@ export class SovereignMutationCommandService {
     return null
   }
 
-  async submitCommand(command: SovereignMutationCommand): Promise<SovereignMutationCommandGovernedResult> {
+  private async submitGovernedCommand(
+    command: SovereignMutationCommand,
+    executor: () => Promise<SovereignMutationCommandResult>,
+  ): Promise<SovereignMutationCommandGovernedResult> {
     const continuityMetadata = this.dependencies.continuityGovernance.evaluateCapability({
       capability: 'sovereign.mutation',
       riskLevel: 'high',
@@ -1509,74 +1512,7 @@ export class SovereignMutationCommandService {
         traceId: command.commandId,
       },
       work: async () => {
-      let result: SovereignMutationCommandResult
-
-      switch (command.type) {
-        case 'entity.event.append':
-          result = await this.executeEntityEventAppend(command)
-          break
-        case 'entity.create':
-          result = await this.executeEntityCreate(command)
-          break
-        case 'entity.profile.persist':
-          result = await this.executeEntityProfilePersist(command)
-          break
-        case 'entity.relationship.interaction.record':
-          result = await this.executeEntityRelationshipInteractionRecord(command)
-          break
-        case 'flowmind.partial.telemetry.record':
-          result = await this.executeFlowMindPartialTelemetryRecord(command)
-          break
-        case 'approval.resolve':
-          result = await this.executeApprovalResolve(command)
-          break
-        case 'legal.case.assign':
-          result = await this.executeLoggedEntityEvent(command, 'legal.case.assigned', command.entityId, command.occurredAt, command.payload)
-          break
-        case 'legal.case.close':
-          result = await this.executeLoggedEntityEvent(command, 'legal.case.closed', command.entityId, command.occurredAt, command.payload)
-          break
-        case 'legal.case.message.append':
-          result = await this.executeLoggedEntityEvent(command, 'legal.case.message.appended', command.entityId, command.occurredAt, command.payload)
-          break
-        case 'lead.qualify':
-          result = await this.executePortfolioLeadTransition(command, 'qualified', 'portfolio.lead.qualified')
-          break
-        case 'lead.contact':
-          result = await this.executePortfolioLeadTransition(command, 'contacted', 'portfolio.lead.contacted')
-          break
-        case 'lead.convert':
-          result = await this.executePortfolioLeadTransition(command, 'converted', 'portfolio.lead.converted')
-          break
-        case 'lead.mark_lost':
-          result = await this.executePortfolioLeadTransition(command, 'lost', 'portfolio.lead.lost')
-          break
-        case 'orchestrator.command.execute':
-          result = await this.executeOrchestratorCommand(command)
-          break
-        case 'portfolio.lead.route':
-          result = await this.executePortfolioLeadRoute(command)
-          break
-        case 'portfolio.public-triage.capture':
-          result = await this.executePortfolioPublicTriageCapture(command)
-          break
-        case 'portfolio.scan':
-          result = await this.executePortfolioScan(command)
-          break
-        case 'portfolio.proposal.transition':
-          result = await this.executePortfolioProposalTransition(command)
-          break
-        case 'portfolio.proposal.evaluate':
-          result = await this.executePortfolioProposalEvaluate(command)
-          break
-        case 'public.export.view.record':
-          result = await this.executePublicExportViewRecord(command)
-          break
-        case 'public.interaction.resolve':
-          result = await this.executeLoggedEntityEvent(command, 'public.interaction.resolved', command.entityId, command.occurredAt, command.payload)
-          break
-      }
-
+      const result = await executor()
       await this.refreshEconomicSnapshotIfNeeded(command.type)
       return {
         ...result,
@@ -1585,6 +1521,64 @@ export class SovereignMutationCommandService {
       } as SovereignMutationCommandGovernedResult
       },
     })
+  }
+
+  async submitCommand(command: SovereignMutationCommand): Promise<SovereignMutationCommandGovernedResult> {
+    return this.submitGovernedCommand(command, async () => {
+      switch (command.type) {
+        case 'entity.event.append':
+          return this.executeEntityEventAppend(command)
+        case 'entity.create':
+          return this.executeEntityCreate(command)
+        case 'entity.profile.persist':
+          return this.executeEntityProfilePersist(command)
+        case 'entity.relationship.interaction.record':
+          return this.executeEntityRelationshipInteractionRecord(command)
+        case 'flowmind.partial.telemetry.record':
+          return this.executeFlowMindPartialTelemetryRecord(command)
+        case 'approval.resolve':
+          return this.executeApprovalResolve(command)
+        case 'legal.case.assign':
+          return this.executeLoggedEntityEvent(command, 'legal.case.assigned', command.entityId, command.occurredAt, command.payload)
+        case 'legal.case.close':
+          return this.executeLoggedEntityEvent(command, 'legal.case.closed', command.entityId, command.occurredAt, command.payload)
+        case 'legal.case.message.append':
+          return this.executeLoggedEntityEvent(command, 'legal.case.message.appended', command.entityId, command.occurredAt, command.payload)
+        case 'lead.qualify':
+          return this.executePortfolioLeadTransition(command, 'qualified', 'portfolio.lead.qualified')
+        case 'lead.contact':
+          return this.executePortfolioLeadTransition(command, 'contacted', 'portfolio.lead.contacted')
+        case 'lead.convert':
+          return this.executePortfolioLeadTransition(command, 'converted', 'portfolio.lead.converted')
+        case 'lead.mark_lost':
+          return this.executePortfolioLeadTransition(command, 'lost', 'portfolio.lead.lost')
+        case 'orchestrator.command.execute':
+          return this.executeOrchestratorCommand(command)
+        case 'portfolio.lead.route':
+          return this.executePortfolioLeadRoute(command)
+        case 'portfolio.public-triage.capture':
+          return this.executePortfolioPublicTriageCapture(command)
+        case 'portfolio.scan':
+          return this.executePortfolioScan(command)
+        case 'portfolio.proposal.transition':
+          return this.executePortfolioProposalTransition(command)
+        case 'portfolio.proposal.evaluate':
+          return this.executePortfolioProposalEvaluate(command)
+        case 'public.export.view.record':
+          return this.executePublicExportViewRecord(command)
+        case 'public.interaction.resolve':
+          return this.executeLoggedEntityEvent(command, 'public.interaction.resolved', command.entityId, command.occurredAt, command.payload)
+      }
+    })
+  }
+
+  async submitPortfolioPublicTriageCaptureInTransaction(
+    command: PortfolioPublicTriageCaptureCommand,
+    database: BackendDatabase,
+  ): Promise<PortfolioPublicTriageCaptureResult & RuntimeGovernanceResponseMetadata & InstitutionalContinuityResponseMetadata> {
+    return this.submitGovernedCommand(command, async () =>
+      this.executePortfolioPublicTriageCapture(command, database, true),
+    ) as Promise<PortfolioPublicTriageCaptureResult & RuntimeGovernanceResponseMetadata & InstitutionalContinuityResponseMetadata>
   }
 
   private requireRelationshipEngine(): RelationshipEngine {

@@ -1,5 +1,19 @@
 import type { CasePriority, CaseStatus } from './caseTypes.js'
 
+export type CanonicalContactIdentity = {
+  displayName?: string
+  canonicalName?: string
+  displayPhone?: string
+  canonicalPhone?: string
+  displayWhatsapp?: string
+  canonicalWhatsapp?: string
+  displayEmail?: string
+  canonicalEmail?: string
+  displayCity?: string
+  canonicalCity?: string
+  searchKey?: string
+}
+
 export type LegalCanonicalProfessionalIdentity = {
   id: string
   displayName: string
@@ -46,6 +60,7 @@ export type LegalCaseIdentity = {
     contact?: string
     contactPreference?: string
     city?: string
+    contactIdentity?: CanonicalContactIdentity
   }
   practiceArea?: string
   city?: string

@@ -6,6 +6,7 @@ import {
   PublicOfficeInteractionApiError,
   requestPublicEntityInteraction,
   requestPublicOfficeInteraction,
+  type PublicOfficeInteractionFieldError,
 } from '../backend-bridge/api/publicEntityInteractionApi'
 import {
   getOfficeTrustEvidence,
@@ -164,6 +165,8 @@ type IntakeSubmissionState =
       status: 'error'
       title: string
       message: string
+      fieldErrors?: PublicOfficeInteractionFieldError[]
+      requestId?: string
       contactHref?: string
       contactLabel?: string
     }
@@ -684,6 +687,48 @@ function buildPublicTriageFailureMessage(error: unknown) {
   }
 
   return 'Não conseguimos enviar sua triagem agora.'
+}
+
+export function buildPublicTriageSubmissionErrorState(args: {
+  error: unknown
+  contactOption?: ContactChannel
+}): Extract<IntakeSubmissionState, { status: 'error' }> {
+  const { error, contactOption } = args
+  const contactLabel = contactOption ? `${contactOption.label}: ${contactOption.value}` : undefined
+
+  if (error instanceof PublicOfficeInteractionApiError) {
+    if (error.fields && error.fields.length > 0) {
+      return {
+        status: 'error',
+        title: 'Revise os dados da triagem.',
+        message: 'Corrija os campos destacados abaixo e envie novamente.',
+        fieldErrors: error.fields,
+        requestId: error.requestId,
+        contactHref: contactOption?.href,
+        contactLabel,
+      }
+    }
+
+    const baseMessage = buildPublicTriageFailureMessage(error)
+    const requestReference = error.requestId ? ` Protocolo da tentativa: ${error.requestId}.` : ''
+
+    return {
+      status: 'error',
+      title: 'Não conseguimos enviar sua triagem agora.',
+      message: `${baseMessage} Você pode tentar novamente em alguns instantes ou usar o canal informado no perfil.${requestReference}`,
+      requestId: error.requestId,
+      contactHref: contactOption?.href,
+      contactLabel,
+    }
+  }
+
+  return {
+    status: 'error',
+    title: 'Não conseguimos enviar sua triagem agora.',
+    message: 'Não conseguimos enviar sua triagem agora. Você pode tentar novamente em alguns instantes ou usar o canal informado no perfil.',
+    contactHref: contactOption?.href,
+    contactLabel,
+  }
 }
 
 function normalizePublicTriageAttribution(value: unknown): PublicTriageAttribution | undefined {
@@ -1625,6 +1670,18 @@ function ReviewSubmitPanel(props: {
         <section className="office-intake-post-submit office-intake-post-submit--error" aria-live="polite">
           <h3>{submitError.title}</h3>
           <p>{submitError.message}</p>
+          {submitError.fieldErrors && submitError.fieldErrors.length > 0 ? (
+            <ul className="office-intake-review-panel__field-errors">
+              {submitError.fieldErrors.map((fieldError) => (
+                <li key={`${fieldError.field}:${fieldError.code}`}>
+                  {fieldError.message}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {submitError.requestId ? (
+            <p className="office-intake-post-submit__response">Protocolo da tentativa: {submitError.requestId}.</p>
+          ) : null}
           {submitError.contactLabel ? (
             submitError.contactHref ? (
               <a
@@ -2463,13 +2520,10 @@ const seoPayload = useMemo(() => {
       }
     } catch (error) {
       setLegalCaseState(undefined)
-      setIntakeSubmissionState({
-        status: 'error',
-        title: 'Não conseguimos enviar sua triagem agora.',
-        message: `${buildPublicTriageFailureMessage(error)} Você pode tentar novamente em alguns instantes ou usar o canal informado no perfil.`,
-        contactHref: contactOption?.href,
-        contactLabel: contactOption ? `${contactOption.label}: ${contactOption.value}` : undefined,
-      })
+      setIntakeSubmissionState(buildPublicTriageSubmissionErrorState({
+        error,
+        contactOption,
+      }))
     }
 
     setIntakeSubmitting(false)

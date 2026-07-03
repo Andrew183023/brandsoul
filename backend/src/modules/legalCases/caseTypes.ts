@@ -1,3 +1,5 @@
+import type { CanonicalContactIdentity } from './legalCanonicalTypes.js'
+
 export const caseStatuses = ['open', 'pending', 'dispatched', 'accepted', 'in_progress', 'on_hold', 'resolved', 'closed', 'archived'] as const
 export const casePriorities = ['low', 'normal', 'high', 'urgent'] as const
 export const caseTimelineEventTypes = [
@@ -13,6 +15,8 @@ export const caseTimelineEventTypes = [
   'reopened',
   'archived',
   'feedback_received',
+  'portal_access_created',
+  'portal_access_used',
 ] as const
 export const caseMessageTypes = ['note', 'email', 'sms', 'call', 'chat', 'system'] as const
 export const caseMessageDirections = ['inbound', 'outbound', 'internal'] as const
@@ -41,6 +45,7 @@ export type CreateCaseInput = {
   practiceArea?: string
   source?: string
   leadProfessionalId?: string
+  contactIdentity?: CanonicalContactIdentity
   centelhaContext?: JsonObject
   metadata?: JsonObject
   autoDispatch?: boolean
@@ -102,6 +107,17 @@ export type CaseRecord = {
   archivedAt?: string
   resolutionReason?: string
   leadProfessionalId?: string
+  clientDisplayName?: string
+  clientCanonicalName?: string
+  clientDisplayPhone?: string
+  clientCanonicalPhone?: string
+  clientDisplayWhatsapp?: string
+  clientCanonicalWhatsapp?: string
+  clientDisplayEmail?: string
+  clientCanonicalEmail?: string
+  clientDisplayCity?: string
+  clientCanonicalCity?: string
+  clientSearchKey?: string
   centelhaContext: JsonObject
   metadata: JsonObject
   createdAt: string
@@ -234,6 +250,7 @@ export type CaseTimelineEventInput = {
   caseId: string
   eventType: CaseTimelineEventType
   actorProfessionalId?: string
+  actorUserId?: number
   occurredAt?: string
   payload?: JsonObject
 }

@@ -25,6 +25,12 @@ export type PublicOfficeTriageResponse = {
   }
 }
 
+export type PublicOfficeInteractionFieldError = {
+  field: string
+  code: string
+  message: string
+}
+
 function getBackendBaseUrl() {
   return readBackendBridgeBaseUrl()
 }
@@ -89,17 +95,65 @@ export class PublicEntityInteractionApiError extends Error {
   readonly status: number
   readonly code?: string
   readonly reason?: string
+  readonly requestId?: string
+  readonly fields?: PublicOfficeInteractionFieldError[]
 
-  constructor(message: string, args: { status: number; code?: string; reason?: string }) {
+  constructor(message: string, args: {
+    status: number
+    code?: string
+    reason?: string
+    requestId?: string
+    fields?: PublicOfficeInteractionFieldError[]
+  }) {
     super(message)
     this.name = 'PublicEntityInteractionApiError'
     this.status = args.status
     this.code = args.code
     this.reason = args.reason
+    this.requestId = args.requestId
+    this.fields = args.fields
   }
 }
 
 export const PublicOfficeInteractionApiError = PublicEntityInteractionApiError
+
+function isFieldErrorCandidate(value: unknown): value is PublicOfficeInteractionFieldError {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+
+  const record = value as Record<string, unknown>
+  return typeof record.field === 'string'
+    && typeof record.code === 'string'
+    && typeof record.message === 'string'
+}
+
+function parsePublicInteractionErrorPayload(payload: unknown) {
+  const record = payload && typeof payload === 'object'
+    ? payload as Record<string, unknown>
+    : {}
+  const nestedError = record.error && typeof record.error === 'object'
+    ? record.error as Record<string, unknown>
+    : undefined
+  const fields = Array.isArray(record.fields)
+    ? record.fields.filter(isFieldErrorCandidate)
+    : undefined
+
+  const stringError = typeof record.error === 'string' ? record.error : undefined
+  const nestedCode = typeof nestedError?.code === 'string' ? nestedError.code : undefined
+  const nestedReason = typeof nestedError?.reason === 'string' ? nestedError.reason : undefined
+  const nestedMessage = typeof nestedError?.message === 'string' ? nestedError.message : undefined
+  const topLevelMessage = typeof record.message === 'string' ? record.message : undefined
+  const requestId = typeof record.requestId === 'string' ? record.requestId : undefined
+
+  return {
+    code: stringError ?? nestedCode,
+    reason: nestedReason,
+    message: topLevelMessage ?? nestedMessage,
+    requestId,
+    fields,
+  }
+}
 
 export async function requestPublicEntityInteraction(args: {
   entityId: string
@@ -116,19 +170,18 @@ export async function requestPublicEntityInteraction(args: {
   if (!response.ok) {
     let code: string | undefined
     let reason: string | undefined
+    let requestId: string | undefined
+    let fields: PublicOfficeInteractionFieldError[] | undefined
     let message = `Public interaction failed with status ${response.status}.`
 
     try {
-      const payload = await response.json() as {
-        error?: {
-          code?: string
-          reason?: string
-          message?: string
-        }
-      }
-      code = payload.error?.code
-      reason = payload.error?.reason
-      message = payload.error?.message ?? message
+      const payload = await response.json() as unknown
+      const parsed = parsePublicInteractionErrorPayload(payload)
+      code = parsed.code
+      reason = parsed.reason
+      requestId = parsed.requestId
+      fields = parsed.fields
+      message = parsed.message ?? message
     } catch {
       // noop
     }
@@ -137,6 +190,8 @@ export async function requestPublicEntityInteraction(args: {
       status: response.status,
       code,
       reason,
+      requestId,
+      fields,
     })
   }
 
@@ -166,19 +221,18 @@ export async function requestPublicOfficeInteraction(args: {
   if (!response.ok) {
     let code: string | undefined
     let reason: string | undefined
+    let requestId: string | undefined
+    let fields: PublicOfficeInteractionFieldError[] | undefined
     let message = `Public office triage failed with status ${response.status}.`
 
     try {
-      const payload = await response.json() as {
-        error?: {
-          code?: string
-          reason?: string
-          message?: string
-        }
-      }
-      code = payload.error?.code
-      reason = payload.error?.reason
-      message = payload.error?.message ?? message
+      const payload = await response.json() as unknown
+      const parsed = parsePublicInteractionErrorPayload(payload)
+      code = parsed.code
+      reason = parsed.reason
+      requestId = parsed.requestId
+      fields = parsed.fields
+      message = parsed.message ?? message
     } catch {
       // noop
     }
@@ -187,6 +241,8 @@ export async function requestPublicOfficeInteraction(args: {
       status: response.status,
       code,
       reason,
+      requestId,
+      fields,
     })
   }
 

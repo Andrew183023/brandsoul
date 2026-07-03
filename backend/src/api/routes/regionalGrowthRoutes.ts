@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 
 import type { EntityProfile } from '../../brain/domain/entity/contracts/EntityProfile.js'
 import type { BackendDatabase } from '../../db/index.js'
+import type { ObservabilityService } from '../../services/observabilityService.js'
 import { createRateLimit } from '../middleware/rateLimit.js'
 import { getRequestAuth, requireAuth } from '../middleware/requireAuth.js'
 import { createRegionalGrowthRepository } from '../../modules/growth/regionalGrowthRepository.js'
@@ -28,6 +29,7 @@ import type {
 type BackendContext = {
   backendContext: {
     connection: BackendDatabase
+    observability: ObservabilityService
   }
 }
 
@@ -77,7 +79,7 @@ function getEntityRepository(app: FastifyInstance) {
 }
 
 function getCaseService(app: FastifyInstance) {
-  return createCaseService(getConnection(app))
+  return createCaseService(getConnection(app), (app as FastifyInstance & BackendContext).backendContext.observability)
 }
 
 const privateReadRateLimit = createRateLimit({

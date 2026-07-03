@@ -20,6 +20,47 @@ export type CounterName =
   | 'orchestrator_events'
   | 'requests_total'
 
+export type TimingMetric = {
+  count: number
+  totalMs: number
+  avgMs: number
+  maxMs: number
+}
+
+type ObservabilityServiceOptions = {
+  maxSeries?: number
+}
+
+const DEFAULT_MAX_SERIES = 1000
+const ALLOWED_LABEL_KEYS = new Set([
+  'tenant_id',
+  'entity_id',
+  'source',
+  'reason',
+  'status',
+  'event',
+  'result',
+  'pipeline',
+  'stage',
+  'operation',
+  'mode',
+  'decision',
+])
+
+const PROHIBITED_LABEL_KEYS = new Set([
+  'requestid',
+  'token',
+  'fingerprint',
+  'email',
+  'phone',
+  'telefone',
+  'whatsapp',
+  'clientname',
+  'objective',
+  'body',
+  'timestamp',
+])
+
 export type EndpointMetric = {
   routeKey: string
   count: number
@@ -44,18 +85,92 @@ export class ObservabilityService {
   private readonly endpointMetrics = new Map<string, EndpointMetric>()
   private readonly jobMetrics = new Map<string, JobMetric>()
   private readonly customCounters = new Map<string, number>()
-  private readonly customTimings = new Map<string, { count: number; totalMs: number; avgMs: number; maxMs: number }>()
+  private readonly customCounterSeries = new Map<string, number>()
+  private readonly customGauges = new Map<string, number>()
+  private readonly customTimings = new Map<string, TimingMetric>()
+
+  constructor(private readonly options: ObservabilityServiceOptions = {}) {}
+
+  private normalizeLabelValue(value: string) {
+    return value.trim().replace(/\s+/g, '_').toLowerCase()
+  }
+
+  private normalizeLabels(labels?: Record<string, string>) {
+    if (!labels || Object.keys(labels).length === 0) {
+      return undefined
+    }
+
+    const normalized: Record<string, string> = {}
+    for (const [rawKey, rawValue] of Object.entries(labels)) {
+      const key = rawKey.trim().toLowerCase()
+      if (!key) {
+        return undefined
+      }
+
+      if (PROHIBITED_LABEL_KEYS.has(key) || !ALLOWED_LABEL_KEYS.has(key)) {
+        return undefined
+      }
+
+      const value = this.normalizeLabelValue(String(rawValue))
+      if (!value) {
+        return undefined
+      }
+
+      normalized[key] = value
+    }
+
+    return Object.keys(normalized).length > 0 ? normalized : undefined
+  }
+
+  private buildSeriesKey(name: string, labels?: Record<string, string>) {
+    const normalizedLabels = this.normalizeLabels(labels)
+    if (!normalizedLabels) {
+      return name
+    }
+
+    const serializedLabels = Object.entries(normalizedLabels)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, value]) => `${key}=${value}`)
+      .join(',')
+
+    return `${name}{${serializedLabels}}`
+  }
+
+  private canCreateSeries(target: Map<string, unknown>, key: string) {
+    if (target.has(key)) {
+      return true
+    }
+
+    return target.size < (this.options.maxSeries ?? DEFAULT_MAX_SERIES)
+  }
 
   increment(name: CounterName, value = 1) {
     this.counters.set(name, (this.counters.get(name) ?? 0) + value)
   }
 
-  incrementMetric(name: string, value = 1, _labels?: Record<string, string>) {
+  incrementMetric(name: string, value = 1, labels?: Record<string, string>) {
     this.customCounters.set(name, (this.customCounters.get(name) ?? 0) + value)
+
+    const key = this.buildSeriesKey(name, labels)
+    if (key !== name && this.canCreateSeries(this.customCounterSeries, key)) {
+      this.customCounterSeries.set(key, (this.customCounterSeries.get(key) ?? 0) + value)
+    }
   }
 
-  recordTiming(name: string, durationMs: number, _labels?: Record<string, string>) {
-    const current = this.customTimings.get(name) ?? {
+  setGauge(name: string, value: number, labels?: Record<string, string>) {
+    const key = this.buildSeriesKey(name, labels)
+    if (key === name || this.canCreateSeries(this.customGauges, key)) {
+      this.customGauges.set(key, value)
+    }
+  }
+
+  recordTiming(name: string, durationMs: number, labels?: Record<string, string>) {
+    const key = this.buildSeriesKey(name, labels)
+    if (key !== name && !this.canCreateSeries(this.customTimings, key)) {
+      return
+    }
+
+    const current = this.customTimings.get(key) ?? {
       count: 0,
       totalMs: 0,
       avgMs: 0,
@@ -66,7 +181,7 @@ export class ObservabilityService {
     current.totalMs += durationMs
     current.avgMs = current.totalMs / current.count
     current.maxMs = Math.max(current.maxMs, durationMs)
-    this.customTimings.set(name, current)
+    this.customTimings.set(key, current)
   }
 
   recordEndpointLatency(routeKey: string, durationMs: number, statusCode?: number) {
@@ -152,6 +267,14 @@ export class ObservabilityService {
         Array.from(this.customCounters.entries())
           .sort(([left], [right]) => left.localeCompare(right)),
       ),
+      customCounterSeries: Object.fromEntries(
+        Array.from(this.customCounterSeries.entries())
+          .sort(([left], [right]) => left.localeCompare(right)),
+      ),
+      customGauges: Object.fromEntries(
+        Array.from(this.customGauges.entries())
+          .sort(([left], [right]) => left.localeCompare(right)),
+      ),
       customTimings: Object.fromEntries(
         Array.from(this.customTimings.entries())
           .sort(([left], [right]) => left.localeCompare(right)),
@@ -161,6 +284,6 @@ export class ObservabilityService {
   }
 }
 
-export function createObservabilityService() {
-  return new ObservabilityService()
+export function createObservabilityService(options?: ObservabilityServiceOptions) {
+  return new ObservabilityService(options)
 }

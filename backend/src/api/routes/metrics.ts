@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 
 import type { ObservabilityService } from '../../services/observabilityService.js'
+import { exportObservabilitySnapshotToPrometheus } from '../../services/prometheus/prometheusSnapshotExporter.js'
 import { requireAuth } from '../middleware/requireAuth.js'
 
 type BackendContext = {
@@ -20,5 +21,14 @@ export async function registerMetricsRoute(app: FastifyInstance) {
       status: 'ready',
       metrics: getObservability(app).getMetricsSnapshot(),
     }
+  })
+
+  app.get('/metrics/prometheus', { preHandler: requireAuth }, async (_request, reply) => {
+    const snapshot = getObservability(app).getMetricsSnapshot()
+    const body = exportObservabilitySnapshotToPrometheus(snapshot)
+
+    return reply
+      .header('Content-Type', 'text/plain; version=0.0.4')
+      .send(body)
   })
 }

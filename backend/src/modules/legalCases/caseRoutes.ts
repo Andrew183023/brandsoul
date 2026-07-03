@@ -4,6 +4,7 @@ import { getRequestAuth, optionalAuth, requireAuth } from '../../api/middleware/
 import { createRateLimit } from '../../api/middleware/rateLimit.js'
 import { getLegalMarketplaceEntityId } from '../../config/env.js'
 import type { BackendDatabase } from '../../db/index.js'
+import type { ObservabilityService } from '../../services/observabilityService.js'
 import { createCaseRepository } from './caseRepository.js'
 import { createLawyerInboxEventsToken, validateLawyerInboxEventsToken } from './lawyerInboxEventTokens.js'
 import { getLawyerInboxChannel, subscribe, unsubscribe, type LawyerInboxEvent } from './lawyerInboxEvents.js'
@@ -14,6 +15,7 @@ import type { CasePriority } from './caseTypes.js'
 type BackendContext = FastifyInstance & {
   backendContext: {
     connection: BackendDatabase
+    observability: ObservabilityService
   }
 }
 
@@ -140,24 +142,39 @@ function writeSseEvent(stream: NodeJS.WritableStream, eventName: string, payload
   stream.write(`data: ${JSON.stringify(payload)}\n\n`)
 }
 
-function caseHasRequiredMatchData(legalCase: {
+export function caseHasRequiredMatchData(legalCase: {
   practiceArea?: string
   description?: string
+  clientCanonicalCity?: string
+  clientDisplayCity?: string
   metadata?: Record<string, unknown>
   centelhaContext?: Record<string, unknown>
 }) {
   const metadata = toJsonRecord(legalCase.metadata)
   const centelhaContext = toJsonRecord(legalCase.centelhaContext)
+  // Legacy office compatibility fallback only.
+  // New operational office identity must come from canonical.office.
   const metadataLocation = toJsonRecord(metadata.location)
   const contextLocation = toJsonRecord(centelhaContext.location)
 
+  // Legacy compatibility fallback only.
+  // New operational identity must come from structured columns / canonical identity.
   const area = readString(legalCase.practiceArea)
     || readString(metadata.practiceArea)
     || readString(metadata.category)
     || readString(centelhaContext.practiceArea)
     || readString(centelhaContext.category)
   const description = readString(legalCase.description)
-  const city = readString(metadata.city) || readString(metadataLocation.city) || readString(centelhaContext.city) || readString(contextLocation.city)
+  // Legacy compatibility fallback only.
+  // New operational identity must come from structured columns / canonical identity.
+  const city = readString(legalCase.clientCanonicalCity)
+    || readString(legalCase.clientDisplayCity)
+    || readString(metadata.city)
+    || readString(metadataLocation.city)
+    || readString(centelhaContext.city)
+    || readString(contextLocation.city)
+  // Legacy compatibility fallback only.
+  // New operational identity must come from structured columns / canonical identity.
   const state = readString(metadata.state) || readString(metadataLocation.state) || readString(centelhaContext.state) || readString(contextLocation.state)
 
   return (area.length > 0 || description.length > 0) && city.length > 0 && state.length > 0
@@ -167,12 +184,16 @@ function getCaseRepository(app: FastifyInstance) {
   return createCaseRepository(getConnection(app))
 }
 
+function getObservability(app: FastifyInstance) {
+  return (app as BackendContext).backendContext.observability
+}
+
 function getCaseService(app: FastifyInstance) {
-  return createCaseService(getConnection(app))
+  return createCaseService(getConnection(app), getObservability(app))
 }
 
 function getMatchingService(app: FastifyInstance) {
-  return createMatchingService(getConnection(app))
+  return createMatchingService(getConnection(app), getObservability(app))
 }
 
 async function caseExistsOutsideTenant(app: FastifyInstance, tenantId: number, caseId: string) {

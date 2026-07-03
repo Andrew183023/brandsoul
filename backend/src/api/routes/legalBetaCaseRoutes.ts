@@ -4,6 +4,7 @@ import type { EntityProfile } from '../../brain/domain/entity/contracts/EntityPr
 import type { BackendDatabase } from '../../db/index.js'
 import type { SovereignMutationCommandService } from '../../orchestrator/sovereignMutationCommandService.js'
 import type { EntityRepository } from '../../repositories/entityRepository.js'
+import type { ObservabilityService } from '../../services/observabilityService.js'
 import { createRateLimit } from '../../api/middleware/rateLimit.js'
 import { getRequestAuth, requireAuth } from '../../api/middleware/requireAuth.js'
 import { createLegalBetaCaseService } from '../../modules/legalCases/legalBetaCaseService.js'
@@ -14,6 +15,7 @@ type BackendContext = {
     connection: BackendDatabase
     entityRepository: EntityRepository
     sovereignMutationCommandService: SovereignMutationCommandService
+    observability: ObservabilityService
   }
 }
 
@@ -59,6 +61,10 @@ function getCaseService(app: FastifyInstance) {
   return createLegalBetaCaseService(
     getConnection(app),
     (app as FastifyInstance & BackendContext).backendContext.sovereignMutationCommandService,
+    {
+      observability: (app as FastifyInstance & BackendContext).backendContext.observability,
+      logger: app.log,
+    },
   )
 }
 

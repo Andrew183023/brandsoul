@@ -164,6 +164,17 @@ function mapCaseRow(row?: {
   archived_at: string | Date | null
   resolution_reason: string | null
   lead_professional_id: string | null
+  client_display_name: string | null
+  client_canonical_name: string | null
+  client_display_phone: string | null
+  client_canonical_phone: string | null
+  client_display_whatsapp: string | null
+  client_canonical_whatsapp: string | null
+  client_display_email: string | null
+  client_canonical_email: string | null
+  client_display_city: string | null
+  client_canonical_city: string | null
+  client_search_key: string | null
   centelha_context: unknown
   metadata: unknown
   created_at: string | Date
@@ -190,6 +201,17 @@ function mapCaseRow(row?: {
     archivedAt: row.archived_at ? normalizeTimestamp(row.archived_at) : undefined,
     resolutionReason: row.resolution_reason ?? undefined,
     leadProfessionalId: row.lead_professional_id ?? undefined,
+    clientDisplayName: row.client_display_name ?? undefined,
+    clientCanonicalName: row.client_canonical_name ?? undefined,
+    clientDisplayPhone: row.client_display_phone ?? undefined,
+    clientCanonicalPhone: row.client_canonical_phone ?? undefined,
+    clientDisplayWhatsapp: row.client_display_whatsapp ?? undefined,
+    clientCanonicalWhatsapp: row.client_canonical_whatsapp ?? undefined,
+    clientDisplayEmail: row.client_display_email ?? undefined,
+    clientCanonicalEmail: row.client_canonical_email ?? undefined,
+    clientDisplayCity: row.client_display_city ?? undefined,
+    clientCanonicalCity: row.client_canonical_city ?? undefined,
+    clientSearchKey: row.client_search_key ?? undefined,
     centelhaContext: parseJsonObject(row.centelha_context),
     metadata: parseJsonObject(row.metadata),
     createdAt: normalizeTimestamp(row.created_at),
@@ -410,17 +432,25 @@ export class CaseRepository {
     const insertSql = this.db.dialect === 'postgres'
       ? `
           INSERT INTO cases (
-            id, tenant_id, case_number, entity_id, created_by_user_id, title, description, status, priority,
-            practice_area, source, opened_at, lead_professional_id, centelha_context, metadata, created_at, updated_at
+            id, tenant_id, case_number, request_id, entity_id, created_by_user_id, title, description, status, priority,
+            practice_area, source, opened_at, lead_professional_id,
+            client_display_name, client_canonical_name, client_display_phone, client_canonical_phone,
+            client_display_whatsapp, client_canonical_whatsapp, client_display_email, client_canonical_email,
+            client_display_city, client_canonical_city, client_search_key,
+            centelha_context, metadata, created_at, updated_at
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?)
         `
       : `
           INSERT INTO cases (
-            id, tenant_id, case_number, entity_id, created_by_user_id, title, description, status, priority,
-            practice_area, source, opened_at, lead_professional_id, centelha_context, metadata, created_at, updated_at
+            id, tenant_id, case_number, request_id, entity_id, created_by_user_id, title, description, status, priority,
+            practice_area, source, opened_at, lead_professional_id,
+            client_display_name, client_canonical_name, client_display_phone, client_canonical_phone,
+            client_display_whatsapp, client_canonical_whatsapp, client_display_email, client_canonical_email,
+            client_display_city, client_canonical_city, client_search_key,
+            centelha_context, metadata, created_at, updated_at
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
 
     await this.db.run(
@@ -428,6 +458,7 @@ export class CaseRepository {
       id,
       input.tenantId,
       input.caseNumber ?? null,
+      input.requestId ?? null,
       input.entityId,
       input.createdByUserId ?? null,
       input.title,
@@ -438,6 +469,17 @@ export class CaseRepository {
       input.source ?? null,
       openedAt,
       input.leadProfessionalId ?? null,
+      input.contactIdentity?.displayName ?? null,
+      input.contactIdentity?.canonicalName ?? null,
+      input.contactIdentity?.displayPhone ?? null,
+      input.contactIdentity?.canonicalPhone ?? null,
+      input.contactIdentity?.displayWhatsapp ?? null,
+      input.contactIdentity?.canonicalWhatsapp ?? null,
+      input.contactIdentity?.displayEmail ?? null,
+      input.contactIdentity?.canonicalEmail ?? null,
+      input.contactIdentity?.displayCity ?? null,
+      input.contactIdentity?.canonicalCity ?? null,
+      input.contactIdentity?.searchKey ?? null,
       JSON.stringify(input.centelhaContext ?? {}),
       JSON.stringify(input.metadata ?? {}),
       openedAt,
@@ -458,6 +500,9 @@ export class CaseRepository {
         SELECT
           id, tenant_id, case_number, entity_id, created_by_user_id, title, description, status, priority,
           practice_area, source, opened_at, closed_at, archived_at, resolution_reason, lead_professional_id,
+          client_display_name, client_canonical_name, client_display_phone, client_canonical_phone,
+          client_display_whatsapp, client_canonical_whatsapp, client_display_email, client_canonical_email,
+          client_display_city, client_canonical_city, client_search_key,
           centelha_context, metadata, created_at, updated_at
         FROM cases
         WHERE tenant_id = ? AND id = ?
@@ -476,6 +521,9 @@ export class CaseRepository {
             SELECT
               id, tenant_id, case_number, entity_id, created_by_user_id, title, description, status, priority,
               practice_area, source, opened_at, closed_at, archived_at, resolution_reason, lead_professional_id,
+              client_display_name, client_canonical_name, client_display_phone, client_canonical_phone,
+              client_display_whatsapp, client_canonical_whatsapp, client_display_email, client_canonical_email,
+              client_display_city, client_canonical_city, client_search_key,
               centelha_context, metadata, created_at, updated_at
             FROM cases
             WHERE tenant_id = ? AND id = ?
@@ -485,6 +533,9 @@ export class CaseRepository {
             SELECT
               id, tenant_id, case_number, entity_id, created_by_user_id, title, description, status, priority,
               practice_area, source, opened_at, closed_at, archived_at, resolution_reason, lead_professional_id,
+              client_display_name, client_canonical_name, client_display_phone, client_canonical_phone,
+              client_display_whatsapp, client_canonical_whatsapp, client_display_email, client_canonical_email,
+              client_display_city, client_canonical_city, client_search_key,
               centelha_context, metadata, created_at, updated_at
             FROM cases
             WHERE tenant_id = ? AND id = ?
@@ -585,6 +636,9 @@ export class CaseRepository {
         SELECT
           id, tenant_id, case_number, entity_id, created_by_user_id, title, description, status, priority,
           practice_area, source, opened_at, closed_at, archived_at, resolution_reason, lead_professional_id,
+          client_display_name, client_canonical_name, client_display_phone, client_canonical_phone,
+          client_display_whatsapp, client_canonical_whatsapp, client_display_email, client_canonical_email,
+          client_display_city, client_canonical_city, client_search_key,
           centelha_context, metadata, created_at, updated_at
         FROM cases
         WHERE id = ?
@@ -601,6 +655,9 @@ export class CaseRepository {
         SELECT
           id, tenant_id, case_number, entity_id, created_by_user_id, title, description, status, priority,
           practice_area, source, opened_at, closed_at, archived_at, resolution_reason, lead_professional_id,
+          client_display_name, client_canonical_name, client_display_phone, client_canonical_phone,
+          client_display_whatsapp, client_canonical_whatsapp, client_display_email, client_canonical_email,
+          client_display_city, client_canonical_city, client_search_key,
           centelha_context, metadata, created_at, updated_at
         FROM cases
         WHERE tenant_id = ? AND entity_id = ?
@@ -1371,10 +1428,16 @@ export class CaseRepository {
 
     return rows.map((row) => {
       const metadata = parseJsonObject(row.case_metadata)
+      // Legacy compatibility fallback only.
+      // New operational identity must come from structured columns / canonical identity.
       const nestedLocation = parseJsonObject(metadata.location)
+      // Legacy compatibility fallback only.
+      // New operational identity must come from structured columns / canonical identity.
       const city = typeof metadata.city === 'string'
         ? metadata.city.trim()
         : (typeof nestedLocation.city === 'string' ? nestedLocation.city.trim() : '')
+      // Legacy compatibility fallback only.
+      // New operational identity must come from structured columns / canonical identity.
       const state = typeof metadata.state === 'string'
         ? metadata.state.trim()
         : (typeof nestedLocation.state === 'string' ? nestedLocation.state.trim() : '')
@@ -1437,15 +1500,15 @@ export class CaseRepository {
     const insertSql = this.db.dialect === 'postgres'
       ? `
           INSERT INTO case_timeline (
-            id, tenant_id, case_id, event_type, actor_professional_id, occurred_at, payload, created_at, updated_at
+            id, tenant_id, case_id, event_type, actor_professional_id, actor_user_id, occurred_at, payload, created_at, updated_at
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?)
         `
       : `
           INSERT INTO case_timeline (
-            id, tenant_id, case_id, event_type, actor_professional_id, occurred_at, payload, created_at, updated_at
+            id, tenant_id, case_id, event_type, actor_professional_id, actor_user_id, occurred_at, payload, created_at, updated_at
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
 
     await this.db.run(
@@ -1455,6 +1518,7 @@ export class CaseRepository {
       input.caseId,
       input.eventType,
       input.actorProfessionalId ?? null,
+      input.actorUserId ?? null,
       occurredAt,
       JSON.stringify(input.payload ?? {}),
       occurredAt,

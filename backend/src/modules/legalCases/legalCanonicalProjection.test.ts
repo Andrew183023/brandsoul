@@ -143,6 +143,19 @@ test('buildCanonicalCaseProjection returns the complete case projection', () => 
       contact: '5511999999999',
       contactPreference: 'WhatsApp',
       city: 'Belo Horizonte',
+      contactIdentity: {
+        displayName: 'João Silva',
+        canonicalName: 'João Silva',
+        displayPhone: undefined,
+        canonicalPhone: undefined,
+        displayWhatsapp: '5511999999999',
+        canonicalWhatsapp: '5511999999999',
+        displayEmail: undefined,
+        canonicalEmail: undefined,
+        displayCity: 'Belo Horizonte',
+        canonicalCity: 'Belo Horizonte',
+        searchKey: 'joão silva|5511999999999|belo horizonte',
+      },
     },
     practiceArea: 'Direito Trabalhista',
     city: 'Belo Horizonte',
@@ -186,6 +199,19 @@ test('buildCanonicalCaseProjection returns the complete case projection', () => 
       entityId: 'office-1',
       clientName: 'João Silva',
       contact: '5511999999999',
+      contactIdentity: {
+        displayName: 'João Silva',
+        canonicalName: 'João Silva',
+        displayPhone: undefined,
+        canonicalPhone: undefined,
+        displayWhatsapp: '5511999999999',
+        canonicalWhatsapp: '5511999999999',
+        displayEmail: undefined,
+        canonicalEmail: undefined,
+        displayCity: 'Belo Horizonte',
+        canonicalCity: 'Belo Horizonte',
+        searchKey: 'joão silva|5511999999999|belo horizonte',
+      },
       practiceArea: 'Direito Trabalhista',
       city: 'Belo Horizonte',
       priority: 'urgent',
@@ -287,6 +313,7 @@ test('buildCanonical projections preserve optional fields', () => {
 
   assert.equal(caseProjection.case.clientName, undefined)
   assert.equal(caseProjection.case.contact, undefined)
+  assert.equal(caseProjection.case.contactIdentity, undefined)
   assert.equal(caseProjection.case.practiceArea, undefined)
   assert.equal(caseProjection.case.city, undefined)
   assert.equal(caseProjection.case.sla, undefined)

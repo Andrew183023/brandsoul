@@ -1,11 +1,18 @@
 import type { BackendDatabase } from '../../db/dbClient.js'
+import type { ObservabilityService } from '../../services/observabilityService.js'
+
+import { LegalMetricsRecorder } from './legalMetricsRecorder.js'
 
 type JsonObject = Record<string, unknown>
 
 type CaseMatchRow = {
   id: string
+  entity_id: string | null
   priority: 'low' | 'normal' | 'high' | 'urgent'
   practice_area: string | null
+  client_display_city: string | null
+  client_canonical_city: string | null
+  client_search_key: string | null
   centelha_context: unknown
   metadata: unknown
 }
@@ -53,6 +60,7 @@ type NormalizedCaseData = {
   urgency: 'low' | 'normal' | 'high'
   city?: string
   state?: string
+  searchKey?: string
 }
 
 type NormalizedProfessionalData = {
@@ -139,20 +147,31 @@ function readLocation(source: JsonObject) {
   }
 }
 
-function resolveCaseData(row: CaseMatchRow): NormalizedCaseData {
+export function resolveCaseData(row: CaseMatchRow): NormalizedCaseData {
   const centelhaContext = parseJsonObject(row.centelha_context)
   const metadata = parseJsonObject(row.metadata)
+  const structuredCity = normalizeText(row.client_canonical_city) ?? normalizeText(row.client_display_city)
+  const structuredSearchKey = normalizeText(row.client_search_key)
+  // Legacy matching compatibility fallback only.
+  // Matching must prefer structured case fields before metadata.
   const metadataLocation = readLocation(metadata)
+  // Legacy matching compatibility fallback only.
+  // Matching must prefer structured case fields before metadata.
   const contextLocation = readLocation(centelhaContext)
 
+  // Legacy matching compatibility fallback only.
+  // Matching must prefer structured case fields before metadata.
   const metadataCategory = readString(metadata, 'category') ?? readString(metadata, 'practiceArea')
+  // Legacy matching compatibility fallback only.
+  // Matching must prefer structured case fields before metadata.
   const contextCategory = readString(centelhaContext, 'category') ?? readString(centelhaContext, 'practiceArea')
 
   return {
     category: normalizeText(row.practice_area) ?? metadataCategory ?? contextCategory,
     urgency: row.priority === 'high' || row.priority === 'urgent' ? 'high' : row.priority === 'low' ? 'low' : 'normal',
-    city: metadataLocation.city ?? contextLocation.city,
+    city: structuredCity ?? metadataLocation.city ?? contextLocation.city,
     state: metadataLocation.state ?? contextLocation.state,
+    searchKey: structuredSearchKey,
   }
 }
 
@@ -329,7 +348,36 @@ function isDevelopmentEnvironment() {
 }
 
 export class MatchingService {
-  constructor(private readonly db: BackendDatabase) {}
+  private readonly legalMetricsRecorder?: LegalMetricsRecorder
+
+  constructor(
+    private readonly db: BackendDatabase,
+    observability?: ObservabilityService,
+  ) {
+    this.legalMetricsRecorder = observability
+      ? new LegalMetricsRecorder(observability)
+      : undefined
+  }
+
+  private recordMatchingMetric(args: {
+    metricName:
+      | 'legal_matching_started_total'
+      | 'legal_matching_completed_total'
+      | 'legal_matching_failed_total'
+    tenantId: number
+    entityId?: string | null
+    pipeline?: string
+    result: 'started' | 'success' | 'failed'
+    reason?: string
+  }) {
+    this.legalMetricsRecorder?.increment(args.metricName, {
+      tenant_id: String(args.tenantId),
+      entity_id: args.entityId ?? 'unknown',
+      pipeline: args.pipeline ?? 'case_matching',
+      result: args.result,
+      ...(args.reason ? { reason: args.reason } : {}),
+    })
+  }
 
   private async loadProfessionalPerformanceMetrics(
     tenantId: number,
@@ -416,10 +464,25 @@ export class MatchingService {
   }
 
   async matchCaseToProfessionals(tenantId: number, caseId: string): Promise<ProfessionalMatchResult[]> {
+    this.recordMatchingMetric({
+      metricName: 'legal_matching_started_total',
+      tenantId,
+      result: 'started',
+    })
+
     try {
       const legalCase = await this.db.get<CaseMatchRow>(
         `
-          SELECT id, priority, practice_area, centelha_context, metadata
+          SELECT
+            id,
+            entity_id,
+            priority,
+            practice_area,
+            client_display_city,
+            client_canonical_city,
+            client_search_key,
+            centelha_context,
+            metadata
           FROM cases
           WHERE tenant_id = ? AND id = ?
         `,
@@ -431,6 +494,12 @@ export class MatchingService {
         console.warn('cases.match_case_not_found', {
           tenantId,
           caseId,
+        })
+        this.recordMatchingMetric({
+          metricName: 'legal_matching_completed_total',
+          tenantId,
+          result: 'success',
+          reason: 'no_match',
         })
         return []
       }
@@ -457,6 +526,13 @@ export class MatchingService {
           professionalIds: sandboxCandidates.map((candidate) => candidate.professionalId),
         })
 
+        this.recordMatchingMetric({
+          metricName: 'legal_matching_completed_total',
+          tenantId,
+          entityId: legalCase.entity_id,
+          result: 'success',
+          reason: sandboxCandidates.length > 0 ? 'matched' : 'no_match',
+        })
         return sandboxCandidates
       }
 
@@ -526,6 +602,13 @@ export class MatchingService {
           caseId,
           candidateCount: rankedCandidates.length,
           professionalIds: rankedCandidates.map((candidate) => candidate.professionalId),
+        })
+        this.recordMatchingMetric({
+          metricName: 'legal_matching_completed_total',
+          tenantId,
+          entityId: legalCase.entity_id,
+          result: 'success',
+          reason: 'matched',
         })
         return rankedCandidates
       }
@@ -598,12 +681,32 @@ export class MatchingService {
             tenantId,
             professionalIds: fallbackCandidates.map((candidate) => candidate.professionalId),
           })
+          this.recordMatchingMetric({
+            metricName: 'legal_matching_completed_total',
+            tenantId,
+            entityId: legalCase.entity_id,
+            result: 'success',
+            reason: 'matched',
+          })
           return fallbackCandidates
         }
       }
 
+      this.recordMatchingMetric({
+        metricName: 'legal_matching_completed_total',
+        tenantId,
+        entityId: legalCase.entity_id,
+        result: 'success',
+        reason: 'no_match',
+      })
       return []
     } catch {
+      this.recordMatchingMetric({
+        metricName: 'legal_matching_failed_total',
+        tenantId,
+        result: 'failed',
+        reason: 'exception',
+      })
       console.error('cases.match_failed_unexpected', {
         tenantId,
         caseId,
@@ -668,6 +771,6 @@ export class MatchingService {
   }
 }
 
-export function createMatchingService(db: BackendDatabase) {
-  return new MatchingService(db)
+export function createMatchingService(db: BackendDatabase, observability?: ObservabilityService) {
+  return new MatchingService(db, observability)
 }

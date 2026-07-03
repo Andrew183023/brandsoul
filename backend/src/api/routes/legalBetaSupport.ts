@@ -4,6 +4,8 @@ import type { EntityBusinessConfig } from '../../domain/entityBusinessConfig.js'
 import type { EntityProfile } from '../../brain/domain/entity/contracts/EntityProfile.js'
 import type { BackendDatabase } from '../../db/index.js'
 import type { CaseMessageRecord, CaseRecord, CaseTimelineEventRecord, CaseStatus } from '../../modules/legalCases/caseTypes.js'
+import { createLegalCanonicalTimelineWriteService } from '../../modules/legalCases/legalCanonicalTimelineWriteService.js'
+import { LegalMetricsRecorder } from '../../modules/legalCases/legalMetricsRecorder.js'
 import { getJwtSecret } from '../../config/env.js'
 
 type JsonRecord = Record<string, unknown>
@@ -298,13 +300,75 @@ export function hashCasePortalAccessToken(token: string) {
     .digest('hex')
 }
 
+async function resolvePortalMetricEntityId(args: {
+  db: BackendDatabase
+  tenantId?: number
+  caseId?: string
+}) {
+  if (typeof args.tenantId !== 'number' || !args.caseId) {
+    return 'unknown'
+  }
+
+  const row = await args.db.get<{ entity_id: string | null }>(
+    `
+      SELECT entity_id
+      FROM cases
+      WHERE tenant_id = ? AND id = ?
+      LIMIT 1
+    `,
+    args.tenantId,
+    args.caseId,
+  )
+
+  return typeof row?.entity_id === 'string' && row.entity_id.trim().length > 0
+    ? row.entity_id.trim()
+    : 'unknown'
+}
+
+export async function recordLegalPortalAccessMetric(args: {
+  db: BackendDatabase
+  recorder?: LegalMetricsRecorder
+  metricName:
+    | 'legal_portal_access_created_total'
+    | 'legal_portal_access_used_total'
+    | 'legal_portal_access_invalid_total'
+    | 'legal_portal_access_expired_total'
+  tenantId?: number
+  caseId?: string
+  source?: string
+  reason?: string
+  result: 'success' | 'blocked'
+}) {
+  if (!args.recorder) {
+    return
+  }
+
+  const entityId = await resolvePortalMetricEntityId({
+    db: args.db,
+    tenantId: args.tenantId,
+    caseId: args.caseId,
+  })
+
+  args.recorder.increment(args.metricName, {
+    tenant_id: typeof args.tenantId === 'number' ? String(args.tenantId) : 'unknown',
+    entity_id: entityId,
+    source: args.source ?? 'unknown',
+    result: args.result,
+    ...(args.reason ? { reason: args.reason } : {}),
+  })
+}
+
 export async function issueCasePortalAccessToken(args: {
   db: BackendDatabase
   tenantId: number
   caseId: string
+  source?: string
+  requestId?: string
+  recorder?: LegalMetricsRecorder
 }) {
   const now = new Date().toISOString()
   const expiresAt = new Date(Date.now() + (1000 * 60 * 60 * 24 * 30)).toISOString()
+  const timelineWriter = createLegalCanonicalTimelineWriteService(args.db)
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const tokenId = randomUUID()
@@ -341,6 +405,26 @@ export async function issueCasePortalAccessToken(args: {
         now,
       )
 
+      await timelineWriter.recordPortalAccessCreated({
+        tenantId: args.tenantId,
+        caseId: args.caseId,
+        tokenId,
+        expiresAt,
+        source: args.source,
+        requestId: args.requestId,
+        occurredAt: now,
+      })
+
+      await recordLegalPortalAccessMetric({
+        db: args.db,
+        recorder: args.recorder,
+        metricName: 'legal_portal_access_created_total',
+        tenantId: args.tenantId,
+        caseId: args.caseId,
+        source: args.source,
+        result: 'success',
+      })
+
       return {
         tokenId,
         rawToken,
@@ -358,6 +442,58 @@ export async function issueCasePortalAccessToken(args: {
   }
 
   throw new Error('Failed to issue case portal access token.')
+}
+
+export async function markCasePortalAccessTokenUsed(args: {
+  db: BackendDatabase
+  tenantId: number
+  caseId: string
+  tokenId: string
+  source?: string
+  recorder?: LegalMetricsRecorder
+}) {
+  const now = new Date().toISOString()
+  const result = await args.db.run(
+    `
+      UPDATE case_portal_access_tokens
+      SET last_used_at = ?, updated_at = ?
+      WHERE id = ?
+        AND tenant_id = ?
+        AND case_id = ?
+        AND last_used_at IS NULL
+    `,
+    now,
+    now,
+    args.tokenId,
+    args.tenantId,
+    args.caseId,
+  )
+
+  if (Number(result.changes ?? 0) <= 0) {
+    return false
+  }
+
+  const timelineWriter = createLegalCanonicalTimelineWriteService(args.db)
+  await timelineWriter.recordPortalAccessUsed({
+    tenantId: args.tenantId,
+    caseId: args.caseId,
+    tokenId: args.tokenId,
+    usedAt: now,
+    source: args.source,
+    occurredAt: now,
+  })
+
+  await recordLegalPortalAccessMetric({
+    db: args.db,
+    recorder: args.recorder,
+    metricName: 'legal_portal_access_used_total',
+    tenantId: args.tenantId,
+    caseId: args.caseId,
+    source: args.source,
+    result: 'success',
+  })
+
+  return true
 }
 
 export function normalizeTimestamp(value: string | Date | null | undefined) {
@@ -447,6 +583,14 @@ export function buildTimelineSummary(event: CaseTimelineEventRecord) {
     return 'Caso aberto.'
   }
 
+  if (event.eventType === 'portal_access_created') {
+    return 'Acesso ao portal gerado.'
+  }
+
+  if (event.eventType === 'portal_access_used') {
+    return 'Cliente acessou o portal.'
+  }
+
   if (event.eventType === 'status_changed') {
     const fromStatus = resolveTimelineStatusSnapshot(payload, 'from')
     const toStatus = resolveTimelineStatusSnapshot(payload, 'to')
@@ -463,6 +607,8 @@ export function mapTimelineEventToClientLabel(event: CaseTimelineEventRecord) {
   if (event.eventType === 'created') return 'Triagem recebida'
   if (event.eventType === 'assigned') return 'Responsável definido'
   if (event.eventType === 'reassigned') return 'Responsável redefinido'
+  if (event.eventType === 'portal_access_created') return 'Acesso ao portal gerado'
+  if (event.eventType === 'portal_access_used') return 'Portal acessado'
   if (event.eventType === 'closed') return 'Caso encerrado'
 
   if (event.eventType === 'status_changed') {

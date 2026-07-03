@@ -20,6 +20,11 @@ type AppWithContext = FastifyInstance & {
     connection: BackendDatabase
     entityRepository: EntityRepository
     jobWorker: JobWorker
+    observability: {
+      getMetricsSnapshot(): {
+        customCounters: Record<string, number>
+      }
+    }
   }
 }
 
@@ -494,6 +499,9 @@ test('public triage, portal projection and lifecycle transitions stay canonical'
     })
     assert.equal(wrongPortalMessageTokenResponse.statusCode, 401)
 
+    const portalMetricsAfterInvalid = harness.app.backendContext.observability.getMetricsSnapshot()
+    assert.equal((portalMetricsAfterInvalid.customCounters.legal_portal_access_invalid_total ?? 0) >= 1, true)
+
     const emptyPortalMessageResponse = await harness.app.inject({
       method: 'POST',
       url: `${portalPath}/messages`,
@@ -523,6 +531,11 @@ test('public triage, portal projection and lifecycle transitions stay canonical'
       },
     })
     assert.equal(expiredPortalMessageResponse.statusCode, 410)
+
+    const portalMetricsAfterExpired = harness.app.backendContext.observability.getMetricsSnapshot()
+    assert.equal(portalMetricsAfterExpired.customCounters.legal_portal_access_created_total, 1)
+    assert.equal(portalMetricsAfterExpired.customCounters.legal_portal_access_used_total, 1)
+    assert.equal((portalMetricsAfterExpired.customCounters.legal_portal_access_expired_total ?? 0) >= 1, true)
 
     await harness.app.backendContext.connection.run(
       `UPDATE case_portal_access_tokens SET expires_at = ? WHERE case_id = ?`,

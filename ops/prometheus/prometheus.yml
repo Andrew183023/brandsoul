@@ -1,0 +1,23 @@
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+rule_files:
+  - /etc/prometheus/rules/brandsoul-legal-alerts.yml
+  - /etc/prometheus/rules/brandsoul-legal-recording-rules.yml
+
+scrape_configs:
+  - job_name: brandsoul-legal-backend
+    metrics_path: /metrics/prometheus
+    scheme: http
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+          - backend:10000
+
+# Authentication note:
+# Keep /metrics/prometheus protected.
+# In production, prefer one of:
+# 1. internal bearer token on scrape requests;
+# 2. private reverse proxy between Prometheus and backend;
+# 3. private network path with no public exposure.

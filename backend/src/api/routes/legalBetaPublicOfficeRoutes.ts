@@ -6,13 +6,26 @@ import type { StoredEntityProfile } from '../../domain/entityProfile.js'
 import type { AssetStorageService } from '../../services/assetStorageService.js'
 import type { BackendDatabase } from '../../db/index.js'
 import type { EntityRepository } from '../../repositories/entityRepository.js'
+import type { ObservabilityService } from '../../services/observabilityService.js'
+import {
+  evaluateInvalidPayloadSpamPolicy,
+  hashPublicTriageIdentityKey,
+  PUBLIC_TRIAGE_SPAM_POLICY,
+  resolvePublicTriageClientIp,
+} from '../../modules/legalCases/legalPublicTriageSpamPolicy.js'
+import { createLegalPublicTriageSpamRepository } from '../../modules/legalCases/legalPublicTriageSpamRepository.js'
 import { ensureCanonicalEntityIdentity } from '../../entities/identity/entityIdentityBuilder.js'
 import { buildSemanticFingerprint, getSemanticMutationExecutor } from '../../sovereignty/semanticMutationExecutor.js'
 import { getRequestAuth, optionalAuth, requireAuth } from '../middleware/requireAuth.js'
 import { createRateLimit } from '../middleware/rateLimit.js'
 import { createCaseRepository } from '../../modules/legalCases/caseRepository.js'
 import type { SovereignMutationCommandService } from '../../orchestrator/sovereignMutationCommandService.js'
-import { createLegalBetaCaseService } from '../../modules/legalCases/legalBetaCaseService.js'
+import {
+  createLegalBetaCaseService,
+  PublicTriageCreationPendingError,
+  PublicTriageRateLimitedError,
+} from '../../modules/legalCases/legalBetaCaseService.js'
+import { LegalMetricsRecorder } from '../../modules/legalCases/legalMetricsRecorder.js'
 import {
   buildOfficeBusinessConfigProjection,
   buildPublicOfficeProfile,
@@ -25,6 +38,7 @@ import {
   validateOfficeProfessionalPayload,
   writeEntityBusinessConfig,
 } from './legalBetaSupport.js'
+import { validatePublicLegalIntakePayload } from '../../modules/legalCases/legalIntakeValidation.js'
 
 type BackendContext = {
   backendContext: {
@@ -32,6 +46,7 @@ type BackendContext = {
     entityRepository: EntityRepository
     assetStorageService: AssetStorageService
     sovereignMutationCommandService: SovereignMutationCommandService
+    observability: ObservabilityService
     auth: {
       backendNativeAuthStoreRepository: {
         findUserById(userId: number): Promise<{ id: number; isActive: boolean } | null>
@@ -143,7 +158,52 @@ function getCaseRepository(app: FastifyInstance) {
 }
 
 function getCaseService(app: FastifyInstance) {
-  return createLegalBetaCaseService(getConnection(app), (app as FastifyInstance & BackendContext).backendContext.sovereignMutationCommandService)
+  return createLegalBetaCaseService(
+    getConnection(app),
+    (app as FastifyInstance & BackendContext).backendContext.sovereignMutationCommandService,
+    {
+      observability: (app as FastifyInstance & BackendContext).backendContext.observability,
+      logger: app.log,
+    },
+  )
+}
+
+function getLegalMetricsRecorder(app: FastifyInstance) {
+  return new LegalMetricsRecorder(
+    (app as FastifyInstance & BackendContext).backendContext.observability,
+  )
+}
+
+async function resolvePublicTriageMetricTenantId(app: FastifyInstance, officeId: string) {
+  const entity = await getRepository(app).getEntityById<EntityProfile>(officeId)
+  return typeof entity?.ownerTenantId === 'number'
+    ? String(entity.ownerTenantId)
+    : 'unknown'
+}
+
+function recordPublicTriageRequestMetric(recorder: LegalMetricsRecorder, tenantId: string) {
+  recorder.increment('public_triage_requests_total', {
+    tenant_id: tenantId,
+    source: 'public_triage',
+    result: 'received',
+  })
+}
+
+function recordPublicTriageValidMetric(recorder: LegalMetricsRecorder, tenantId: string) {
+  recorder.increment('public_triage_valid_total', {
+    tenant_id: tenantId,
+    source: 'public_triage',
+    result: 'valid',
+  })
+}
+
+function recordPublicTriageInvalidMetric(recorder: LegalMetricsRecorder, tenantId: string, reason: string) {
+  recorder.increment('public_triage_invalid_total', {
+    tenant_id: tenantId,
+    source: 'public_triage',
+    reason,
+    result: 'invalid',
+  })
 }
 
 function buildLegacyOwnerId(userId: number, tenantId: number) {
@@ -363,6 +423,43 @@ async function buildUnifiedPublicOfficePayload(
 
 function createRequestId() {
   return `req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function buildPublicTriageInvalidPayload(args: {
+  requestId: string
+  fields: Array<{ field: string; code: string; message: string }>
+}) {
+  return {
+    error: 'invalid_intake',
+    message: 'Não foi possível criar o atendimento. Verifique os campos obrigatórios.',
+    requestId: args.requestId,
+    fields: args.fields,
+  }
+}
+
+function buildPublicTriageOperationalFailure(args: { requestId: string }) {
+  return {
+    error: 'triage_creation_failed',
+    message: 'Não foi possível criar o atendimento agora. Tente novamente em instantes.',
+    requestId: args.requestId,
+  }
+}
+
+function buildPublicTriagePendingFailure(args: { requestId: string }) {
+  return {
+    error: 'triage_creation_pending',
+    message: 'Seu atendimento já está sendo criado. Tente abrir novamente em instantes.',
+    requestId: args.requestId,
+  }
+}
+
+function buildPublicTriageRateLimitedFailure(args: { requestId: string; retryAfterSeconds: number }) {
+  return {
+    error: 'triage_rate_limited',
+    message: 'Recebemos muitas tentativas em pouco tempo. Aguarde alguns minutos antes de tentar novamente.',
+    requestId: args.requestId,
+    retryAfterSeconds: args.retryAfterSeconds,
+  }
 }
 
 function slugifyOfficeName(value: string) {
@@ -1250,77 +1347,169 @@ export async function registerLegalBetaPublicOfficeRoutes(app: FastifyInstance) 
 
   app.post<{ Params: { id: string }; Body: PublicInteractionRequest }>('/public/escritorios/:id/triagem', { preHandler: [publicActionRateLimit] }, async (request, reply) => {
     const requestId = request.body?.requestId?.trim() || createRequestId()
-    const userMessage = request.body?.userMessage?.trim() || ''
-    if (!userMessage) {
-      return reply.status(400).send({
-        status: 'failed',
-        error: {
-          code: 'INVALID_TRIAGE_REQUEST',
-          message: 'userMessage is required.',
-        },
-      })
-    }
-
-    const created = await getCaseService(app).createPublicTriageCase({
-      entityId: request.params.id,
-      requestId,
-      userMessage,
-      attribution: request.body?.context?.attribution,
-      triage: request.body?.triage,
-      businessContext: request.body?.businessContext,
+    const legalMetricsRecorder = getLegalMetricsRecorder(app)
+    const publicTriageMetricTenantId = await resolvePublicTriageMetricTenantId(app, request.params.id)
+    recordPublicTriageRequestMetric(legalMetricsRecorder, publicTriageMetricTenantId)
+    const clientIp = resolvePublicTriageClientIp({
+      forwardedFor: request.headers['x-forwarded-for']?.toString(),
+      cfConnectingIp: request.headers['cf-connecting-ip']?.toString(),
+      realIp: request.headers['x-real-ip']?.toString(),
+      requestIp: request.ip,
     })
-
-    if (!created) {
-      return reply.status(404).send({
-        status: 'failed',
-        error: {
-          code: 'OFFICE_NOT_FOUND',
-          message: `Office "${request.params.id}" was not found.`,
-        },
+    const ipKey = hashPublicTriageIdentityKey(clientIp)
+    const validation = validatePublicLegalIntakePayload(request.body)
+    if (!validation.ok) {
+      recordPublicTriageInvalidMetric(
+        legalMetricsRecorder,
+        publicTriageMetricTenantId,
+        `validation_${validation.errors[0]?.code ?? 'invalid_payload'}`,
+      )
+      const spamRepository = createLegalPublicTriageSpamRepository(getConnection(app))
+      const invalidAttempts = ipKey
+        ? await spamRepository.countActiveEvents({
+            entityId: request.params.id,
+            ipKey,
+            reasons: ['invalid_payload'],
+            decisions: ['allow'],
+          })
+        : 0
+      const invalidDecision = evaluateInvalidPayloadSpamPolicy({
+        invalidAttempts,
       })
-    }
 
-    return reply.status(201).send({
-      status: 'ready',
-      entityId: request.params.id,
-      requestId,
-      leadId: created.leadRecord.leadId,
-      intakeId: created.intakeRecord.intakeId,
-      caseId: created.caseRecord.id,
-      portalUrl: created.portalAccess.portalUrl,
-      decision: {
-        responseText: 'Recebemos sua triagem inicial. O escritório pode continuar o atendimento pelo portal do caso.',
-        decision: {
-          intent: 'triage',
-          action: 'create_case',
-          confidence: 0.92,
+      await spamRepository.recordEvent({
+        entityId: request.params.id,
+        ipKey,
+        requestId,
+        reason: invalidDecision.reason === 'invalid_payload_limit' ? 'invalid_payload_limited' : 'invalid_payload',
+        decision: invalidDecision.decision,
+        expiresAt: new Date(Date.now() + PUBLIC_TRIAGE_SPAM_POLICY.invalidPayload.windowMs).toISOString(),
+      })
+      ;(app as FastifyInstance & BackendContext).backendContext.observability.incrementMetric(
+        'public_triage_spam_invalid_payload_total',
+        1,
+        {
+          entity_id: request.params.id,
+          reason: invalidDecision.reason,
+          decision: invalidDecision.decision,
+          source: 'public_triage',
         },
-        decisionSource: 'legal-beta',
-        terminalAuthority: 'legal-beta-runtime',
-        semanticFrozen: true,
-      },
-      fallback: {
-        occurred: false,
-        source: 'backend-authoritative',
-      },
-      actionResult: {
-        actionType: 'create_legal_case',
-        status: 'created',
+      )
+
+      if (invalidDecision.decision !== 'allow') {
+        ;(app as FastifyInstance & BackendContext).backendContext.observability.incrementMetric(
+          'public_triage_spam_rate_limited_total',
+          1,
+          {
+            entity_id: request.params.id,
+            reason: invalidDecision.reason,
+            decision: invalidDecision.decision,
+            source: 'public_triage',
+          },
+        )
+        return reply.status(429).send(buildPublicTriageRateLimitedFailure({
+          requestId,
+          retryAfterSeconds: invalidDecision.retryAfterSeconds ?? PUBLIC_TRIAGE_SPAM_POLICY.invalidPayload.retryAfterSeconds,
+        }))
+      }
+
+      return reply.status(400).send(buildPublicTriageInvalidPayload({
+        requestId,
+        fields: validation.errors,
+      }))
+    }
+    recordPublicTriageValidMetric(legalMetricsRecorder, publicTriageMetricTenantId)
+    const userMessage = validation.value.userMessage
+    try {
+      const created = await getCaseService(app).createPublicTriageCase({
+        entityId: request.params.id,
+        requestId,
+        userMessage,
+        sourceIp: clientIp,
+        attribution: request.body?.context?.attribution,
+        triage: {
+          clientName: validation.value.triage.clientName,
+          preferredName: validation.value.triage.preferredName,
+          context: validation.value.triage.context,
+          urgency: validation.value.compatibility.urgency,
+          objective: validation.value.triage.objective,
+          contactPreference: validation.value.compatibility.contactPreference,
+          contactValue: validation.value.triage.contactValue,
+          practiceArea: validation.value.compatibility.practiceArea,
+          city: validation.value.triage.city,
+        },
+        businessContext: request.body?.businessContext,
+      })
+
+      if (!created) {
+        return reply.status(404).send({
+          error: 'office_not_found',
+          message: 'Este escritório não está disponível para receber triagem agora.',
+          requestId,
+        })
+      }
+
+      return reply.status(201).send({
+        status: 'ready',
+        entityId: request.params.id,
+        requestId,
+        leadId: created.leadRecord.leadId,
+        intakeId: created.intakeRecord.intakeId,
         caseId: created.caseRecord.id,
-        case: {
-          id: created.caseRecord.id,
-          status: created.caseRecord.status,
-        },
         portalUrl: created.portalAccess.portalUrl,
-        portalAccess: {
-          issuedAt: created.portalAccess.issuedAt,
-          expiresAt: created.portalAccess.expiresAt,
+        decision: {
+          responseText: 'Recebemos sua triagem inicial. O escritório pode continuar o atendimento pelo portal do caso.',
+          decision: {
+            intent: 'triage',
+            action: 'create_case',
+            confidence: 0.92,
+          },
+          decisionSource: 'legal-beta',
+          terminalAuthority: 'legal-beta-runtime',
+          semanticFrozen: true,
         },
-      },
-      telemetry: {
-        evaluatedAt: new Date().toISOString(),
-        latencyMs: 0,
-      },
-    })
+        fallback: {
+          occurred: false,
+          source: 'backend-authoritative',
+        },
+        actionResult: {
+          actionType: 'create_legal_case',
+          status: 'created',
+          caseId: created.caseRecord.id,
+          case: {
+            id: created.caseRecord.id,
+            status: created.caseRecord.status,
+          },
+          portalUrl: created.portalAccess.portalUrl,
+          portalAccess: {
+            issuedAt: created.portalAccess.issuedAt,
+            expiresAt: created.portalAccess.expiresAt,
+          },
+        },
+        telemetry: {
+          evaluatedAt: new Date().toISOString(),
+          latencyMs: 0,
+        },
+      })
+    } catch (error) {
+      if (error instanceof PublicTriageRateLimitedError) {
+        return reply.status(429).send(buildPublicTriageRateLimitedFailure({
+          requestId,
+          retryAfterSeconds: error.retryAfterSeconds,
+        }))
+      }
+
+      if (error instanceof PublicTriageCreationPendingError) {
+        return reply.status(409).send(buildPublicTriagePendingFailure({ requestId }))
+      }
+
+      request.log.error({
+        requestId,
+        officeId: request.params.id,
+        err: error,
+      }, 'legal_beta_public_triage_failed')
+
+      return reply.status(500).send(buildPublicTriageOperationalFailure({ requestId }))
+    }
   })
 }

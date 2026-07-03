@@ -1,0 +1,124 @@
+groups:
+  - name: brandsoul-legal-p0
+    interval: 30s
+    rules:
+      - alert: BrandSoulLegalTransactionFailures
+        expr: sum(increase(legal_transaction_failures_total[5m])) > 0
+        for: 1m
+        labels:
+          severity: critical
+          service: brandsoul-legal
+          area: transaction
+        annotations:
+          summary: "BrandSoul Legal transaction failures detected"
+          description: "At least one legal transaction failed in the last 5 minutes."
+
+      - alert: BrandSoulLegalTransactionRollbacks
+        expr: sum(increase(legal_transaction_rollbacks_total[5m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+          service: brandsoul-legal
+          area: transaction
+        annotations:
+          summary: "BrandSoul Legal transaction rollbacks detected"
+          description: "At least one legal transaction rollback occurred in the last 5 minutes."
+
+      - alert: BrandSoulLegalTimelineWriteFailures
+        expr: sum(increase(legal_timeline_write_failures_total[5m])) > 0
+        for: 1m
+        labels:
+          severity: critical
+          service: brandsoul-legal
+          area: timeline
+        annotations:
+          summary: "BrandSoul Legal timeline write failures detected"
+          description: "Timeline writes failed in the last 5 minutes."
+
+      - alert: BrandSoulLegalMessageFailures
+        expr: sum(increase(legal_message_failed_total[5m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+          service: brandsoul-legal
+          area: message
+        annotations:
+          summary: "BrandSoul Legal message failures detected"
+          description: "One or more legal messages failed to persist in the last 5 minutes."
+
+      - alert: BrandSoulLegalCanonicalReadFailures
+        expr: sum(increase(legal_canonical_read_failed_total[5m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+          service: brandsoul-legal
+          area: canonical_read
+        annotations:
+          summary: "BrandSoul Legal canonical read failures detected"
+          description: "Canonical case read pipeline failed in the last 5 minutes."
+
+      - alert: BrandSoulLegalMatchingFailures
+        expr: sum(increase(legal_matching_failed_total[5m])) > 0
+        for: 2m
+        labels:
+          severity: warning
+          service: brandsoul-legal
+          area: matching
+        annotations:
+          summary: "BrandSoul Legal matching failures detected"
+          description: "Matching pipeline failures were detected in the last 5 minutes."
+
+      - alert: BrandSoulLegalPortalInvalidSpike
+        expr: sum(increase(legal_portal_access_invalid_total[10m])) > 20
+        for: 2m
+        labels:
+          severity: warning
+          service: brandsoul-legal
+          area: portal
+        annotations:
+          summary: "BrandSoul Legal portal invalid access spike"
+          description: "More than 20 invalid portal access attempts occurred in the last 10 minutes."
+
+      - alert: BrandSoulLegalPortalExpiredSpike
+        expr: sum(increase(legal_portal_access_expired_total[10m])) > 20
+        for: 2m
+        labels:
+          severity: info
+          service: brandsoul-legal
+          area: portal
+        annotations:
+          summary: "BrandSoul Legal portal expired access spike"
+          description: "More than 20 expired portal token attempts occurred in the last 10 minutes."
+
+      - alert: BrandSoulLegalSpamBlockSpike
+        expr: sum(increase(public_triage_spam_blocked_total[10m])) > 20
+        for: 2m
+        labels:
+          severity: warning
+          service: brandsoul-legal
+          area: public_triage
+        annotations:
+          summary: "BrandSoul Legal public triage spam block spike"
+          description: "More than 20 public triage submissions were blocked as spam in the last 10 minutes."
+
+      - alert: BrandSoulLegalSpamRateLimitSpike
+        expr: sum(increase(public_triage_spam_rate_limited_total[10m])) > 20
+        for: 2m
+        labels:
+          severity: warning
+          service: brandsoul-legal
+          area: public_triage
+        annotations:
+          summary: "BrandSoul Legal public triage rate limit spike"
+          description: "More than 20 public triage submissions were rate limited in the last 10 minutes."
+
+      - alert: BrandSoulLegalCanonicalReadLatencyHigh
+        expr: max(legal_canonical_read_duration_ms_max) > 1000
+        for: 5m
+        labels:
+          severity: warning
+          service: brandsoul-legal
+          area: canonical_read
+        annotations:
+          summary: "BrandSoul Legal canonical read latency high"
+          description: "Canonical read max latency stayed above 1000ms for 5 minutes."

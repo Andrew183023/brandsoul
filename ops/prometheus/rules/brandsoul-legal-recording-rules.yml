@@ -1,0 +1,122 @@
+groups:
+  - name: brandsoul-legal-recording-p0
+    interval: 30s
+    rules:
+      - record: brandsoul_legal:transaction:failures:increase5m
+        expr: sum(increase(legal_transaction_failures_total[5m]))
+
+      - record: brandsoul_legal:transaction:rollbacks:increase5m
+        expr: sum(increase(legal_transaction_rollbacks_total[5m]))
+
+      - record: brandsoul_legal:timeline:write_failures:increase5m
+        expr: sum(increase(legal_timeline_write_failures_total[5m]))
+
+      - record: brandsoul_legal:message:failed:increase5m
+        expr: sum(increase(legal_message_failed_total[5m]))
+
+      - record: brandsoul_legal:message:received:increase5m
+        expr: sum(increase(legal_message_received_total[5m]))
+
+      - record: brandsoul_legal:message:sent:increase5m
+        expr: sum(increase(legal_message_sent_total[5m]))
+
+      - record: brandsoul_legal:portal:invalid_access:increase10m
+        expr: sum(increase(legal_portal_access_invalid_total[10m]))
+
+      - record: brandsoul_legal:portal:expired_access:increase10m
+        expr: sum(increase(legal_portal_access_expired_total[10m]))
+
+      - record: brandsoul_legal:portal:created:increase10m
+        expr: sum(increase(legal_portal_access_created_total[10m]))
+
+      - record: brandsoul_legal:portal:used:increase10m
+        expr: sum(increase(legal_portal_access_used_total[10m]))
+
+      - record: brandsoul_legal:public_triage:spam_blocked:increase10m
+        expr: sum(increase(public_triage_spam_blocked_total[10m]))
+
+      - record: brandsoul_legal:public_triage:spam_rate_limited:increase10m
+        expr: sum(increase(public_triage_spam_rate_limited_total[10m]))
+
+      - record: brandsoul_legal:public_triage:spam_invalid_payload:increase10m
+        expr: sum(increase(public_triage_spam_invalid_payload_total[10m]))
+
+      - record: brandsoul_legal:matching:started:increase5m
+        expr: sum(increase(legal_matching_started_total[5m]))
+
+      - record: brandsoul_legal:matching:completed:increase5m
+        expr: sum(increase(legal_matching_completed_total[5m]))
+
+      - record: brandsoul_legal:matching:failed:increase5m
+        expr: sum(increase(legal_matching_failed_total[5m]))
+
+      - record: brandsoul_legal:canonical_read:failed:increase5m
+        expr: sum(increase(legal_canonical_read_failed_total[5m]))
+
+      - record: brandsoul_legal:canonical_read:latency_avg_ms:avg
+        expr: avg(legal_canonical_read_duration_ms_avg)
+
+      - record: brandsoul_legal:canonical_read:latency_max_ms:max
+        expr: max(legal_canonical_read_duration_ms_max)
+
+      - record: brandsoul_legal:case:created:increase5m
+        expr: sum(increase(legal_case_created_total[5m]))
+
+      - record: brandsoul_legal:case:reused:increase5m
+        expr: sum(increase(legal_case_reused_total[5m]))
+
+      - record: brandsoul_legal:case:closed:increase5m
+        expr: sum(increase(legal_case_closed_total[5m]))
+
+      - record: brandsoul_legal:case:status_changed:increase5m
+        expr: sum(increase(legal_case_status_changed_total[5m]))
+
+      - record: brandsoul_legal:assignment:created:increase5m
+        expr: sum(increase(legal_assignment_created_total[5m]))
+
+      - record: brandsoul_legal:assignment:accepted:increase5m
+        expr: sum(increase(legal_assignment_accepted_total[5m]))
+
+      - record: brandsoul_legal:assignment:rejected:increase5m
+        expr: sum(increase(legal_assignment_rejected_total[5m]))
+
+      - record: brandsoul_legal:assignment:reassigned:increase5m
+        expr: sum(increase(legal_assignment_reassigned_total[5m]))
+
+      - record: brandsoul_legal:assignment:expired:increase5m
+        expr: sum(increase(legal_assignment_expired_total[5m]))
+
+      - record: brandsoul_legal:message:failure_ratio5m
+        expr: |
+          (
+            sum(increase(legal_message_failed_total[5m]))
+          )
+          /
+          clamp_min(
+            sum(increase(legal_message_received_total[5m]))
+            +
+            sum(increase(legal_message_sent_total[5m])),
+            1
+          )
+
+      - record: brandsoul_legal:matching:failure_ratio5m
+        expr: |
+          (
+            sum(increase(legal_matching_failed_total[5m]))
+          )
+          /
+          clamp_min(
+            sum(increase(legal_matching_started_total[5m])),
+            1
+          )
+
+      - record: brandsoul_legal:portal:use_ratio10m
+        expr: |
+          (
+            sum(increase(legal_portal_access_used_total[10m]))
+          )
+          /
+          clamp_min(
+            sum(increase(legal_portal_access_created_total[10m])),
+            1
+          )

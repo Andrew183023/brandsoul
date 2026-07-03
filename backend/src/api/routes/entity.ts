@@ -68,7 +68,13 @@ import type { EntityBusinessConfig, EntityBusinessType } from '../../domain/enti
 import type { OrchestratorSnapshotRepository } from '../../repositories/orchestratorSnapshotRepository.js'
 import type { RelationalTraceRepository } from '../../repositories/relationalTraceRepository.js'
 import type { SovereignMutationCommandService } from '../../orchestrator/sovereignMutationCommandService.js'
-import { hashCasePortalAccessToken } from './legalBetaSupport.js'
+import {
+  hashCasePortalAccessToken,
+  issueCasePortalAccessToken as issueCanonicalCasePortalAccessToken,
+  markCasePortalAccessTokenUsed as markCanonicalCasePortalAccessTokenUsed,
+  recordLegalPortalAccessMetric,
+} from './legalBetaSupport.js'
+import { LegalMetricsRecorder } from '../../modules/legalCases/legalMetricsRecorder.js'
 import type {
   EntityMutationResult,
   EntityRelationshipInteractionResult,
@@ -342,11 +348,14 @@ function getLegalCaseRepository(app: FastifyInstance) {
 }
 
 function getLegalCaseService(app: FastifyInstance) {
-  return createCaseService(getConnection(app))
+  return createCaseService(getConnection(app), getObservability(app))
 }
 
 function getLegalBetaCaseService(app: FastifyInstance) {
-  return createLegalBetaCaseService(getConnection(app), getSovereignMutationCommandService(app))
+  return createLegalBetaCaseService(getConnection(app), getSovereignMutationCommandService(app), {
+    observability: getObservability(app),
+    logger: app.log,
+  })
 }
 
 function createRequestId() {
@@ -416,17 +425,38 @@ async function getCasePortalAccessTokenRecord(app: FastifyInstance, caseId: stri
 }
 
 async function markCasePortalAccessTokenUsed(app: FastifyInstance, tokenId: string) {
-  const now = new Date().toISOString()
-  await getConnection(app).run(
+  const portalAccess = await getConnection(app).get<CasePortalAccessTokenRow>(
     `
-      UPDATE case_portal_access_tokens
-      SET last_used_at = ?, updated_at = ?
+      SELECT
+        id,
+        tenant_id,
+        case_id,
+        token_hash,
+        status,
+        issued_at,
+        expires_at,
+        revoked_at,
+        last_used_at,
+        created_at,
+        updated_at
+      FROM case_portal_access_tokens
       WHERE id = ?
+      LIMIT 1
     `,
-    now,
-    now,
     tokenId,
   )
+  if (!portalAccess) {
+    return false
+  }
+
+  return markCanonicalCasePortalAccessTokenUsed({
+    db: getConnection(app),
+    tenantId: portalAccess.tenant_id,
+    caseId: portalAccess.case_id,
+    tokenId: portalAccess.id,
+    source: 'entity_client_portal',
+    recorder: new LegalMetricsRecorder((app as FastifyInstance & BackendContext).backendContext.observability),
+  })
 }
 
 async function resolveValidatedCasePortalAccess(args: {
@@ -436,6 +466,14 @@ async function resolveValidatedCasePortalAccess(args: {
 }) {
   const portalAccess = await getCasePortalAccessTokenRecord(args.app, args.caseId, args.token)
   if (!portalAccess) {
+    await recordLegalPortalAccessMetric({
+      db: getConnection(args.app),
+      recorder: new LegalMetricsRecorder((args.app as FastifyInstance & BackendContext).backendContext.observability),
+      metricName: 'legal_portal_access_invalid_total',
+      source: 'portal',
+      reason: 'invalid_token',
+      result: 'blocked',
+    })
     return {
       ok: false as const,
       replyStatus: 401,
@@ -456,6 +494,16 @@ async function resolveValidatedCasePortalAccess(args: {
   const isActive = portalAccess.status === 'active'
 
   if (isExpired) {
+    await recordLegalPortalAccessMetric({
+      db: getConnection(args.app),
+      recorder: new LegalMetricsRecorder((args.app as FastifyInstance & BackendContext).backendContext.observability),
+      metricName: 'legal_portal_access_expired_total',
+      tenantId: portalAccess.tenant_id,
+      caseId: args.caseId,
+      source: 'portal',
+      reason: 'expired_token',
+      result: 'blocked',
+    })
     return {
       ok: false as const,
       replyStatus: 410,
@@ -470,6 +518,16 @@ async function resolveValidatedCasePortalAccess(args: {
   }
 
   if (!isActive || isRevoked) {
+    await recordLegalPortalAccessMetric({
+      db: getConnection(args.app),
+      recorder: new LegalMetricsRecorder((args.app as FastifyInstance & BackendContext).backendContext.observability),
+      metricName: 'legal_portal_access_invalid_total',
+      tenantId: portalAccess.tenant_id,
+      caseId: args.caseId,
+      source: 'portal',
+      reason: 'invalid_token',
+      result: 'blocked',
+    })
     return {
       ok: false as const,
       replyStatus: 401,
@@ -504,61 +562,13 @@ async function issueCasePortalAccessToken(args: {
   tenantId: number
   caseId: string
 }) {
-  const now = new Date().toISOString()
-  const expiresAt = new Date(Date.now() + (1000 * 60 * 60 * 24 * 30)).toISOString()
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const tokenId = randomBytes(12).toString('hex')
-    const rawToken = randomBytes(24).toString('base64url')
-    const tokenHash = hashCasePortalAccessToken(rawToken)
-
-    try {
-      await getConnection(args.app).run(
-        `
-          INSERT INTO case_portal_access_tokens (
-            id,
-            tenant_id,
-            case_id,
-            token_hash,
-            status,
-            issued_at,
-            expires_at,
-            revoked_at,
-            last_used_at,
-            created_at,
-            updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `,
-        tokenId,
-        args.tenantId,
-        args.caseId,
-        tokenHash,
-        'active',
-        now,
-        expiresAt,
-        null,
-        null,
-        now,
-        now,
-      )
-
-      return {
-        tokenId,
-        rawToken,
-        issuedAt: now,
-        expiresAt,
-        portalUrl: `/portal/${args.caseId}/${rawToken}`,
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message.toLowerCase() : ''
-      if (attempt < 2 && (message.includes('unique') || message.includes('constraint'))) {
-        continue
-      }
-      throw error
-    }
-  }
-
-  throw new Error('Failed to issue case portal access token.')
+  return issueCanonicalCasePortalAccessToken({
+    db: getConnection(args.app),
+    tenantId: args.tenantId,
+    caseId: args.caseId,
+    source: 'entity_client_portal',
+    recorder: new LegalMetricsRecorder((args.app as FastifyInstance & BackendContext).backendContext.observability),
+  })
 }
 
 function resolvePublicTriagePriority(urgency: 'critical' | 'priority' | 'planned') {
@@ -2058,6 +2068,14 @@ function buildTimelineSummary(event: CaseTimelineEventRecord) {
     return 'Caso aberto.'
   }
 
+  if (event.eventType === 'portal_access_created') {
+    return 'Acesso ao portal gerado.'
+  }
+
+  if (event.eventType === 'portal_access_used') {
+    return 'Cliente acessou o portal.'
+  }
+
   if (event.eventType === 'status_changed') {
     const fromStatus = resolveTimelineSourceStatus(payload)
     const toStatus = resolveTimelineTargetStatus(payload)
@@ -2078,6 +2096,14 @@ function mapTimelineEventToClientLabel(event: CaseTimelineEventRecord) {
 
   if (event.eventType === 'assigned') {
     return 'Responsavel definido'
+  }
+
+  if (event.eventType === 'portal_access_created') {
+    return 'Acesso ao portal gerado'
+  }
+
+  if (event.eventType === 'portal_access_used') {
+    return 'Portal acessado'
   }
 
   if (event.eventType === 'closed') {
@@ -2424,6 +2450,9 @@ async function resolvePostgresCaseForRead(args: {
   }
 
   const caseTenantId = caseRecord.tenantId
+  // FT-05.5.2.3 compatibility note:
+  // This legacy entity route still composes case projections manually and must be
+  // consolidated onto the canonical read facade in a dedicated follow-up phase.
   const [messages, timeline, professional, entity, projectionAssignedProfessionalId] = await Promise.all([
     repository.listMessages(caseTenantId, args.caseId),
     listPostgresCaseTimeline(getConnection(args.app), caseTenantId, args.caseId),
@@ -3152,6 +3181,14 @@ export async function registerEntityRoutes(app: FastifyInstance) {
 
   app.get<{ Params: { caseId: string; token: string } }>('/client/portal/:caseId/:token', { preHandler: [publicReadRateLimit] }, async (request, reply) => {
     if (!isSafeIdentifier(request.params.caseId) || !isSafeString(request.params.token, 512)) {
+      await recordLegalPortalAccessMetric({
+        db: getConnection(app),
+        recorder: new LegalMetricsRecorder((app as FastifyInstance & BackendContext).backendContext.observability),
+        metricName: 'legal_portal_access_invalid_total',
+        source: 'portal',
+        reason: 'invalid_token',
+        result: 'blocked',
+      })
       return reply.status(400).send({
         status: 'failed',
         error: {
@@ -3163,6 +3200,14 @@ export async function registerEntityRoutes(app: FastifyInstance) {
 
     const portalAccess = await getCasePortalAccessTokenRecord(app, request.params.caseId, request.params.token)
     if (!portalAccess) {
+      await recordLegalPortalAccessMetric({
+        db: getConnection(app),
+        recorder: new LegalMetricsRecorder((app as FastifyInstance & BackendContext).backendContext.observability),
+        metricName: 'legal_portal_access_invalid_total',
+        source: 'portal',
+        reason: 'invalid_token',
+        result: 'blocked',
+      })
       return reply.status(404).send({
         status: 'failed',
         error: {
@@ -3179,6 +3224,16 @@ export async function registerEntityRoutes(app: FastifyInstance) {
     const isActive = portalAccess.status === 'active'
 
     if (!isActive || isExpired || isRevoked) {
+      await recordLegalPortalAccessMetric({
+        db: getConnection(app),
+        recorder: new LegalMetricsRecorder((app as FastifyInstance & BackendContext).backendContext.observability),
+        metricName: isExpired ? 'legal_portal_access_expired_total' : 'legal_portal_access_invalid_total',
+        tenantId: portalAccess.tenant_id,
+        caseId: request.params.caseId,
+        source: 'portal',
+        reason: isExpired ? 'expired_token' : 'invalid_token',
+        result: 'blocked',
+      })
       return reply.status(403).send({
         status: 'failed',
         error: {
@@ -3200,6 +3255,10 @@ export async function registerEntityRoutes(app: FastifyInstance) {
       })
     }
 
+    // FT-05.5.2.3 compatibility note:
+    // Public portal compatibility in entity.ts still relies on legacy manual reads.
+    // Keep behavior unchanged here until this route is fully migrated to the
+    // canonical read pipeline.
     const [timeline, assignedProfessionalId, detailedProfessionals, entity] = await Promise.all([
       listPostgresCaseTimeline(getConnection(app), portalAccess.tenant_id, request.params.caseId),
       resolveProjectionAssignedProfessionalId({
@@ -3346,6 +3405,16 @@ export async function registerEntityRoutes(app: FastifyInstance) {
         error: {
           code: 'CASE_CLOSED_FOR_MESSAGES',
           message: 'Este atendimento esta encerrado para novas mensagens.',
+        },
+      })
+    }
+
+    if (messageResult.status === 'responsible_required') {
+      return reply.status(409).send({
+        status: 'failed',
+        error: {
+          code: 'CASE_RESPONSIBLE_REQUIRED',
+          message: 'Caso requer responsável antes de novas respostas.',
         },
       })
     }

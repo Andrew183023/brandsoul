@@ -2,15 +2,22 @@ import type { FastifyInstance } from 'fastify'
 
 import type { BackendDatabase } from '../../db/index.js'
 import type { SovereignMutationCommandService } from '../../orchestrator/sovereignMutationCommandService.js'
+import type { ObservabilityService } from '../../services/observabilityService.js'
+import { LegalMetricsRecorder } from '../../modules/legalCases/legalMetricsRecorder.js'
 import { createRateLimit } from '../middleware/rateLimit.js'
 import { createLegalBetaCaseService } from '../../modules/legalCases/legalBetaCaseService.js'
 import type { CasePortalAccessTokenRecord } from './legalBetaSupport.js'
-import { hashCasePortalAccessToken } from './legalBetaSupport.js'
+import {
+  hashCasePortalAccessToken,
+  markCasePortalAccessTokenUsed,
+  recordLegalPortalAccessMetric,
+} from './legalBetaSupport.js'
 
 type BackendContext = {
   backendContext: {
     connection: BackendDatabase
     sovereignMutationCommandService: SovereignMutationCommandService
+    observability: ObservabilityService
   }
 }
 
@@ -22,6 +29,16 @@ function getCaseService(app: FastifyInstance) {
   return createLegalBetaCaseService(
     getConnection(app),
     (app as FastifyInstance & BackendContext).backendContext.sovereignMutationCommandService,
+    {
+      observability: (app as FastifyInstance & BackendContext).backendContext.observability,
+      logger: app.log,
+    },
+  )
+}
+
+function getLegalMetricsRecorder(app: FastifyInstance) {
+  return new LegalMetricsRecorder(
+    (app as FastifyInstance & BackendContext).backendContext.observability,
   )
 }
 
@@ -74,20 +91,6 @@ async function getCasePortalAccessTokenRecord(app: FastifyInstance, caseId: stri
   return row ?? null
 }
 
-async function markCasePortalAccessTokenUsed(app: FastifyInstance, tokenId: string) {
-  const now = new Date().toISOString()
-  await getConnection(app).run(
-    `
-      UPDATE case_portal_access_tokens
-      SET last_used_at = ?, updated_at = ?
-      WHERE id = ?
-    `,
-    now,
-    now,
-    tokenId,
-  )
-}
-
 function readPublicPortalMessageBody(body: PublicPortalMessageBody | undefined) {
   const candidate = body?.text ?? body?.body ?? body?.message ?? body?.responseText
   return typeof candidate === 'string' ? candidate.trim() : ''
@@ -100,6 +103,14 @@ async function resolveValidatedPortalAccess(
 ) {
   const portalAccess = await getCasePortalAccessTokenRecord(app, caseId, token)
   if (!portalAccess) {
+    await recordLegalPortalAccessMetric({
+      db: getConnection(app),
+      recorder: getLegalMetricsRecorder(app),
+      metricName: 'legal_portal_access_invalid_total',
+      source: 'portal',
+      reason: 'invalid_token',
+      result: 'blocked',
+    })
     return {
       ok: false as const,
       replyStatus: 401,
@@ -115,6 +126,16 @@ async function resolveValidatedPortalAccess(
 
   const expiresAt = Date.parse(String(portalAccess.expires_at))
   if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) {
+    await recordLegalPortalAccessMetric({
+      db: getConnection(app),
+      recorder: getLegalMetricsRecorder(app),
+      metricName: 'legal_portal_access_expired_total',
+      tenantId: portalAccess.tenant_id,
+      caseId,
+      source: 'portal',
+      reason: 'expired_token',
+      result: 'blocked',
+    })
     return {
       ok: false as const,
       replyStatus: 410,
@@ -129,6 +150,16 @@ async function resolveValidatedPortalAccess(
   }
 
   if (portalAccess.status !== 'active') {
+    await recordLegalPortalAccessMetric({
+      db: getConnection(app),
+      recorder: getLegalMetricsRecorder(app),
+      metricName: 'legal_portal_access_invalid_total',
+      tenantId: portalAccess.tenant_id,
+      caseId,
+      source: 'portal',
+      reason: 'invalid_token',
+      result: 'blocked',
+    })
     return {
       ok: false as const,
       replyStatus: 401,
@@ -168,6 +199,14 @@ export async function registerLegalBetaClientPortalRoutes(app: FastifyInstance) 
   app.get<{ Params: { caseId: string; token: string } }>('/client/portal/:caseId/:token', { preHandler: [publicReadRateLimit] }, async (request, reply) => {
     const portalAccess = await getCasePortalAccessTokenRecord(app, request.params.caseId, request.params.token)
     if (!portalAccess) {
+      await recordLegalPortalAccessMetric({
+        db: getConnection(app),
+        recorder: getLegalMetricsRecorder(app),
+        metricName: 'legal_portal_access_invalid_total',
+        source: 'portal',
+        reason: 'invalid_token',
+        result: 'blocked',
+      })
       return reply.status(404).send({
         status: 'failed',
         error: {
@@ -178,6 +217,16 @@ export async function registerLegalBetaClientPortalRoutes(app: FastifyInstance) 
     }
 
     if (portalAccess.status !== 'active') {
+      await recordLegalPortalAccessMetric({
+        db: getConnection(app),
+        recorder: getLegalMetricsRecorder(app),
+        metricName: 'legal_portal_access_invalid_total',
+        tenantId: portalAccess.tenant_id,
+        caseId: request.params.caseId,
+        source: 'portal',
+        reason: 'invalid_token',
+        result: 'blocked',
+      })
       return reply.status(403).send({
         status: 'failed',
         error: {
@@ -189,6 +238,16 @@ export async function registerLegalBetaClientPortalRoutes(app: FastifyInstance) 
 
     const expiresAt = Date.parse(String(portalAccess.expires_at))
     if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) {
+      await recordLegalPortalAccessMetric({
+        db: getConnection(app),
+        recorder: getLegalMetricsRecorder(app),
+        metricName: 'legal_portal_access_expired_total',
+        tenantId: portalAccess.tenant_id,
+        caseId: request.params.caseId,
+        source: 'portal',
+        reason: 'expired_token',
+        result: 'blocked',
+      })
       return reply.status(403).send({
         status: 'failed',
         error: {
@@ -213,7 +272,14 @@ export async function registerLegalBetaClientPortalRoutes(app: FastifyInstance) 
       })
     }
 
-    await markCasePortalAccessTokenUsed(app, portalAccess.id)
+    await markCasePortalAccessTokenUsed({
+      db: getConnection(app),
+      tenantId: portalAccess.tenant_id,
+      caseId: request.params.caseId,
+      tokenId: portalAccess.id,
+      source: 'legal_beta_client_portal',
+      recorder: getLegalMetricsRecorder(app),
+    })
     const canonicalCase = caseSummary.canonical?.case
 
     return {
@@ -248,7 +314,14 @@ export async function registerLegalBetaClientPortalRoutes(app: FastifyInstance) 
     }
 
     const messages = await getCaseService(app).getCaseMessages(portalAccessResult.portalAccess.tenant_id, request.params.caseId)
-    await markCasePortalAccessTokenUsed(app, portalAccessResult.portalAccess.id)
+    await markCasePortalAccessTokenUsed({
+      db: getConnection(app),
+      tenantId: portalAccessResult.portalAccess.tenant_id,
+      caseId: request.params.caseId,
+      tokenId: portalAccessResult.portalAccess.id,
+      source: 'legal_beta_client_portal',
+      recorder: getLegalMetricsRecorder(app),
+    })
 
     return {
       status: 'ready',
@@ -311,8 +384,25 @@ export async function registerLegalBetaClientPortalRoutes(app: FastifyInstance) 
       })
     }
 
+    if (messageResult.status === 'responsible_required') {
+      return reply.status(409).send({
+        status: 'failed',
+        error: {
+          code: 'CASE_RESPONSIBLE_REQUIRED',
+          message: 'Case requires a responsible professional before sending replies.',
+        },
+      })
+    }
+
     const messages = await getCaseService(app).getCaseMessages(portalAccessResult.portalAccess.tenant_id, request.params.caseId)
-    await markCasePortalAccessTokenUsed(app, portalAccessResult.portalAccess.id)
+    await markCasePortalAccessTokenUsed({
+      db: getConnection(app),
+      tenantId: portalAccessResult.portalAccess.tenant_id,
+      caseId: request.params.caseId,
+      tokenId: portalAccessResult.portalAccess.id,
+      source: 'legal_beta_client_portal',
+      recorder: getLegalMetricsRecorder(app),
+    })
     const latestMessage = messageResult.message ?? messages.at(-1)
 
     return {

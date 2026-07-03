@@ -7,7 +7,11 @@ import type {
   JsonObject,
 } from './caseTypes.js'
 
-import type { LegalCanonicalProfessionalIdentity } from './legalCanonicalTypes.js'
+import type {
+  CanonicalContactIdentity,
+  LegalCanonicalProfessionalIdentity,
+} from './legalCanonicalTypes.js'
+import { buildCanonicalContactIdentity } from './legalContactNormalization.js'
 
 type PublicTriageUrgency = 'critical' | 'priority' | 'planned'
 
@@ -17,6 +21,7 @@ export type CanonicalCaseInput = {
   contact?: string
   contactPreference?: string
   city?: string
+  contactIdentity?: CanonicalContactIdentity
   practiceArea?: string
   priority: CasePriority
   status: CaseStatus
@@ -31,11 +36,24 @@ export type CanonicalCaseInput = {
     direction: CaseMessageDirection
     messageType: CaseMessageType
     messageStatus: CaseMessageStatus
+    channel?: string
+    subject?: string
+    content?: JsonObject
+    attachments?: unknown[]
+    sentAt?: string
   }
 }
 
 type CanonicalCaseInputSnapshot = Omit<CanonicalCaseInput, 'metadata'> & {
   metadata: JsonObject
+}
+
+export type CanonicalCaseInputContactSnapshot = {
+  clientName?: string
+  contact?: string
+  contactPreference?: string
+  city?: string
+  contactIdentity?: CanonicalContactIdentity
 }
 
 type PublicTriageBuilderArgs = {
@@ -146,10 +164,7 @@ export function readCanonicalCaseInput(value: unknown): CanonicalCaseInput | und
 
   return {
     caseNumber: readString(record, 'caseNumber'),
-    clientName: readString(record, 'clientName'),
-    contact: readString(record, 'contact'),
-    contactPreference: readString(record, 'contactPreference'),
-    city: readString(record, 'city'),
+    ...readCanonicalCaseInputContactSnapshot(record),
     practiceArea: readString(record, 'practiceArea'),
     priority: priority as CasePriority,
     status: status as CaseStatus,
@@ -164,7 +179,45 @@ export function readCanonicalCaseInput(value: unknown): CanonicalCaseInput | und
       direction: initialMessageDirection as CaseMessageDirection,
       messageType: initialMessageType as CaseMessageType,
       messageStatus: initialMessageStatus as CaseMessageStatus,
+      channel: readString(initialMessage, 'channel'),
+      subject: readString(initialMessage, 'subject'),
+      content: asRecord(initialMessage.content),
+      attachments: Array.isArray(initialMessage.attachments) ? initialMessage.attachments : [],
+      sentAt: readString(initialMessage, 'sentAt'),
     },
+  }
+}
+
+export function readCanonicalCaseInputContactSnapshot(value: unknown): CanonicalCaseInputContactSnapshot | undefined {
+  const record = asRecord(value)
+  const clientName = readString(record, 'clientName')
+  const contact = readString(record, 'contact')
+  const contactPreference = readString(record, 'contactPreference')
+  const city = readString(record, 'city')
+  const contactIdentity = buildCanonicalContactIdentity({
+    name: readString(asRecord(record.contactIdentity), 'displayName', 'canonicalName') ?? clientName,
+    whatsapp:
+      readString(asRecord(record.contactIdentity), 'displayWhatsapp', 'canonicalWhatsapp')
+      ?? (contactPreference?.toLowerCase() === 'whatsapp' ? contact : undefined),
+    phone:
+      readString(asRecord(record.contactIdentity), 'displayPhone', 'canonicalPhone')
+      ?? (['telefone', 'phone'].includes(contactPreference?.toLowerCase() ?? '') ? contact : undefined),
+    email:
+      readString(asRecord(record.contactIdentity), 'displayEmail', 'canonicalEmail')
+      ?? (contactPreference?.toLowerCase() === 'email' ? contact : undefined),
+    city: readString(asRecord(record.contactIdentity), 'displayCity', 'canonicalCity') ?? city,
+  })
+
+  if (!clientName && !contact && !contactPreference && !city && !contactIdentity) {
+    return undefined
+  }
+
+  return {
+    clientName,
+    contact,
+    contactPreference,
+    city,
+    contactIdentity,
   }
 }
 
@@ -178,6 +231,13 @@ export function buildCanonicalCaseInputFromPublicTriage(args: PublicTriageBuilde
   const practiceArea = args.triage?.practiceArea?.trim() || undefined
   const urgency = args.triage?.urgency ?? 'planned'
   const summary = buildCanonicalSummary(args)
+  const contactIdentity = buildCanonicalContactIdentity({
+    name: clientName,
+    whatsapp: contactPreference?.toLowerCase() === 'whatsapp' ? contact : undefined,
+    phone: ['telefone', 'phone'].includes(contactPreference?.toLowerCase() ?? '') ? contact : undefined,
+    email: contactPreference?.toLowerCase() === 'email' ? contact : undefined,
+    city,
+  })
 
   const canonicalCaseInput: CanonicalCaseInput = {
     caseNumber: undefined,
@@ -185,6 +245,7 @@ export function buildCanonicalCaseInputFromPublicTriage(args: PublicTriageBuilde
     contact,
     contactPreference,
     city,
+    contactIdentity,
     practiceArea,
     priority: resolvePriority(urgency),
     status: 'open',
@@ -199,6 +260,13 @@ export function buildCanonicalCaseInputFromPublicTriage(args: PublicTriageBuilde
       direction: 'inbound',
       messageType: 'note',
       messageStatus: 'sent',
+      channel: 'public_triage',
+      content: {
+        source: 'public_triage',
+        requestId: args.requestId,
+        leadId: args.leadId,
+        intakeId: args.intakeId,
+      },
     },
   }
 

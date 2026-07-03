@@ -5,6 +5,7 @@ import type {
   LegalOfficeIdentity,
 } from './legalCanonicalTypes.js'
 import { readCanonicalCaseInput } from './legalCanonicalCaseInput.js'
+import { buildCanonicalContactIdentity } from './legalContactNormalization.js'
 
 type OfficeBusinessConfigLike = {
   officeName?: string
@@ -97,6 +98,92 @@ function compactUnique(values: Array<string | undefined>) {
   return Array.from(new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value))))
 }
 
+function readStructuredContactIdentity(caseRecord: CaseRecord) {
+  if (
+    !caseRecord.clientDisplayName
+    && !caseRecord.clientCanonicalName
+    && !caseRecord.clientDisplayPhone
+    && !caseRecord.clientCanonicalPhone
+    && !caseRecord.clientDisplayWhatsapp
+    && !caseRecord.clientCanonicalWhatsapp
+    && !caseRecord.clientDisplayEmail
+    && !caseRecord.clientCanonicalEmail
+    && !caseRecord.clientDisplayCity
+    && !caseRecord.clientCanonicalCity
+    && !caseRecord.clientSearchKey
+  ) {
+    return undefined
+  }
+
+  return {
+    displayName: caseRecord.clientDisplayName,
+    canonicalName: caseRecord.clientCanonicalName,
+    displayPhone: caseRecord.clientDisplayPhone,
+    canonicalPhone: caseRecord.clientCanonicalPhone,
+    displayWhatsapp: caseRecord.clientDisplayWhatsapp,
+    canonicalWhatsapp: caseRecord.clientCanonicalWhatsapp,
+    displayEmail: caseRecord.clientDisplayEmail,
+    canonicalEmail: caseRecord.clientCanonicalEmail,
+    displayCity: caseRecord.clientDisplayCity,
+    canonicalCity: caseRecord.clientCanonicalCity,
+    searchKey: caseRecord.clientSearchKey,
+  }
+}
+
+export type LegalIdentityResolutionSource =
+  | 'structured_columns'
+  | 'canonical_case_input'
+  | 'public_triage'
+  | 'metadata'
+  | 'unknown'
+
+export function resolveLegalIdentitySource(caseRecord: CaseRecord): {
+  source: LegalIdentityResolutionSource
+  reason:
+    | 'structured_available'
+    | 'structured_missing'
+    | 'structured_and_snapshot_missing'
+    | 'structured_snapshot_and_public_triage_missing'
+    | 'unknown'
+} {
+  const metadata = asRecord(caseRecord.metadata)
+  const structuredContactIdentity = readStructuredContactIdentity(caseRecord)
+  if (structuredContactIdentity) {
+    return {
+      source: 'structured_columns',
+      reason: 'structured_available',
+    }
+  }
+
+  const persistedCanonicalInput = readCanonicalCaseInput(asRecord(metadata).canonicalCaseInput)
+  if (persistedCanonicalInput) {
+    return {
+      source: 'canonical_case_input',
+      reason: 'structured_missing',
+    }
+  }
+
+  const publicTriage = readNestedRecord(metadata, 'publicTriage')
+  if (Object.keys(publicTriage).length > 0) {
+    return {
+      source: 'public_triage',
+      reason: 'structured_and_snapshot_missing',
+    }
+  }
+
+  if (Object.keys(metadata).length > 0) {
+    return {
+      source: 'metadata',
+      reason: 'structured_snapshot_and_public_triage_missing',
+    }
+  }
+
+  return {
+    source: 'unknown',
+    reason: 'unknown',
+  }
+}
+
 export function buildLegalCaseNumber(caseId: string, explicitCaseNumber?: string | null) {
   const normalizedExplicit = explicitCaseNumber?.trim()
   if (normalizedExplicit) {
@@ -176,11 +263,60 @@ export function buildLegalCaseIdentity(args: {
   sla?: LegalCaseIdentity['sla']
 }): LegalCaseIdentity {
   const metadata = asRecord(args.caseRecord.metadata)
+  // Legacy compatibility fallback only.
+  // New operational identity must come from structured columns / canonical identity.
   const publicTriage = readNestedRecord(metadata, 'publicTriage')
+  // Legacy compatibility fallback only.
+  // New operational identity must come from structured columns / canonical identity.
   const persistedCanonicalInput = readCanonicalCaseInput(asRecord(metadata).canonicalCaseInput)
+  const structuredContactIdentity = readStructuredContactIdentity(args.caseRecord)
   const responsibleProfessional = args.responsibleProfessional
     ? mapLegalProfessionalIdentity(args.responsibleProfessional)
     : null
+  // Legacy compatibility fallback only.
+  // New operational identity must come from structured columns / canonical identity.
+  const clientName = structuredContactIdentity?.displayName
+    ?? persistedCanonicalInput?.clientName
+    ?? readString(publicTriage, 'clientName', 'fullName', 'name')
+    ?? readString(metadata, 'clientName', 'fullName', 'name')
+  // Legacy compatibility fallback only.
+  // New operational identity must come from structured columns / canonical identity.
+  const clientContact = structuredContactIdentity?.canonicalWhatsapp
+    ?? structuredContactIdentity?.canonicalPhone
+    ?? structuredContactIdentity?.canonicalEmail
+    ?? structuredContactIdentity?.displayWhatsapp
+    ?? structuredContactIdentity?.displayPhone
+    ?? structuredContactIdentity?.displayEmail
+    ?? persistedCanonicalInput?.contact
+    ?? readString(publicTriage, 'contactValue')
+    ?? readString(metadata, 'contact')
+  // Legacy compatibility fallback only.
+  // New operational identity must come from structured columns / canonical identity.
+  const clientContactPreference = (structuredContactIdentity?.canonicalWhatsapp || structuredContactIdentity?.displayWhatsapp ? 'WhatsApp' : undefined)
+    ?? (structuredContactIdentity?.canonicalPhone || structuredContactIdentity?.displayPhone ? 'Telefone' : undefined)
+    ?? (structuredContactIdentity?.canonicalEmail || structuredContactIdentity?.displayEmail ? 'Email' : undefined)
+    ?? persistedCanonicalInput?.contactPreference
+    ?? readString(publicTriage, 'contactPreference')
+    ?? readString(metadata, 'contactPreference')
+  // Legacy compatibility fallback only.
+  // New operational identity must come from structured columns / canonical identity.
+  const clientCity = structuredContactIdentity?.displayCity
+    ?? structuredContactIdentity?.canonicalCity
+    ?? persistedCanonicalInput?.city
+    ?? readString(publicTriage, 'city')
+    ?? readString(metadata, 'city')
+  const persistedOrStructuredContactIdentity = structuredContactIdentity ?? persistedCanonicalInput?.contactIdentity
+  const clientContactIdentity = persistedOrStructuredContactIdentity
+    ? {
+        ...persistedOrStructuredContactIdentity,
+      }
+    : buildCanonicalContactIdentity({
+        name: clientName,
+        whatsapp: clientContactPreference?.toLowerCase() === 'whatsapp' ? clientContact : undefined,
+        phone: ['telefone', 'phone'].includes(clientContactPreference?.toLowerCase() ?? '') ? clientContact : undefined,
+        email: clientContactPreference?.toLowerCase() === 'email' ? clientContact : undefined,
+        city: clientCity,
+      })
 
   return {
     caseId: args.caseRecord.id,
@@ -194,23 +330,14 @@ export function buildLegalCaseIdentity(args: {
       // FT-04 compatibility fallback:
       // New business truth must come from canonical.case, using metadata only while
       // older persisted cases are still being migrated.
-      name: persistedCanonicalInput?.clientName
-        ?? readString(metadata, 'clientName', 'fullName', 'name')
-        ?? readString(publicTriage, 'clientName', 'fullName', 'name'),
-      contact: persistedCanonicalInput?.contact
-        ?? readString(metadata, 'contact')
-        ?? readString(publicTriage, 'contactValue'),
-      contactPreference: persistedCanonicalInput?.contactPreference
-        ?? readString(publicTriage, 'contactPreference')
-        ?? readString(metadata, 'contactPreference'),
-      city: persistedCanonicalInput?.city
-        ?? readString(metadata, 'city')
-        ?? readString(publicTriage, 'city'),
+      name: clientName,
+      contact: clientContact,
+      contactPreference: clientContactPreference,
+      city: clientCity,
+      contactIdentity: clientContactIdentity,
     },
     practiceArea: args.caseRecord.practiceArea ?? persistedCanonicalInput?.practiceArea,
-    city: persistedCanonicalInput?.city
-      ?? readString(metadata, 'city')
-      ?? readString(publicTriage, 'city'),
+    city: clientCity,
     responsibleProfessional,
     priority: args.caseRecord.priority,
     status: args.caseRecord.status,
@@ -225,6 +352,7 @@ export const legalCanonicalIdentity = {
   buildLegalCaseNumber,
   buildLegalOfficeIdentity,
   buildLegalCaseIdentity,
+  resolveLegalIdentitySource,
   mapLegalProfessionalIdentity,
   compactUnique,
 }
