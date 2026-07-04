@@ -31,12 +31,12 @@ export class OperationalSnapshotMetrics {
     })
   }
 
-  recordBuildTiming(args: OperationalSnapshotMetricArgs & { durationMs: number }) {
+  recordBuildTiming(args: OperationalSnapshotMetricArgs & { durationMs: number; result?: 'success' | 'failed' }) {
     this.observability?.recordTiming(SNAPSHOT_BUILD_MS, args.durationMs, {
       tenant_id: String(args.tenantId),
       entity_id: args.entityId,
       source: 'operational_snapshot',
-      result: 'success',
+      result: args.result ?? 'success',
     })
   }
 }

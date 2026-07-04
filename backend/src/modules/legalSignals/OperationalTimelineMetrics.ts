@@ -21,12 +21,12 @@ export class OperationalTimelineMetrics {
     })
   }
 
-  recordBuildTiming(args: OperationalTimelineMetricArgs & { durationMs: number }) {
+  recordBuildTiming(args: OperationalTimelineMetricArgs & { durationMs: number; result?: 'success' | 'failed' }) {
     this.observability?.recordTiming(OPERATIONAL_TIMELINE_BUILD_MS, args.durationMs, {
       tenant_id: String(args.tenantId),
       entity_id: args.entityId,
       source: 'operational_timeline',
-      result: 'success',
+      result: args.result ?? 'success',
     })
   }
 

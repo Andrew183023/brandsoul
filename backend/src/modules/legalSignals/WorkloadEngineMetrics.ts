@@ -21,12 +21,12 @@ export class WorkloadEngineMetrics {
     })
   }
 
-  recordProjectionBuildTiming(args: WorkloadEngineMetricArgs & { durationMs: number }) {
+  recordProjectionBuildTiming(args: WorkloadEngineMetricArgs & { durationMs: number; result?: 'success' | 'failed' }) {
     this.observability?.recordTiming(WORKLOAD_PROJECTION_BUILD_MS, args.durationMs, {
       tenant_id: String(args.tenantId),
       entity_id: args.entityId,
       source: 'workload_engine',
-      result: 'success',
+      result: args.result ?? 'success',
     })
   }
 

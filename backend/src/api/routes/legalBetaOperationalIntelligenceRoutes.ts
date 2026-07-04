@@ -3,8 +3,9 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify'
 import type { EntityProfile } from '../../brain/domain/entity/contracts/EntityProfile.js'
 import type { BackendDatabase } from '../../db/index.js'
 import type { EntityRepository } from '../../repositories/entityRepository.js'
+import type { ObservabilityService } from '../../services/observabilityService.js'
 import { createCaseRepository } from '../../modules/legalCases/caseRepository.js'
-import { buildOperationalIntelligenceResponse } from '../../modules/legalSignals/operationalIntelligenceController.js'
+import { createOperationalIntelligenceService } from '../../modules/legalSignals/operationalIntelligenceService.js'
 import { createRateLimit } from '../middleware/rateLimit.js'
 import { getRequestAuth, requireAuth } from '../middleware/requireAuth.js'
 
@@ -12,6 +13,7 @@ type BackendContext = {
   backendContext: {
     connection: BackendDatabase
     entityRepository: EntityRepository
+    observability: ObservabilityService
   }
 }
 
@@ -25,6 +27,12 @@ function getRepository(app: FastifyInstance) {
 
 function getCaseRepository(app: FastifyInstance) {
   return createCaseRepository(getConnection(app))
+}
+
+function getOperationalIntelligenceService(app: FastifyInstance) {
+  return createOperationalIntelligenceService({
+    observability: (app as FastifyInstance & BackendContext).backendContext.observability,
+  })
 }
 
 function buildLegacyOwnerId(userId: number, tenantId: number) {
@@ -106,7 +114,7 @@ export async function registerLegalBetaOperationalIntelligenceRoutes(app: Fastif
       }
 
       const cases = await getCaseRepository(app).listCasesByEntity(owned.tenantId, owned.officeId)
-      return buildOperationalIntelligenceResponse({
+      return getOperationalIntelligenceService(app).build({
         tenantId: owned.tenantId,
         officeId: owned.officeId,
         cases,

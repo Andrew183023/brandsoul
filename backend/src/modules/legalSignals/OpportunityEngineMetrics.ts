@@ -21,12 +21,12 @@ export class OpportunityEngineMetrics {
     })
   }
 
-  recordProjectionBuildTiming(args: OpportunityEngineMetricArgs & { durationMs: number }) {
+  recordProjectionBuildTiming(args: OpportunityEngineMetricArgs & { durationMs: number; result?: 'success' | 'failed' }) {
     this.observability?.recordTiming(OPPORTUNITY_PROJECTION_BUILD_MS, args.durationMs, {
       tenant_id: String(args.tenantId),
       entity_id: args.entityId,
       source: 'opportunity_engine',
-      result: 'success',
+      result: args.result ?? 'success',
     })
   }
 

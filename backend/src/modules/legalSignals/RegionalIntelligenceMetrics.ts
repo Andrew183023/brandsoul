@@ -21,12 +21,12 @@ export class RegionalIntelligenceMetrics {
     })
   }
 
-  recordProjectionBuildTiming(args: RegionalIntelligenceMetricArgs & { durationMs: number }) {
+  recordProjectionBuildTiming(args: RegionalIntelligenceMetricArgs & { durationMs: number; result?: 'success' | 'failed' }) {
     this.observability?.recordTiming(REGIONAL_PROJECTION_BUILD_MS, args.durationMs, {
       tenant_id: String(args.tenantId),
       entity_id: args.entityId,
       source: 'regional_intelligence',
-      result: 'success',
+      result: args.result ?? 'success',
     })
   }
 

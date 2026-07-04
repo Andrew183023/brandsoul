@@ -21,12 +21,12 @@ export class SpecialtyIntelligenceMetrics {
     })
   }
 
-  recordProjectionBuildTiming(args: SpecialtyIntelligenceMetricArgs & { durationMs: number }) {
+  recordProjectionBuildTiming(args: SpecialtyIntelligenceMetricArgs & { durationMs: number; result?: 'success' | 'failed' }) {
     this.observability?.recordTiming(SPECIALTY_PROJECTION_BUILD_MS, args.durationMs, {
       tenant_id: String(args.tenantId),
       entity_id: args.entityId,
       source: 'specialty_intelligence',
-      result: 'success',
+      result: args.result ?? 'success',
     })
   }
 
