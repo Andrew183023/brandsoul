@@ -2518,10 +2518,10 @@ async function initializePostgresLegalCaseSchema(db: BackendDatabase) {
   `)
   await db.exec(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_case_messages_public_triage_request_unique
-    ON case_messages (tenant_id, case_id, (content->>'requestId'))
+    ON case_messages (tenant_id, case_id, ((NULLIF(content::text, '')::jsonb)->>'requestId'))
     WHERE channel = 'public_triage'
-      AND content->>'source' = 'public_triage'
-      AND content->>'requestId' IS NOT NULL
+      AND ((NULLIF(content::text, '')::jsonb)->>'source') = 'public_triage'
+      AND ((NULLIF(content::text, '')::jsonb)->>'requestId') IS NOT NULL
   `)
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_case_messages_case_created
@@ -2541,15 +2541,15 @@ async function initializePostgresLegalCaseSchema(db: BackendDatabase) {
   `)
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_entity_portfolio_lead_signal_entity_request
-    ON entity_portfolio_lead_signal (entity_id, (payload_json->>'requestId'))
+    ON entity_portfolio_lead_signal (entity_id, ((NULLIF(payload_json::text, '')::jsonb)->>'requestId'))
   `)
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_entity_portfolio_lead_entity_request
-    ON entity_portfolio_lead (entity_id, (payload_json->>'requestId'))
+    ON entity_portfolio_lead (entity_id, ((NULLIF(payload_json::text, '')::jsonb)->>'requestId'))
   `)
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_entity_portfolio_lead_intake_entity_request
-    ON entity_portfolio_lead_intake (entity_id, (payload_json->>'requestId'))
+    ON entity_portfolio_lead_intake (entity_id, ((NULLIF(payload_json::text, '')::jsonb)->>'requestId'))
   `)
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_reputation_tenant_score
@@ -3624,9 +3624,9 @@ export async function initializeDatabase(db: BackendDatabase) {
   if (db.dialect === 'postgres') {
     await db.exec(`
       UPDATE cases
-      SET request_id = metadata #>> '{publicTriage,requestId}'
+      SET request_id = (NULLIF(metadata::text, '')::jsonb #>> '{publicTriage,requestId}')
       WHERE request_id IS NULL
-        AND metadata #>> '{publicTriage,requestId}' IS NOT NULL
+        AND (NULLIF(metadata::text, '')::jsonb #>> '{publicTriage,requestId}') IS NOT NULL
     `)
   } else {
     await db.exec(`
