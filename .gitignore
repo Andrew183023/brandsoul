@@ -19,6 +19,9 @@ build/
 **/build/
 coverage/
 **/coverage/
+!backend/src/modules/legalGrowth/coverage/
+!backend/src/modules/legalGrowth/coverage/**
+
 *.log
 build_output.txt
 test_output.txt
