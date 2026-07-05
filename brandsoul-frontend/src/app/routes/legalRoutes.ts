@@ -8,6 +8,7 @@ export type AdminOfficeSection =
   | 'perfil-publico'
   | 'publicacao'
   | 'crescimento'
+  | 'inteligencia-crescimento'
   | 'configuracoes'
 
 export const LEGAL_ROUTES = {

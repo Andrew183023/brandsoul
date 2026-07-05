@@ -19,6 +19,7 @@ export type OfficeProfessionalProjection = {
   phone?: string
   status: 'active' | 'inactive' | 'suspended'
   officeId?: string
+  city?: string
   photoUrl?: string
   oabCredential?: string
   specialties: string[]

@@ -439,7 +439,7 @@ export class CaseRepository {
             client_display_city, client_canonical_city, client_search_key,
             centelha_context, metadata, created_at, updated_at
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?)
         `
       : `
           INSERT INTO cases (
@@ -450,7 +450,7 @@ export class CaseRepository {
             client_display_city, client_canonical_city, client_search_key,
             centelha_context, metadata, created_at, updated_at
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
 
     await this.db.run(
@@ -711,6 +711,7 @@ export class CaseRepository {
     phone?: string
     status: 'active' | 'inactive' | 'suspended'
     officeId?: string
+    city?: string
     photoUrl?: string
     oabCredential?: string
     specialties: string[]
@@ -730,6 +731,7 @@ export class CaseRepository {
       status: 'active' | 'inactive' | 'suspended'
       professional_metadata: unknown
       specialties: unknown
+      availability: unknown
       bio: string | null
       profile_metadata: unknown
       created_at: string | Date
@@ -746,6 +748,7 @@ export class CaseRepository {
           professionals.status,
           professionals.metadata AS professional_metadata,
           professional_profiles.specialties,
+          professional_profiles.availability,
           professional_profiles.bio,
           professional_profiles.metadata AS profile_metadata
         FROM professionals
@@ -760,6 +763,7 @@ export class CaseRepository {
 
     return rows.map((row) => {
       const professionalMetadata = parseJsonObject(row.professional_metadata)
+      const availability = parseJsonObject(row.availability)
       const profileMetadata = parseJsonObject(row.profile_metadata)
       const specialties = parseJsonArray(row.specialties)
         .filter((value): value is string => typeof value === 'string')
@@ -775,6 +779,9 @@ export class CaseRepository {
         phone: row.primary_phone ?? undefined,
         status: row.status,
         officeId: readMetadataString(professionalMetadata, 'officeId', 'office_id'),
+        city: readMetadataString(availability, 'city')
+          ?? readMetadataString(professionalMetadata, 'city')
+          ?? readMetadataString(parseJsonObject(professionalMetadata.location), 'city'),
         photoUrl: typeof profileMetadata.photoUrl === 'string' && profileMetadata.photoUrl.trim().length > 0
           ? profileMetadata.photoUrl.trim()
           : undefined,
@@ -882,7 +889,7 @@ export class CaseRepository {
           INSERT INTO professional_profiles (
             id, tenant_id, professional_id, bio, specialties, metadata, created_at, updated_at
           )
-          VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?)
+          VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?)
         `
       : `
           INSERT INTO professional_profiles (

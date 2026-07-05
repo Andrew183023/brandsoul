@@ -232,6 +232,236 @@ export type OfficeProfessional = {
   updatedAt: string
 }
 
+export type AdminGrowthPriority = 'low' | 'medium' | 'high' | 'critical'
+export type AdminGrowthConfidence = 'low' | 'medium' | 'high'
+export type AdminGrowthTrend = 'up' | 'down' | 'stable' | 'unknown'
+export type AdminGrowthCoverageStatus = 'covered' | 'partial' | 'uncovered' | 'unknown'
+export type AdminGrowthCapacityStatus = 'available' | 'balanced' | 'constrained' | 'overloaded' | 'unknown'
+export type AdminGrowthCoverageGapType = 'none' | 'city_uncovered' | 'specialty_uncovered' | 'low_capacity' | 'unknown'
+export type AdminGrowthRecommendationType =
+  | 'expand_city'
+  | 'expand_specialty'
+  | 'improve_coverage'
+  | 'rebalance_capacity'
+  | 'improve_conversion'
+  | 'monitor'
+export type AdminGrowthOpportunityType =
+  | 'abrir_landing_page'
+  | 'contratar_associado'
+  | 'expandir_raio'
+  | 'adicionar_especialidade'
+  | 'criar_campanha_regional'
+  | 'fortalecer_presenca'
+
+export type AdminGrowthPeriod = {
+  label: string
+  startsAt: string
+  endsAt: string
+  granularity: 'day' | 'week' | 'month' | 'quarter' | 'year' | 'custom'
+}
+
+export type AdminGrowthSummary = {
+  totalDemand: number
+  totalTerritories: number
+  totalCoverageGaps: number
+  overloadedProfessionals: number
+  constrainedProfessionals: number
+  expansionOpportunities: number
+  landingCandidates: number
+  eligibleLandingCandidates: number
+  recommendations: number
+  criticalRecommendations: number
+  averageGrowthScore: number | null
+  highestPriority: AdminGrowthPriority | null
+  generatedAt: string
+}
+
+export type AdminGrowthDemandItem = {
+  id: string
+  officeId: string
+  tenantId: number
+  period: AdminGrowthPeriod
+  city: string
+  specialty: string
+  origin: string
+  casesCount: number
+  leadsCount: number
+  conversionRate: number
+  backlogCount: number
+  averageResolutionHours: number | null
+  slaRiskScore: number
+  score: number
+  trend: AdminGrowthTrend
+  evidenceIds: string[]
+}
+
+export type AdminGrowthTerritory = {
+  id: string
+  officeId: string
+  tenantId: number
+  period: AdminGrowthPeriod
+  city: string
+  demandScore: number
+  coverageScore: number
+  competitionScore: number
+  growthScore: number
+  coverageStatus: AdminGrowthCoverageStatus
+  trend: AdminGrowthTrend
+  recommendation: 'fortalecer_presenca' | 'expandir_cobertura' | 'monitorar_demanda' | 'sem_dados_suficientes'
+  evidenceIds: string[]
+}
+
+export type AdminGrowthCoverageProjection = {
+  id: string
+  officeId: string
+  tenantId: number
+  period: AdminGrowthPeriod
+  city: string
+  specialty: string
+  status: AdminGrowthCoverageStatus
+  professionalsCount: number
+  activeProfessionalsCount: number
+  compatibleProfessionalsCount: number
+  capacityStatus: AdminGrowthCapacityStatus
+  capacityScore: number
+  gapType: AdminGrowthCoverageGapType
+  evidenceIds: string[]
+}
+
+export type AdminGrowthCapacityProjection = {
+  id: string
+  officeId: string
+  tenantId: number
+  period: AdminGrowthPeriod
+  city?: string
+  specialty?: string
+  professionalId?: string
+  workloadCount: number
+  backlogCount: number
+  openCasesCount: number
+  closedCasesCount: number
+  averageResolutionHours: number | null
+  capacityScore: number
+  capacityStatus: AdminGrowthCapacityStatus
+  recommendation: 'pode_crescer' | 'manter' | 'reduzir_demanda' | 'contratar' | 'sem_dados_suficientes'
+  evidenceIds: string[]
+}
+
+export type AdminGrowthScoreProjection = {
+  id: string
+  officeId: string
+  tenantId: number
+  period: AdminGrowthPeriod
+  city: string
+  specialty?: string
+  value: number
+  demandScore: number
+  coverageScore: number
+  capacityScore: number
+  slaScore: number
+  trendScore: number
+  priority: AdminGrowthPriority
+  confidence: AdminGrowthConfidence
+  evidenceIds: string[]
+}
+
+export type AdminGrowthRecommendation = {
+  id: string
+  officeId: string
+  tenantId: number
+  period: AdminGrowthPeriod
+  type: AdminGrowthRecommendationType
+  priority: AdminGrowthPriority
+  confidence: AdminGrowthConfidence
+  city?: string
+  specialty?: string
+  title: string
+  description: string
+  expectedImpact: string
+  evidenceIds: string[]
+}
+
+export type AdminGrowthOpportunity = {
+  id: string
+  officeId: string
+  tenantId: number
+  period: AdminGrowthPeriod
+  type: AdminGrowthOpportunityType
+  score: number
+  priority: AdminGrowthPriority
+  confidence: AdminGrowthConfidence
+  city?: string
+  specialty?: string
+  expectedImpact: string
+  justification: string
+  requiredActions: string[]
+  evidenceIds: string[]
+}
+
+export type AdminLandingCandidate = {
+  id: string
+  officeId: string
+  tenantId: number
+  period: AdminGrowthPeriod
+  city?: string
+  specialty?: string
+  growthScore: number
+  seoScore: number
+  priority: AdminGrowthPriority
+  confidence: AdminGrowthConfidence
+  eligible: boolean
+  reason: string
+  evidenceIds: string[]
+}
+
+export type AdminGrowthSnapshot = {
+  officeId: string
+  tenantId: number
+  period: AdminGrowthPeriod
+  generatedAt: string
+  demand: {
+    items: AdminGrowthDemandItem[]
+  }
+  territories: AdminGrowthTerritory[]
+  coverage: AdminGrowthCoverageProjection[]
+  capacity: AdminGrowthCapacityProjection[]
+  scores: AdminGrowthScoreProjection[]
+  recommendations: AdminGrowthRecommendation[]
+  opportunities: AdminGrowthOpportunity[]
+  landingCandidates: AdminLandingCandidate[]
+  metadata: {
+    deterministic: true
+    foundationVersion: string
+    evidence: Array<{
+      id: string
+      type: string
+      source: string
+      description: string
+      weight: number
+      createdAt: string
+      city?: string
+      specialty?: string
+      professionalId?: string
+      metric?: string
+      value?: number
+    }>
+  }
+}
+
+export type AdminGrowthIntelligenceResponse = {
+  status: 'ready'
+  officeId: string
+  tenantId: number
+  generatedAt: string
+  summary: AdminGrowthSummary
+  snapshot: AdminGrowthSnapshot
+  compatibility: {
+    professionalsIncluded: boolean
+    entityProfileIncluded: boolean
+    landingCandidatesPreparedOnly: true
+  }
+}
+
 export type OfficeProfessionalPayload = {
   displayName: string
   email?: string
@@ -659,6 +889,21 @@ export async function listOfficeProfessionals(
   }
 
   return response.json() as Promise<{ status: 'ready'; officeId: string; professionals: OfficeProfessional[] }>
+}
+
+export async function getOfficeGrowthIntelligence(
+  officeId: string,
+  baseUrl = getBackendBaseUrl(),
+): Promise<AdminGrowthIntelligenceResponse> {
+  const response = await fetch(`${baseUrl}/escritorios/${encodeURIComponent(officeId)}/growth-intelligence`, {
+    headers: await buildRequiredBackendAuthHeaders(),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readApiErrorMessage(response, `Failed to load growth intelligence (${response.status}).`))
+  }
+
+  return response.json() as Promise<AdminGrowthIntelligenceResponse>
 }
 
 export async function createOfficeProfessional(

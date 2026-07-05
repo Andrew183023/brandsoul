@@ -5,7 +5,7 @@ void React
 
 import '../styles/adminShell.css'
 
-type AdminShellSection = 'visao-geral' | 'casos' | 'triagem' | 'equipe' | 'cobertura' | 'disponibilidade' | 'perfil-publico' | 'publicacao' | 'crescimento' | 'configuracoes'
+type AdminShellSection = 'visao-geral' | 'casos' | 'triagem' | 'equipe' | 'cobertura' | 'disponibilidade' | 'perfil-publico' | 'publicacao' | 'crescimento' | 'inteligencia-crescimento' | 'configuracoes'
 
 type AdminShellProps = {
   officeId: string
@@ -17,8 +17,8 @@ type AdminShellProps = {
 }
 
 type NavItem = {
-  id: 'visao-geral' | 'casos' | 'triagem' | 'equipe' | 'cobertura' | 'disponibilidade' | 'perfil-publico' | 'publicacao' | 'crescimento' | 'configuracoes'
-  routeSection: 'visao-geral' | 'casos' | 'triagem' | 'equipe' | 'cobertura' | 'disponibilidade' | 'perfil-publico' | 'publicacao' | 'crescimento' | 'configuracoes'
+  id: 'visao-geral' | 'casos' | 'triagem' | 'equipe' | 'cobertura' | 'disponibilidade' | 'perfil-publico' | 'publicacao' | 'crescimento' | 'inteligencia-crescimento' | 'configuracoes'
+  routeSection: 'visao-geral' | 'casos' | 'triagem' | 'equipe' | 'cobertura' | 'disponibilidade' | 'perfil-publico' | 'publicacao' | 'crescimento' | 'inteligencia-crescimento' | 'configuracoes'
   label: string
 }
 
@@ -32,6 +32,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'perfil-publico', routeSection: 'perfil-publico', label: 'Perfil Público' },
   { id: 'publicacao', routeSection: 'publicacao', label: 'Publicação' },
   { id: 'crescimento', routeSection: 'crescimento', label: 'Crescimento' },
+  { id: 'inteligencia-crescimento', routeSection: 'inteligencia-crescimento', label: 'Inteligência Growth' },
   { id: 'configuracoes', routeSection: 'configuracoes', label: 'Configurações' },
 ]
 
