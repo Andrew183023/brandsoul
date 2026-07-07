@@ -25,6 +25,7 @@ export const LEGAL_ROUTES = {
   admin: {
     home: '/admin',
     escritorio: (officeId: string, section: AdminOfficeSection) => `/admin/escritorios/${encodeURIComponent(officeId)}/${section}`,
+    executiveDashboard: (officeId: string) => `/admin/escritorios/${encodeURIComponent(officeId)}/executive-dashboard`,
   },
   onboarding: {
     base: '/onboarding/escritorio',

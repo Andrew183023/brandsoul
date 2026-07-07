@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 
 import { registerAuthRoutes } from '../auth/authRoutes.js'
 import { registerAssetRoutes } from './routes/assets.js'
+import { registerExecutiveDashboardRoutes } from './routes/executiveDashboardRoutes.js'
 import { registerLegalBetaCaseRoutes } from './routes/legalBetaCaseRoutes.js'
 import { registerLegalBetaClientPortalRoutes } from './routes/legalBetaClientPortalRoutes.js'
 import { registerLegalBetaDiscoveryRoutes } from './routes/legalBetaDiscoveryRoutes.js'
@@ -25,5 +26,6 @@ export async function registerLegalBetaApi(app: FastifyInstance) {
   await registerLegalBetaCaseRoutes(app)
   await registerLegalBetaOperationalIntelligenceRoutes(app)
   await registerLegalBetaGrowthIntelligenceRoutes(app)
+  await registerExecutiveDashboardRoutes(app)
   await registerRegionalGrowthRoutes(app)
 }

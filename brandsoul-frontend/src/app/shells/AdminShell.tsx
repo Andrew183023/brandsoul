@@ -46,6 +46,8 @@ export default function AdminShell({
 }: AdminShellProps) {
   const resolvedOfficeLabel = officeName?.trim() || officeId
   const activeSection = section
+  const executiveDashboardHref = LEGAL_ROUTES.admin.executiveDashboard(officeId)
+  const isExecutiveDashboardActive = window.location.pathname === executiveDashboardHref
 
   return (
     <main className="admin-office-shell">
@@ -63,6 +65,13 @@ export default function AdminShell({
           <strong>{resolvedOfficeLabel}</strong>
           <span>{officeId}</span>
         </div>
+
+        <a
+          href={executiveDashboardHref}
+          className={`admin-office-shell__nav-link ${isExecutiveDashboardActive ? 'admin-office-shell__nav-link--active' : ''}`}
+        >
+          <span>Cockpit Executivo</span>
+        </a>
 
         <nav className="admin-office-shell__nav" aria-label="Seções da cabine do escritório">
           {NAV_ITEMS.map((item) => {
