@@ -30,6 +30,24 @@ export type {
   ExecutiveTimelineTemporalKind,
 } from './ExecutiveTimelineTypes.js'
 export type {
+  ExecutiveMemoryDecisionCenterProjection,
+  ExecutiveMemoryDecisionEvidenceProjection,
+  ExecutiveMemoryDecisionProjection,
+  ExecutiveMemoryDriverProjection,
+  ExecutiveMemoryOfficeHealthProjection,
+  ExecutiveMemoryProjection,
+  ExecutiveMemoryProjectionInput,
+  ExecutiveMemoryTimelineEvidenceProjection,
+  ExecutiveMemoryTimelineItemProjection,
+  ExecutiveMemoryTimelineProjection,
+} from './ExecutiveMemoryProjectionTypes.js'
+export type {
+  ExecutiveMemorySnapshotListInput,
+  ExecutiveMemorySnapshotLookupInput,
+  ExecutiveMemorySnapshotRecord,
+  SaveExecutiveMemorySnapshotResult,
+} from './ExecutiveMemoryRepository.js'
+export type {
   MorningBrief,
   MorningBriefEngineInput,
   MorningBriefItem,
@@ -70,9 +88,18 @@ export {
   createExecutiveTimelineEngine,
 } from './ExecutiveTimelineEngine.js'
 export {
+  EXECUTIVE_MEMORY_PROJECTION_VERSION,
+} from './ExecutiveMemoryProjectionTypes.js'
+export {
+  ExecutiveMemoryRepository,
+  buildExecutiveMemorySnapshotId,
+  createExecutiveMemoryRepository,
+} from './ExecutiveMemoryRepository.js'
+export {
   ExecutiveExplainabilityLayer,
   createExecutiveExplainabilityLayer,
 } from './ExecutiveExplainabilityLayer.js'
+export { buildExecutiveMemoryProjection } from './ExecutiveMemoryProjection.js'
 export {
   ExecutiveMetrics,
   createExecutiveMetrics,
