@@ -8,6 +8,7 @@ import type { GrowthIntelligenceResponse } from '../legalGrowth/growthIntelligen
 import type { OperationalIntelligenceResponse } from '../legalSignals/operationalIntelligenceService.js'
 import type { DecisionCenterResult } from './DecisionCenterTypes.js'
 import type { ExecutiveFeed } from './ExecutiveFeedTypes.js'
+import type { ExecutiveTimeline } from './ExecutiveTimelineTypes.js'
 import {
   DECISION_CENTER_BUILD_MS,
   EXECUTIVE_FEED_BUILD_MS,
@@ -241,6 +242,34 @@ function createExecutiveFeed(): ExecutiveFeed {
   }
 }
 
+function createExecutiveTimeline(): ExecutiveTimeline {
+  return {
+    items: [
+      {
+        id: 'executive_timeline:growth:expansion_opportunities',
+        category: 'growth',
+        importance: 'medium',
+        temporalKind: 'observed',
+        title: 'Oportunidades de expansao explicam a pressao de crescimento',
+        summary: 'A inteligencia de crescimento identificou oportunidades sustentadas por evidencia.',
+        evidence: [
+          {
+            key: 'expansion_opportunities',
+            value: 1,
+            description: 'Existe uma oportunidade de expansao identificada.',
+          },
+        ],
+        suggestedAction: 'Revisar as oportunidades priorizadas no centro de decisoes.',
+        source: 'growth',
+        sourceKey: 'expansion_opportunities',
+      },
+    ],
+    totalDetected: 1,
+    totalPublished: 1,
+    generatedAt: '2026-07-05T15:00:00.000Z',
+  }
+}
+
 test('executive dashboard service composes the DTO with officeHealth decisionCenter morningBrief and executiveFeed and calls all engines once', () => {
   const growth = createGrowthIntelligenceResponse()
   const operational = createOperationalIntelligenceResponse()
@@ -248,10 +277,12 @@ test('executive dashboard service composes the DTO with officeHealth decisionCen
   const decisionCenter = createDecisionCenterResult()
   const morningBrief = createMorningBrief()
   const executiveFeed = createExecutiveFeed()
+  const executiveTimeline = createExecutiveTimeline()
   let officeHealthCallCount = 0
   let decisionCenterCallCount = 0
   let morningBriefCallCount = 0
   let executiveFeedCallCount = 0
+  let executiveTimelineCallCount = 0
   const executionOrder: string[] = []
   const service = createExecutiveDashboardService({
     officeHealthEngine: {
@@ -295,6 +326,18 @@ test('executive dashboard service composes the DTO with officeHealth decisionCen
         return executiveFeed
       },
     },
+    executiveTimelineEngine: {
+      build(input) {
+        executionOrder.push('timeline')
+        executiveTimelineCallCount += 1
+        assert.equal(input.growth, growth)
+        assert.equal(input.operational, operational)
+        assert.equal(input.officeHealth, officeHealth)
+        assert.equal(input.decisionCenter, decisionCenter)
+        assert.equal(input.generatedAt, undefined)
+        return executiveTimeline
+      },
+    },
   })
 
   const dashboard = service.build({
@@ -314,6 +357,7 @@ test('executive dashboard service composes the DTO with officeHealth decisionCen
     officeHealth,
     decisionCenter,
     executiveFeed,
+    executiveTimeline,
     growth,
     operational,
   })
@@ -321,11 +365,13 @@ test('executive dashboard service composes the DTO with officeHealth decisionCen
   assert.equal(decisionCenterCallCount, 1)
   assert.equal(morningBriefCallCount, 1)
   assert.equal(executiveFeedCallCount, 1)
-  assert.deepEqual(executionOrder, ['health', 'decision', 'brief', 'feed'])
+  assert.equal(executiveTimelineCallCount, 1)
+  assert.deepEqual(executionOrder, ['health', 'decision', 'brief', 'feed', 'timeline'])
   assert.equal(dashboard.morningBrief, morningBrief)
   assert.equal(dashboard.officeHealth, officeHealth)
   assert.equal(dashboard.decisionCenter, decisionCenter)
   assert.equal(dashboard.executiveFeed, executiveFeed)
+  assert.equal(dashboard.executiveTimeline, executiveTimeline)
   assert.equal(dashboard.growth, growth)
   assert.equal(dashboard.operational, operational)
 })
@@ -337,6 +383,7 @@ test('executive dashboard service is deterministic for identical inputs', () => 
   const decisionCenter = createDecisionCenterResult()
   const morningBrief = createMorningBrief()
   const executiveFeed = createExecutiveFeed()
+  const executiveTimeline = createExecutiveTimeline()
   const service = createExecutiveDashboardService({
     officeHealthEngine: {
       build() {
@@ -356,6 +403,11 @@ test('executive dashboard service is deterministic for identical inputs', () => 
     executiveFeedEngine: {
       build() {
         return executiveFeed
+      },
+    },
+    executiveTimelineEngine: {
+      build() {
+        return executiveTimeline
       },
     },
   })
@@ -373,6 +425,7 @@ test('executive dashboard service does not mutate received payloads', () => {
   const decisionCenter = createDecisionCenterResult()
   const morningBrief = createMorningBrief()
   const executiveFeed = createExecutiveFeed()
+  const executiveTimeline = createExecutiveTimeline()
   const service = createExecutiveDashboardService({
     officeHealthEngine: {
       build() {
@@ -392,6 +445,11 @@ test('executive dashboard service does not mutate received payloads', () => {
     executiveFeedEngine: {
       build() {
         return executiveFeed
+      },
+    },
+    executiveTimelineEngine: {
+      build() {
+        return executiveTimeline
       },
     },
   })
@@ -412,6 +470,7 @@ test('executive dashboard service records executive timings and feed totals with
   const decisionCenter = createDecisionCenterResult()
   const morningBrief = createMorningBrief()
   const executiveFeed = createExecutiveFeed()
+  const executiveTimeline = createExecutiveTimeline()
   const service = createExecutiveDashboardService({
     observability,
     officeHealthEngine: {
@@ -434,6 +493,11 @@ test('executive dashboard service records executive timings and feed totals with
         return executiveFeed
       },
     },
+    executiveTimelineEngine: {
+      build() {
+        return executiveTimeline
+      },
+    },
   })
 
   const dashboard = service.build({ growth, operational })
@@ -444,6 +508,7 @@ test('executive dashboard service records executive timings and feed totals with
   })
 
   assert.equal(dashboard.executiveFeed, executiveFeed)
+  assert.equal(dashboard.executiveTimeline, executiveTimeline)
   assert.equal(timingCount(snapshot, OFFICE_HEALTH_BUILD_MS), 1)
   assert.equal(timingCount(snapshot, DECISION_CENTER_BUILD_MS), 1)
   assert.equal(timingCount(snapshot, EXECUTIVE_FEED_BUILD_MS), 1)
@@ -457,13 +522,14 @@ test('executive dashboard service records executive timings and feed totals with
   assert.equal(serialized.includes('phone'), false)
 })
 
-test('executive dashboard mapper preserves explicit generatedAt officeHealth decisionCenter morningBrief and executiveFeed references without calculating', () => {
+test('executive dashboard mapper preserves explicit generatedAt officeHealth decisionCenter morningBrief executiveFeed and executiveTimeline references without calculating', () => {
   const growth = createGrowthIntelligenceResponse()
   const operational = createOperationalIntelligenceResponse()
   const officeHealth = createOfficeHealth()
   const decisionCenter = createDecisionCenterResult()
   const morningBrief = createMorningBrief()
   const executiveFeed = createExecutiveFeed()
+  const executiveTimeline = createExecutiveTimeline()
 
   const dashboard = mapExecutiveDashboard({
     growth,
@@ -472,6 +538,7 @@ test('executive dashboard mapper preserves explicit generatedAt officeHealth dec
     decisionCenter,
     morningBrief,
     executiveFeed,
+    executiveTimeline,
     generatedAt: '2026-07-05T16:00:00.000Z',
   })
 
@@ -480,6 +547,7 @@ test('executive dashboard mapper preserves explicit generatedAt officeHealth dec
   assert.equal(dashboard.officeHealth, officeHealth)
   assert.equal(dashboard.decisionCenter, decisionCenter)
   assert.equal(dashboard.executiveFeed, executiveFeed)
+  assert.equal(dashboard.executiveTimeline, executiveTimeline)
   assert.equal(dashboard.growth, growth)
   assert.equal(dashboard.operational, operational)
 })
@@ -524,6 +592,86 @@ test('executive dashboard mapper throws when executiveFeed is absent', () => {
     decisionCenter,
     morningBrief,
   }), /executiveFeed/)
+})
+
+test('executive dashboard mapper throws when executiveTimeline is absent', () => {
+  const growth = createGrowthIntelligenceResponse()
+  const operational = createOperationalIntelligenceResponse()
+  const officeHealth = createOfficeHealth()
+  const decisionCenter = createDecisionCenterResult()
+  const morningBrief = createMorningBrief()
+  const executiveFeed = createExecutiveFeed()
+
+  assert.throws(() => mapExecutiveDashboard({
+    growth,
+    operational,
+    officeHealth,
+    decisionCenter,
+    morningBrief,
+    executiveFeed,
+  }), /executiveTimeline/)
+})
+
+test('executive dashboard service propagates executive timeline errors without building a partial DTO or re-running previous engines', () => {
+  const growth = createGrowthIntelligenceResponse()
+  const operational = createOperationalIntelligenceResponse()
+  const officeHealth = createOfficeHealth()
+  const decisionCenter = createDecisionCenterResult()
+  const morningBrief = createMorningBrief()
+  const executiveFeed = createExecutiveFeed()
+  let officeHealthCallCount = 0
+  let decisionCenterCallCount = 0
+  let morningBriefCallCount = 0
+  let executiveFeedCallCount = 0
+  let executiveTimelineCallCount = 0
+  const executionOrder: string[] = []
+  const service = createExecutiveDashboardService({
+    officeHealthEngine: {
+      build() {
+        executionOrder.push('health')
+        officeHealthCallCount += 1
+        return officeHealth
+      },
+    },
+    decisionCenterEngine: {
+      build() {
+        executionOrder.push('decision')
+        decisionCenterCallCount += 1
+        return decisionCenter
+      },
+    },
+    morningBriefEngine: {
+      build() {
+        executionOrder.push('brief')
+        morningBriefCallCount += 1
+        return morningBrief
+      },
+    },
+    executiveFeedEngine: {
+      build() {
+        executionOrder.push('feed')
+        executiveFeedCallCount += 1
+        return executiveFeed
+      },
+    },
+    executiveTimelineEngine: {
+      build(input) {
+        executionOrder.push('timeline')
+        executiveTimelineCallCount += 1
+        assert.equal(input.officeHealth, officeHealth)
+        assert.equal(input.decisionCenter, decisionCenter)
+        throw new Error('timeline_failure')
+      },
+    },
+  })
+
+  assert.throws(() => service.build({ growth, operational }), /timeline_failure/)
+  assert.equal(officeHealthCallCount, 1)
+  assert.equal(decisionCenterCallCount, 1)
+  assert.equal(morningBriefCallCount, 1)
+  assert.equal(executiveFeedCallCount, 1)
+  assert.equal(executiveTimelineCallCount, 1)
+  assert.deepEqual(executionOrder, ['health', 'decision', 'brief', 'feed', 'timeline'])
 })
 
 test('executive dashboard service uses performance.now and does not use Date.now for observability timing', () => {

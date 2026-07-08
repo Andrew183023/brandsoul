@@ -2,6 +2,7 @@ import type { GrowthIntelligenceResponse } from '../legalGrowth/growthIntelligen
 import type { OperationalIntelligenceResponse } from '../legalSignals/operationalIntelligenceService.js'
 import type { DecisionCenterResult } from './DecisionCenterTypes.js'
 import type { ExecutiveFeed } from './ExecutiveFeedTypes.js'
+import type { ExecutiveTimeline } from './ExecutiveTimelineTypes.js'
 import type { MorningBrief } from './MorningBriefTypes.js'
 import type { OfficeHealth } from './OfficeHealthTypes.js'
 
@@ -19,6 +20,7 @@ export interface ExecutiveDashboard {
   officeHealth: OfficeHealth
   decisionCenter: DecisionCenterResult
   executiveFeed: ExecutiveFeed
+  executiveTimeline: ExecutiveTimeline
   growth: GrowthIntelligenceResponse
   operational: OperationalIntelligenceResponse
 }
@@ -30,5 +32,6 @@ export interface ExecutiveDashboardBuildInput {
   decisionCenter?: DecisionCenterResult
   morningBrief?: MorningBrief
   executiveFeed?: ExecutiveFeed
+  executiveTimeline?: ExecutiveTimeline
   generatedAt?: string
 }

@@ -21,6 +21,15 @@ export type {
   ExecutiveFeedSeverity,
 } from './ExecutiveFeedTypes.js'
 export type {
+  ExecutiveTimeline,
+  ExecutiveTimelineCategory,
+  ExecutiveTimelineEngineInput,
+  ExecutiveTimelineEvidence,
+  ExecutiveTimelineImportance,
+  ExecutiveTimelineItem,
+  ExecutiveTimelineTemporalKind,
+} from './ExecutiveTimelineTypes.js'
+export type {
   MorningBrief,
   MorningBriefEngineInput,
   MorningBriefItem,
@@ -56,6 +65,10 @@ export {
   ExecutiveFeedEngine,
   createExecutiveFeedEngine,
 } from './ExecutiveFeedEngine.js'
+export {
+  ExecutiveTimelineEngine,
+  createExecutiveTimelineEngine,
+} from './ExecutiveTimelineEngine.js'
 export {
   ExecutiveExplainabilityLayer,
   createExecutiveExplainabilityLayer,

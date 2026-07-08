@@ -7,6 +7,7 @@ import type {
   ExecutiveDashboardResponse,
   ExecutiveDecision,
   ExecutiveFeedItem,
+  ExecutiveTimelineItem,
 } from '../backend-bridge/api/executiveDashboardTypes'
 import AdminOfficeLayout from '../components/AdminOfficeLayout'
 import FeedbackBanner from '../components/FeedbackBanner'
@@ -81,6 +82,78 @@ function resolveFeedTone(severity: ExecutiveFeedItem['severity']): StatusChipTon
   }
 }
 
+function resolveTimelineImportanceTone(importance: ExecutiveTimelineItem['importance']): StatusChipTone {
+  switch (importance) {
+    case 'critical':
+      return 'danger'
+    case 'high':
+      return 'warning'
+    case 'medium':
+      return 'neutral'
+    case 'low':
+      return 'success'
+    default:
+      return 'neutral'
+  }
+}
+
+function formatTimelineImportance(importance: ExecutiveTimelineItem['importance']) {
+  switch (importance) {
+    case 'critical':
+      return 'Crítica'
+    case 'high':
+      return 'Alta'
+    case 'medium':
+      return 'Média'
+    case 'low':
+      return 'Baixa'
+    default:
+      return importance
+  }
+}
+
+function formatTimelineCategory(category: ExecutiveTimelineItem['category']) {
+  switch (category) {
+    case 'growth':
+      return 'Crescimento'
+    case 'operations':
+      return 'Operação'
+    case 'health':
+      return 'Saúde operacional'
+    case 'coverage':
+      return 'Cobertura'
+    case 'capacity':
+      return 'Capacidade'
+    case 'sla':
+      return 'SLA'
+    case 'decision':
+      return 'Decisão'
+    default:
+      return category
+  }
+}
+
+function formatTimelineTemporalKind(temporalKind: ExecutiveTimelineItem['temporalKind']) {
+  switch (temporalKind) {
+    case 'observed':
+      return 'Observado'
+    case 'trend':
+      return 'Tendência'
+    case 'comparison':
+      return 'Comparação'
+    default:
+      return temporalKind
+  }
+}
+
+function renderTimelineEvidenceValue(value: string | number | boolean | null | undefined) {
+  if (value === null || value === undefined) {
+    return null
+  }
+
+  return String(value)
+}
+
 function renderDecision(decision: ExecutiveDecision) {
   return (
     <article key={decision.id} className="admin-diagnosis-section admin-form-section executive-cockpit-card executive-cockpit-card--decision">
@@ -116,6 +189,54 @@ function renderFeedItem(item: ExecutiveFeedItem) {
       {item.suggestedAction ? (
         <p className="executive-cockpit-card__action"><strong>Ação sugerida:</strong> {item.suggestedAction}</p>
       ) : null}
+    </article>
+  )
+}
+
+function renderTimelineItem(item: ExecutiveTimelineItem) {
+  return (
+    <article key={item.id} className="admin-diagnosis-section admin-form-section executive-cockpit-card executive-cockpit-card--timeline">
+      <div className="executive-cockpit-timeline-item">
+        <div className="executive-cockpit-timeline-item__marker" aria-hidden="true" />
+        <div className="executive-cockpit-timeline-item__content">
+          <div className="admin-card-header executive-cockpit-card__header">
+            <h3>{item.title}</h3>
+            <StatusChip tone={resolveTimelineImportanceTone(item.importance)}>
+              {formatTimelineImportance(item.importance)}
+            </StatusChip>
+          </div>
+          <p className="executive-cockpit-card__summary">{item.summary}</p>
+          <div className="executive-cockpit-badge-row">
+            <StatusChip tone="neutral">{formatTimelineCategory(item.category)}</StatusChip>
+            <StatusChip tone="neutral">{formatTimelineTemporalKind(item.temporalKind)}</StatusChip>
+            {item.occurredAt ? (
+              <StatusChip tone="neutral">Quando: {formatUpdatedAt(item.occurredAt)}</StatusChip>
+            ) : null}
+          </div>
+          {item.evidence.length > 0 ? (
+            <ul className="executive-cockpit-evidence-list">
+              {item.evidence.map((evidence, index) => {
+                const value = renderTimelineEvidenceValue(evidence.value)
+
+                return (
+                  <li
+                    key={`${item.id}:evidence:${index}`}
+                    className="executive-cockpit-evidence-item"
+                  >
+                    <span>{evidence.description}</span>
+                    {value !== null ? (
+                      <StatusChip tone="neutral">Valor: {value}</StatusChip>
+                    ) : null}
+                  </li>
+                )
+              })}
+            </ul>
+          ) : null}
+          {item.suggestedAction ? (
+            <p className="executive-cockpit-card__action"><strong>Ação sugerida:</strong> {item.suggestedAction}</p>
+          ) : null}
+        </div>
+      </div>
     </article>
   )
 }
@@ -171,6 +292,7 @@ export default function AdminExecutiveCockpitPage({ officeId }: Props) {
 
   const decisions = data?.decisionCenter.decisions.slice(0, 3) ?? []
   const feedItems = data?.executiveFeed.items.slice(0, 5) ?? []
+  const timelineItems = data?.executiveTimeline.items ?? []
 
   return (
     <AdminOfficeLayout
@@ -302,6 +424,29 @@ export default function AdminExecutiveCockpitPage({ officeId }: Props) {
                 </div>
               ) : (
                 <p className="executive-cockpit-empty-copy">Nenhum acontecimento executivo relevante foi publicado. A operação segue sem novos alertas prioritários.</p>
+              )}
+            </SurfaceCard>
+
+            <SurfaceCard tone="admin" className="executive-cockpit-panel executive-cockpit-panel--timeline">
+              <div className="admin-card-header">
+                <div>
+                  <h2>Linha do tempo executiva</h2>
+                  <p className="executive-cockpit-panel__description">
+                    Acontecimentos e tendências relevantes identificados pela inteligência do escritório.
+                  </p>
+                </div>
+                <StatusChip tone="neutral">{data.executiveTimeline.totalPublished} publicados</StatusChip>
+              </div>
+              <div className="executive-cockpit-badge-row">
+                <StatusChip tone="neutral">Detectados: {data.executiveTimeline.totalDetected}</StatusChip>
+                <StatusChip tone="neutral">Atualizada em: {formatUpdatedAt(data.executiveTimeline.generatedAt)}</StatusChip>
+              </div>
+              {timelineItems.length > 0 ? (
+                <div className="executive-cockpit-timeline-list">
+                  {timelineItems.map(renderTimelineItem)}
+                </div>
+              ) : (
+                <p className="executive-cockpit-empty-copy">Nenhum acontecimento executivo relevante foi identificado neste momento.</p>
               )}
             </SurfaceCard>
 

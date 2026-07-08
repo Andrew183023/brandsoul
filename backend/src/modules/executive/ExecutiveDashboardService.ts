@@ -5,6 +5,7 @@ import { createDecisionCenterEngine, type DecisionCenterEngine } from './Decisio
 import { mapExecutiveDashboard } from './ExecutiveDashboardMapper.js'
 import { createExecutiveFeedEngine, type ExecutiveFeedEngine } from './ExecutiveFeedEngine.js'
 import { createExecutiveMetrics } from './ExecutiveMetrics.js'
+import { createExecutiveTimelineEngine, type ExecutiveTimelineEngine } from './ExecutiveTimelineEngine.js'
 import { createMorningBriefEngine, type MorningBriefEngine } from './MorningBriefEngine.js'
 import { createOfficeHealthEngine, type OfficeHealthEngine } from './OfficeHealthEngine.js'
 import type {
@@ -17,6 +18,7 @@ export interface ExecutiveDashboardServiceDependencies {
   decisionCenterEngine?: Pick<DecisionCenterEngine, 'build'>
   morningBriefEngine?: Pick<MorningBriefEngine, 'build'>
   executiveFeedEngine?: Pick<ExecutiveFeedEngine, 'build'>
+  executiveTimelineEngine?: Pick<ExecutiveTimelineEngine, 'build'>
   observability?: ObservabilityService
 }
 
@@ -25,6 +27,7 @@ export class ExecutiveDashboardService {
   private readonly decisionCenterEngine
   private readonly morningBriefEngine
   private readonly executiveFeedEngine
+  private readonly executiveTimelineEngine
   private readonly metrics
 
   constructor(dependencies: ExecutiveDashboardServiceDependencies = {}) {
@@ -32,11 +35,12 @@ export class ExecutiveDashboardService {
     this.decisionCenterEngine = dependencies.decisionCenterEngine ?? createDecisionCenterEngine()
     this.morningBriefEngine = dependencies.morningBriefEngine ?? createMorningBriefEngine()
     this.executiveFeedEngine = dependencies.executiveFeedEngine ?? createExecutiveFeedEngine()
+    this.executiveTimelineEngine = dependencies.executiveTimelineEngine ?? createExecutiveTimelineEngine()
     this.metrics = createExecutiveMetrics(dependencies.observability)
   }
 
   build(input: ExecutiveDashboardBuildInput): ExecutiveDashboard {
-    let stage: 'office_health' | 'decision_center' | 'executive_feed' | null = null
+    let stage: 'office_health' | 'decision_center' | 'executive_feed' | 'executive_timeline' | null = null
     let stageStartedAt = 0
 
     try {
@@ -89,12 +93,22 @@ export class ExecutiveDashboardService {
         status: 'success',
       })
 
+      stage = 'executive_timeline'
+      const executiveTimeline = this.executiveTimelineEngine.build({
+        growth: input.growth,
+        operational: input.operational,
+        officeHealth,
+        decisionCenter,
+        generatedAt: input.generatedAt,
+      })
+
       return mapExecutiveDashboard({
         ...input,
         morningBrief,
         officeHealth,
         decisionCenter,
         executiveFeed,
+        executiveTimeline,
       })
     } catch (error) {
       const durationMs = stageStartedAt === 0 ? 0 : performance.now() - stageStartedAt

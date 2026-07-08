@@ -142,6 +142,53 @@ export type ExecutiveFeed = {
   generatedAt: string
 }
 
+export type ExecutiveTimelineCategory =
+  | 'growth'
+  | 'operations'
+  | 'health'
+  | 'coverage'
+  | 'capacity'
+  | 'sla'
+  | 'decision'
+
+export type ExecutiveTimelineImportance =
+  | 'critical'
+  | 'high'
+  | 'medium'
+  | 'low'
+
+export type ExecutiveTimelineTemporalKind =
+  | 'observed'
+  | 'trend'
+  | 'comparison'
+
+export type ExecutiveTimelineEvidence = {
+  key: string
+  value?: string | number | boolean | null
+  description: string
+}
+
+export type ExecutiveTimelineItem = {
+  id: string
+  category: ExecutiveTimelineCategory
+  importance: ExecutiveTimelineImportance
+  temporalKind: ExecutiveTimelineTemporalKind
+  title: string
+  summary: string
+  evidence: ExecutiveTimelineEvidence[]
+  suggestedAction?: string
+  occurredAt?: string
+  source: 'growth' | 'operational' | 'office_health' | 'decision_center'
+  sourceKey: string
+}
+
+export type ExecutiveTimeline = {
+  items: ExecutiveTimelineItem[]
+  totalDetected: number
+  totalPublished: number
+  generatedAt: string
+}
+
 export type OperationalSnapshotDistribution = Record<string, number>
 
 export type OperationalSnapshot = {
@@ -294,6 +341,7 @@ export type ExecutiveDashboardResponse = {
   officeHealth: OfficeHealth
   decisionCenter: DecisionCenterResult
   executiveFeed: ExecutiveFeed
+  executiveTimeline: ExecutiveTimeline
   growth: GrowthIntelligenceResponse
   operational: OperationalIntelligenceResponse
 }

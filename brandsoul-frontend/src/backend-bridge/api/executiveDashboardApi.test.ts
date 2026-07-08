@@ -100,6 +100,32 @@ function createPayload(): ExecutiveDashboardResponse {
       totalPublished: 1,
       generatedAt: '2026-07-06T21:00:00.000Z',
     },
+    executiveTimeline: {
+      items: [
+        {
+          id: 'executive_timeline:growth:expansion_opportunities',
+          category: 'growth',
+          importance: 'high',
+          temporalKind: 'observed',
+          title: 'Oportunidades de expansao foram identificadas',
+          summary: 'A inteligencia de crescimento identificou oportunidades executivas relevantes.',
+          evidence: [
+            {
+              key: 'expansionOpportunities',
+              value: 1,
+              description: 'Existe uma oportunidade de expansao identificada.',
+            },
+          ],
+          suggestedAction: 'Revisar a oportunidade prioritaria no centro de decisoes.',
+          occurredAt: '2026-07-06T21:00:00.000Z',
+          source: 'growth',
+          sourceKey: 'expansion_opportunities',
+        },
+      ],
+      totalDetected: 1,
+      totalPublished: 1,
+      generatedAt: '2026-07-06T21:00:00.000Z',
+    },
     growth: {
       status: 'ready',
       officeId: 'office-1',
@@ -293,8 +319,24 @@ describe('executiveDashboardApi', () => {
     expect(payload).toHaveProperty('officeHealth')
     expect(payload).toHaveProperty('decisionCenter')
     expect(payload).toHaveProperty('executiveFeed')
+    expect(payload).toHaveProperty('executiveTimeline')
     expect(payload).toHaveProperty('growth')
     expect(payload).toHaveProperty('operational')
+  })
+
+  it('preserves executiveTimeline returned by the backend without transformation', async () => {
+    const payload = createPayload()
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => payload,
+    }))
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await getExecutiveDashboard('office-1')
+
+    expect(result.executiveTimeline).toEqual(payload.executiveTimeline)
+    expect(result.executiveTimeline.items[0]).toEqual(payload.executiveTimeline.items[0])
   })
 
   it('keeps the executive API layer independent from react hooks components and implicit typing escapes', () => {

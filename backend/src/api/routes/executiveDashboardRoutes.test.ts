@@ -213,6 +213,12 @@ function createMockDashboard() {
       totalPublished: 0,
       generatedAt: '2026-07-06T12:00:00.000Z',
     },
+    executiveTimeline: {
+      items: [],
+      totalDetected: 0,
+      totalPublished: 0,
+      generatedAt: '2026-07-06T12:00:00.000Z',
+    },
     growth: {
       status: 'ready',
       officeId: 'office-1',
@@ -443,6 +449,7 @@ test('GET /admin/escritorios/:id/executive-dashboard returns the full executive 
     assert.equal(typeof payload.decisionCenter, 'object')
     assert.equal(typeof payload.morningBrief, 'object')
     assert.equal(typeof payload.executiveFeed, 'object')
+    assert.equal(typeof payload.executiveTimeline, 'object')
     assert.equal(typeof payload.growth, 'object')
     assert.equal(typeof payload.operational, 'object')
 

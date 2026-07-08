@@ -72,6 +72,30 @@ function createPayload(args?: Partial<ExecutiveDashboardResponse>): ExecutiveDas
       totalPublished: 0,
       generatedAt: '2026-07-06T21:00:00.000Z',
     },
+    executiveTimeline: {
+      items: [
+        {
+          id: 'executive_timeline:health:good',
+          category: 'health',
+          importance: 'medium',
+          temporalKind: 'observed',
+          title: 'O escritorio permanece saudavel',
+          summary: 'A leitura executiva indica equilibrio operacional.',
+          evidence: [
+            {
+              key: 'officeHealthScore',
+              value: 84,
+              description: 'O score executivo atual e 84.',
+            },
+          ],
+          source: 'office_health',
+          sourceKey: 'office_health_status',
+        },
+      ],
+      totalDetected: 1,
+      totalPublished: 1,
+      generatedAt: '2026-07-06T21:00:00.000Z',
+    },
     growth: {
       status: 'ready',
       officeId: 'office-1',
@@ -271,6 +295,7 @@ describe('useExecutiveDashboard', () => {
     await renderHook({ officeId: 'office-1' })
 
     expect(latestResult.data).toEqual(payload)
+    expect(latestResult.data?.executiveTimeline).toEqual(payload.executiveTimeline)
     expect(latestResult.error).toBeNull()
     expect(latestResult.isLoading).toBe(false)
     expect(latestResult.isRefreshing).toBe(false)
@@ -417,6 +442,9 @@ describe('useExecutiveDashboard', () => {
     })
 
     expect(latestResult.data?.generatedAt).toBe('2026-07-07T00:00:00.000Z')
+    expect(latestResult.data?.executiveTimeline).toEqual(createPayload({
+      generatedAt: '2026-07-07T00:00:00.000Z',
+    }).executiveTimeline)
     expect(latestResult.error).toBeNull()
     expect(latestResult.isLoading).toBe(false)
     expect(latestResult.isRefreshing).toBe(false)

@@ -98,6 +98,53 @@ function createPayload() {
       totalPublished: 1,
       generatedAt: '2026-07-06T21:00:00.000Z',
     },
+    executiveTimeline: {
+      items: [
+        {
+          id: 'executive_timeline:growth:expansion_opportunities',
+          category: 'growth' as const,
+          importance: 'high' as const,
+          temporalKind: 'observed' as const,
+          title: 'Oportunidades de expansão foram identificadas',
+          summary: 'A inteligência de crescimento identificou oportunidades executivas relevantes.',
+          evidence: [
+            {
+              key: 'expansionOpportunities',
+              value: 2,
+              description: 'Existem duas oportunidades de expansão identificadas.',
+            },
+          ],
+          suggestedAction: 'Revisar a oportunidade com melhor aderência.',
+          occurredAt: '2026-07-06T21:00:00.000Z',
+          source: 'growth' as const,
+          sourceKey: 'expansion_opportunities',
+        },
+        {
+          id: 'executive_timeline:capacity:pressure',
+          category: 'capacity' as const,
+          importance: 'medium' as const,
+          temporalKind: 'trend' as const,
+          title: 'A capacidade exige monitoramento',
+          summary: 'A distribuição atual de trabalho pede acompanhamento próximo da operação.',
+          evidence: [
+            {
+              key: 'capacityWatch',
+              description: 'A carga ativa atual sugere monitoramento operacional.',
+            },
+            {
+              key: 'activeProfessionals',
+              value: null,
+              description: 'A leitura não publicou valor adicional para este sinal.',
+            },
+          ],
+          source: 'operational' as const,
+          sourceKey: 'capacity_pressure',
+        },
+      ],
+      totalDetected: 2,
+      totalPublished: 2,
+      generatedAt: '2026-07-06T21:00:00.000Z',
+    },
     growth: {
       status: 'ready' as const,
       officeId: 'office-1',
@@ -262,7 +309,7 @@ describe('AdminExecutiveCockpitPage', () => {
     expect(refresh).toHaveBeenCalledTimes(1)
   })
 
-  it('renders Morning Brief Office Health Decisions Executive Feed and Snapshot blocks', async () => {
+  it('renders Morning Brief Office Health Decisions Executive Feed Timeline and Snapshot blocks', async () => {
     useExecutiveDashboardMock.mockReturnValue({
       data: createPayload(),
       error: null,
@@ -282,6 +329,8 @@ describe('AdminExecutiveCockpitPage', () => {
     expect(container.textContent).toContain('A operação está equilibrada.')
     expect(container.textContent).toContain('Expandir com controle operacional')
     expect(container.textContent).toContain('Existem oportunidades de expansão em aberto')
+    expect(container.textContent).toContain('Linha do tempo executiva')
+    expect(container.textContent).toContain('Acontecimentos e tendências relevantes identificados pela inteligência do escritório.')
     expect(container.textContent).toContain('casos ativos')
     expect(container.textContent).toContain('backlog')
     expect(container.textContent).toContain('SLA em risco')
@@ -293,10 +342,123 @@ describe('AdminExecutiveCockpitPage', () => {
     expect(container.querySelectorAll('[data-testid="status-chip"]').length).toBeGreaterThan(0)
   })
 
-  it('does not break when decision and feed lists are empty', async () => {
+  it('renders timeline items in the received order with visible presentation labels', async () => {
+    useExecutiveDashboardMock.mockReturnValue({
+      data: createPayload(),
+      error: null,
+      isLoading: false,
+      isRefreshing: false,
+      refresh: vi.fn(),
+    })
+
+    await act(async () => {
+      root.render(<AdminExecutiveCockpitPage officeId="office-1" />)
+    })
+
+    const text = container.textContent ?? ''
+    const firstIndex = text.indexOf('Oportunidades de expansão foram identificadas')
+    const secondIndex = text.indexOf('A capacidade exige monitoramento')
+
+    expect(firstIndex).toBeGreaterThan(-1)
+    expect(secondIndex).toBeGreaterThan(-1)
+    expect(firstIndex).toBeLessThan(secondIndex)
+    expect(text).toContain('Alta')
+    expect(text).toContain('Média')
+    expect(text).toContain('Crescimento')
+    expect(text).toContain('Capacidade')
+    expect(text).toContain('Observado')
+    expect(text).toContain('Tendência')
+  })
+
+  it('renders timeline evidence compactly and only shows suggested action or occurredAt when present', async () => {
+    useExecutiveDashboardMock.mockReturnValue({
+      data: createPayload(),
+      error: null,
+      isLoading: false,
+      isRefreshing: false,
+      refresh: vi.fn(),
+    })
+
+    await act(async () => {
+      root.render(<AdminExecutiveCockpitPage officeId="office-1" />)
+    })
+
+    const text = container.textContent ?? ''
+
+    expect(text).toContain('Existem duas oportunidades de expansão identificadas.')
+    expect(text).toContain('Valor: 2')
+    expect(text).toContain('A carga ativa atual sugere monitoramento operacional.')
+    expect(text).toContain('Ação sugerida: Revisar a oportunidade com melhor aderência.')
+    expect(text).toContain('Quando: 06/07/2026')
+    expect(text).not.toContain('Ação sugerida: undefined')
+    expect(text).not.toContain('Quando: undefined')
+    expect(text).not.toContain('Valor: null')
+    expect(text).not.toContain('undefined')
+    expect(text).not.toContain('sourceKey')
+    expect(text).not.toContain('expansion_opportunities')
+    expect(text).not.toContain('capacity_pressure')
+    expect(text).not.toContain('executive_timeline:')
+  })
+
+  it('renders timeline evidence values when they are 0 or false and keeps null hidden', async () => {
+    const payload = createPayload()
+    payload.executiveTimeline.items = [
+      {
+        ...payload.executiveTimeline.items[0],
+        id: 'executive_timeline:operations:evidence_values',
+        title: 'Valores operacionais publicados',
+        evidence: [
+          {
+            key: 'delayedCases',
+            value: 0,
+            description: 'Nenhum caso atrasado foi identificado na leitura atual.',
+          },
+          {
+            key: 'needsEscalation',
+            value: false,
+            description: 'A leitura atual não exige escalonamento automático.',
+          },
+          {
+            key: 'missingValue',
+            value: null,
+            description: 'Este sinal foi publicado sem valor adicional.',
+          },
+        ],
+      },
+    ]
+    payload.executiveTimeline.totalDetected = 1
+    payload.executiveTimeline.totalPublished = 1
+
+    useExecutiveDashboardMock.mockReturnValue({
+      data: payload,
+      error: null,
+      isLoading: false,
+      isRefreshing: false,
+      refresh: vi.fn(),
+    })
+
+    await act(async () => {
+      root.render(<AdminExecutiveCockpitPage officeId="office-1" />)
+    })
+
+    const text = container.textContent ?? ''
+
+    expect(text).toContain('Nenhum caso atrasado foi identificado na leitura atual.')
+    expect(text).toContain('Valor: 0')
+    expect(text).toContain('A leitura atual não exige escalonamento automático.')
+    expect(text).toContain('Valor: false')
+    expect(text).toContain('Este sinal foi publicado sem valor adicional.')
+    expect(text).not.toContain('Valor: null')
+    expect(text).not.toContain('Valor: undefined')
+  })
+
+  it('renders empty state when the executive timeline has no items', async () => {
     const payload = createPayload()
     payload.decisionCenter.decisions = []
     payload.executiveFeed.items = []
+    payload.executiveTimeline.items = []
+    payload.executiveTimeline.totalDetected = 0
+    payload.executiveTimeline.totalPublished = 0
 
     useExecutiveDashboardMock.mockReturnValue({
       data: payload,
@@ -312,6 +474,7 @@ describe('AdminExecutiveCockpitPage', () => {
 
     expect(container.textContent).toContain('Nenhuma decisão imediata foi priorizada. O escritório pode seguir em monitoramento controlado.')
     expect(container.textContent).toContain('Nenhum acontecimento executivo relevante foi publicado. A operação segue sem novos alertas prioritários.')
+    expect(container.textContent).toContain('Nenhum acontecimento executivo relevante foi identificado neste momento.')
   })
 
   it('calls refresh from the visible update button in success state', async () => {
@@ -370,7 +533,11 @@ describe('AdminExecutiveCockpitPage', () => {
 
     expect(pageSource).toContain('useExecutiveDashboard')
     expect(pageSource).not.toContain('getExecutiveDashboard(')
+    expect(pageSource).not.toContain('fetch(')
     expect(pageSource).not.toContain('../backend-bridge/api/adminApi')
     expect(pageSource).not.toContain('../backend-bridge/api/executiveDashboardApi')
+    expect(pageSource).not.toContain('.sort(')
+    expect(pageSource).not.toContain('.toSorted(')
+    expect(pageSource).not.toContain('.reverse(')
   })
 })

@@ -143,6 +143,12 @@ function createDashboard(growth: GrowthIntelligenceResponse, operational: Operat
       totalPublished: 0,
       generatedAt: '2026-07-06T12:00:00.000Z',
     },
+    executiveTimeline: {
+      items: [],
+      totalDetected: 0,
+      totalPublished: 0,
+      generatedAt: '2026-07-06T12:00:00.000Z',
+    },
     growth,
     operational,
   }

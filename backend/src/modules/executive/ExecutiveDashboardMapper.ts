@@ -18,6 +18,9 @@ export function mapExecutiveDashboard(
   if (!input.executiveFeed) {
     throw new Error('Executive dashboard mapper requires executiveFeed.')
   }
+  if (!input.executiveTimeline) {
+    throw new Error('Executive dashboard mapper requires executiveTimeline.')
+  }
 
   return {
     generatedAt: input.generatedAt ?? input.growth.generatedAt,
@@ -31,6 +34,7 @@ export function mapExecutiveDashboard(
     officeHealth: input.officeHealth,
     decisionCenter: input.decisionCenter,
     executiveFeed: input.executiveFeed,
+    executiveTimeline: input.executiveTimeline,
     growth: input.growth,
     operational: input.operational,
   }
