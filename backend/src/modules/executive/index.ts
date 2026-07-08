@@ -48,6 +48,11 @@ export type {
   SaveExecutiveMemorySnapshotResult,
 } from './ExecutiveMemoryRepository.js'
 export type {
+  ExecutiveMemoryCaptureInput,
+  ExecutiveMemoryCaptureResult,
+  ExecutiveMemoryCaptureServiceDependencies,
+} from './ExecutiveMemoryCaptureService.js'
+export type {
   MorningBrief,
   MorningBriefEngineInput,
   MorningBriefItem,
@@ -95,6 +100,10 @@ export {
   buildExecutiveMemorySnapshotId,
   createExecutiveMemoryRepository,
 } from './ExecutiveMemoryRepository.js'
+export {
+  ExecutiveMemoryCaptureService,
+  createExecutiveMemoryCaptureService,
+} from './ExecutiveMemoryCaptureService.js'
 export {
   ExecutiveExplainabilityLayer,
   createExecutiveExplainabilityLayer,
