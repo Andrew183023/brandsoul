@@ -1,4 +1,7 @@
+import { performance } from 'node:perf_hooks'
+
 import type { ExecutiveMemoryCaptureOrchestrator } from './ExecutiveMemoryCaptureOrchestrator.js'
+import type { ExecutiveMemoryCaptureTriggerMetricsRecorder } from './ExecutiveMetrics.js'
 
 export interface ExecutiveMemoryCaptureTriggerInput {
   cursor?: string
@@ -25,10 +28,36 @@ export interface ExecutiveMemoryCaptureTriggerClock {
 export interface ExecutiveMemoryCaptureTriggerServiceDependencies {
   orchestrator: Pick<ExecutiveMemoryCaptureOrchestrator, 'captureDiscoveredBatch'>
   clock: ExecutiveMemoryCaptureTriggerClock
+  metrics?: ExecutiveMemoryCaptureTriggerMetricsRecorder
+  timer?: {
+    now(): number
+  }
 }
 
 export const EXECUTIVE_MEMORY_CAPTURE_TRIGGER_DEFAULT_BATCH_LIMIT = 25
 export const EXECUTIVE_MEMORY_CAPTURE_TRIGGER_MAX_BATCH_LIMIT = 100
+
+export interface ExecutiveMemoryCaptureRetryPolicy {
+  automaticRetryEnabled: false
+  recommendedStrategy: 'external_controlled_retry'
+  safeBecause: readonly string[]
+  unsafeBecause: readonly string[]
+}
+
+export const EXECUTIVE_MEMORY_CAPTURE_TRIGGER_RETRY_POLICY: ExecutiveMemoryCaptureRetryPolicy = {
+  automaticRetryEnabled: false,
+  recommendedStrategy: 'external_controlled_retry',
+  safeBecause: [
+    'Repository idempotency is enforced by tenant, office and content fingerprint.',
+    'The batch orchestrator already isolates per-office failures within a single run.',
+    'External callers can decide retry cadence without changing trigger semantics.',
+  ],
+  unsafeBecause: [
+    'Automatic retry loops here would hide repeated orchestration failures.',
+    'Trigger-local retries could overlap future schedulers or command runners.',
+    'Retry behavior belongs to the future caller that owns runtime policy.',
+  ],
+}
 
 function normalizeLimit(limit?: number) {
   if (typeof limit !== 'number' || !Number.isFinite(limit)) {
@@ -56,14 +85,17 @@ export class ExecutiveMemoryCaptureTriggerService {
     input: ExecutiveMemoryCaptureTriggerInput = {},
   ): Promise<ExecutiveMemoryCaptureTriggerResult> {
     if (this.running) {
+      this.dependencies.metrics?.recordExecutiveMemoryCaptureTriggerRun({ status: 'already_running' })
       return {
         status: 'already_running',
       }
     }
 
     this.running = true
+    let startedAtMonotonic: number | null = null
 
     try {
+      startedAtMonotonic = (this.dependencies.timer ?? performance).now()
       const startedAt = this.dependencies.clock.now().toISOString()
       const batchResult = await this.dependencies.orchestrator.captureDiscoveredBatch({
         capturedAt: startedAt,
@@ -71,6 +103,20 @@ export class ExecutiveMemoryCaptureTriggerService {
         limit: normalizeLimit(input.limit),
       })
       const finishedAt = this.dependencies.clock.now().toISOString()
+      const durationMs = (this.dependencies.timer ?? performance).now() - startedAtMonotonic
+
+      this.dependencies.metrics?.recordExecutiveMemoryCaptureTriggerRun({ status: 'completed' })
+      this.dependencies.metrics?.recordExecutiveMemoryCaptureTriggerRunTiming({
+        durationMs,
+        status: 'completed',
+      })
+      this.dependencies.metrics?.recordExecutiveMemoryCaptureTriggerBatchTotals({
+        status: 'completed',
+        processed: batchResult.totals.processed,
+        captured: batchResult.totals.captured,
+        created: batchResult.totals.created,
+        failed: batchResult.totals.failed,
+      })
 
       return {
         status: 'completed',
@@ -79,6 +125,16 @@ export class ExecutiveMemoryCaptureTriggerService {
         nextCursor: batchResult.nextCursor,
         totals: batchResult.totals,
       }
+    } catch (error) {
+      this.dependencies.metrics?.recordExecutiveMemoryCaptureTriggerRun({ status: 'error' })
+      if (startedAtMonotonic !== null) {
+        this.dependencies.metrics?.recordExecutiveMemoryCaptureTriggerRunTiming({
+          durationMs: (this.dependencies.timer ?? performance).now() - startedAtMonotonic,
+          status: 'error',
+        })
+      }
+
+      throw error
     } finally {
       this.running = false
     }

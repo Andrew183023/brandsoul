@@ -9,6 +9,12 @@ import {
   EXECUTIVE_DASHBOARD_REQUESTS_TOTAL,
   EXECUTIVE_FEED_BUILD_MS,
   EXECUTIVE_FEED_GENERATED_TOTAL,
+  EXECUTIVE_MEMORY_CAPTURE_TRIGGER_BATCH_CAPTURED_TOTAL,
+  EXECUTIVE_MEMORY_CAPTURE_TRIGGER_BATCH_CREATED_TOTAL,
+  EXECUTIVE_MEMORY_CAPTURE_TRIGGER_BATCH_FAILED_TOTAL,
+  EXECUTIVE_MEMORY_CAPTURE_TRIGGER_BATCH_PROCESSED_TOTAL,
+  EXECUTIVE_MEMORY_CAPTURE_TRIGGER_RUN_MS,
+  EXECUTIVE_MEMORY_CAPTURE_TRIGGER_RUNS_TOTAL,
   OFFICE_HEALTH_BUILD_MS,
 } from './ExecutiveMetrics.js'
 
@@ -84,4 +90,39 @@ test('executive metrics ignore calls when observability is undefined', () => {
     metrics.recordExecutiveFeedBuildTiming({ durationMs: 5 })
     metrics.recordExecutiveFeedGenerated({ count: 2 })
   })
+})
+
+test('executive memory trigger metrics record completed and error runs with safe aggregate labels', () => {
+  const observability = createObservabilityService()
+  const metrics = createExecutiveMetrics(observability)
+
+  metrics.recordExecutiveMemoryCaptureTriggerRun({ status: 'completed' })
+  metrics.recordExecutiveMemoryCaptureTriggerRunTiming({ durationMs: 14, status: 'completed' })
+  metrics.recordExecutiveMemoryCaptureTriggerBatchTotals({
+    status: 'completed',
+    processed: 5,
+    captured: 4,
+    created: 3,
+    failed: 1,
+  })
+  metrics.recordExecutiveMemoryCaptureTriggerRun({ status: 'error' })
+  metrics.recordExecutiveMemoryCaptureTriggerRunTiming({ durationMs: 9, status: 'error' })
+
+  const snapshot = observability.getMetricsSnapshot()
+  assert.equal(snapshot.customCounters[EXECUTIVE_MEMORY_CAPTURE_TRIGGER_RUNS_TOTAL], 2)
+  assert.equal(snapshot.customCounters[EXECUTIVE_MEMORY_CAPTURE_TRIGGER_BATCH_PROCESSED_TOTAL], 5)
+  assert.equal(snapshot.customCounters[EXECUTIVE_MEMORY_CAPTURE_TRIGGER_BATCH_CAPTURED_TOTAL], 4)
+  assert.equal(snapshot.customCounters[EXECUTIVE_MEMORY_CAPTURE_TRIGGER_BATCH_CREATED_TOTAL], 3)
+  assert.equal(snapshot.customCounters[EXECUTIVE_MEMORY_CAPTURE_TRIGGER_BATCH_FAILED_TOTAL], 1)
+  assert.equal(timingCount(snapshot, EXECUTIVE_MEMORY_CAPTURE_TRIGGER_RUN_MS), 2)
+
+  const serialized = JSON.stringify({
+    counters: snapshot.customCounterSeries,
+    timings: snapshot.customTimings,
+  })
+  assert.equal(serialized.includes('tenantId'), false)
+  assert.equal(serialized.includes('officeId'), false)
+  assert.equal(serialized.includes('cursor'), false)
+  assert.equal(serialized.includes('fingerprint'), false)
+  assert.equal(serialized.includes('error_message'), false)
 })

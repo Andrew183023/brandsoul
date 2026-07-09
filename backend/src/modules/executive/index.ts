@@ -63,6 +63,7 @@ export type {
 export type {
   ExecutiveMemoryCaptureTriggerClock,
   ExecutiveMemoryCaptureTriggerInput,
+  ExecutiveMemoryCaptureRetryPolicy,
   ExecutiveMemoryCaptureTriggerResult,
   ExecutiveMemoryCaptureTriggerServiceDependencies,
 } from './ExecutiveMemoryCaptureTriggerService.js'
@@ -91,6 +92,8 @@ export type {
   OfficeHealthEngineInput,
 } from './OfficeHealthTypes.js'
 export type {
+  ExecutiveMemoryCaptureTriggerMetricsRecorder,
+  ExecutiveMemoryCaptureTriggerMetricsStatus,
   ExecutiveMetricsRecorder,
   ExecutiveMetricsStatus,
 } from './ExecutiveMetrics.js'
@@ -130,6 +133,7 @@ export {
 export {
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_DEFAULT_BATCH_LIMIT,
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_MAX_BATCH_LIMIT,
+  EXECUTIVE_MEMORY_CAPTURE_TRIGGER_RETRY_POLICY,
   ExecutiveMemoryCaptureTriggerService,
   createExecutiveMemoryCaptureTriggerService,
 } from './ExecutiveMemoryCaptureTriggerService.js'
@@ -150,6 +154,12 @@ export {
   EXECUTIVE_DASHBOARD_REQUESTS_TOTAL,
   EXECUTIVE_FEED_BUILD_MS,
   EXECUTIVE_FEED_GENERATED_TOTAL,
+  EXECUTIVE_MEMORY_CAPTURE_TRIGGER_BATCH_CAPTURED_TOTAL,
+  EXECUTIVE_MEMORY_CAPTURE_TRIGGER_BATCH_CREATED_TOTAL,
+  EXECUTIVE_MEMORY_CAPTURE_TRIGGER_BATCH_FAILED_TOTAL,
+  EXECUTIVE_MEMORY_CAPTURE_TRIGGER_BATCH_PROCESSED_TOTAL,
+  EXECUTIVE_MEMORY_CAPTURE_TRIGGER_RUN_MS,
+  EXECUTIVE_MEMORY_CAPTURE_TRIGGER_RUNS_TOTAL,
   OFFICE_HEALTH_BUILD_MS,
 } from './ExecutiveMetrics.js'
 export { mapExecutiveDashboard } from './ExecutiveDashboardMapper.js'

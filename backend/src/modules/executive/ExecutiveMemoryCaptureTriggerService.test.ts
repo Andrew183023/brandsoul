@@ -6,6 +6,7 @@ import test from 'node:test'
 import {
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_DEFAULT_BATCH_LIMIT,
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_MAX_BATCH_LIMIT,
+  EXECUTIVE_MEMORY_CAPTURE_TRIGGER_RETRY_POLICY,
   ExecutiveMemoryCaptureTriggerService,
   createExecutiveMemoryCaptureTriggerService,
 } from './ExecutiveMemoryCaptureTriggerService.js'
@@ -54,6 +55,7 @@ function createDependencies(overrides?: {
     }
   }>
   clockSteps?: ClockStep[]
+  timerValues?: number[]
 }) {
   const orchestratorCalls: Array<{
     capturedAt: string
@@ -66,12 +68,57 @@ function createDependencies(overrides?: {
       { iso: '2026-07-09T10:05:00.000Z' },
     ],
   )
+  const timerValues = [...(overrides?.timerValues ?? [100, 145])]
+  const metricsCalls = {
+    runs: [] as Array<{ status: 'completed' | 'already_running' | 'error' }>,
+    timings: [] as Array<{ durationMs: number; status: 'completed' | 'error' }>,
+    totals: [] as Array<{
+      status: 'completed' | 'error'
+      processed: number
+      captured: number
+      created: number
+      failed: number
+    }>,
+  }
 
   return {
     orchestratorCalls,
     clockCalls,
+    metricsCalls,
     dependencies: {
       clock,
+      timer: {
+        now() {
+          const value = timerValues.shift()
+          if (typeof value !== 'number') {
+            throw new Error('timer exhausted')
+          }
+
+          return value
+        },
+      },
+      metrics: {
+        recordExecutiveMemoryCaptureTriggerRun(args: {
+          status: 'completed' | 'already_running' | 'error'
+        }) {
+          metricsCalls.runs.push(args)
+        },
+        recordExecutiveMemoryCaptureTriggerRunTiming(args: {
+          durationMs: number
+          status: 'completed' | 'error'
+        }) {
+          metricsCalls.timings.push(args)
+        },
+        recordExecutiveMemoryCaptureTriggerBatchTotals(args: {
+          status: 'completed' | 'error'
+          processed: number
+          captured: number
+          created: number
+          failed: number
+        }) {
+          metricsCalls.totals.push(args)
+        },
+      },
       orchestrator: {
         async captureDiscoveredBatch(input: {
           capturedAt: string
@@ -147,6 +194,15 @@ test('run calls clock and orchestrator once and returns a sanitized operational 
   assert.equal('sourceFingerprint' in result, false)
   assert.equal('tenantId' in result, false)
   assert.equal('officeId' in result, false)
+  assert.deepEqual(harness.metricsCalls.runs, [{ status: 'completed' }])
+  assert.deepEqual(harness.metricsCalls.timings, [{ durationMs: 45, status: 'completed' }])
+  assert.deepEqual(harness.metricsCalls.totals, [{
+    status: 'completed',
+    processed: 1,
+    captured: 1,
+    created: 1,
+    failed: 0,
+  }])
 })
 
 test('default limit is used when input limit is absent', async () => {
@@ -271,6 +327,9 @@ test('second concurrent execution returns already_running and does not call cloc
   assert.deepEqual(harness.clockCalls, [
     '2026-07-09T10:00:00.000Z',
   ])
+  assert.deepEqual(harness.metricsCalls.runs, [{ status: 'already_running' }])
+  assert.deepEqual(harness.metricsCalls.timings, [])
+  assert.deepEqual(harness.metricsCalls.totals, [])
 
   releaseFirstRun?.()
   await firstRun
@@ -284,6 +343,7 @@ test('lock is released after success and a later execution can run again', async
       { iso: '2026-07-09T11:00:00.000Z' },
       { iso: '2026-07-09T11:05:00.000Z' },
     ],
+    timerValues: [100, 145, 200, 245],
   })
   const service = createExecutiveMemoryCaptureTriggerService(harness.dependencies)
 
@@ -311,6 +371,7 @@ test('lock is released after first clock failure', async () => {
       { iso: '2026-07-09T11:00:00.000Z' },
       { iso: '2026-07-09T11:05:00.000Z' },
     ],
+    timerValues: [100, 145, 200, 245],
   })
   const service = createExecutiveMemoryCaptureTriggerService(harness.dependencies)
 
@@ -318,6 +379,10 @@ test('lock is released after first clock failure', async () => {
     service.run(),
     /clock start failed/,
   )
+
+  assert.deepEqual(harness.metricsCalls.runs, [{ status: 'error' }])
+  assert.deepEqual(harness.metricsCalls.timings, [{ durationMs: 45, status: 'error' }])
+  assert.deepEqual(harness.metricsCalls.totals, [])
 
   const result = await service.run()
   assert.equal(result.status, 'completed')
@@ -349,6 +414,7 @@ test('lock is released after orchestrator failure and the error is propagated', 
       { iso: '2026-07-09T11:00:00.000Z' },
       { iso: '2026-07-09T11:05:00.000Z' },
     ],
+    timerValues: [100, 145, 200, 245],
   })
   const service = createExecutiveMemoryCaptureTriggerService(harness.dependencies)
 
@@ -356,6 +422,10 @@ test('lock is released after orchestrator failure and the error is propagated', 
     service.run(),
     /orchestrator failed/,
   )
+
+  assert.deepEqual(harness.metricsCalls.runs, [{ status: 'error' }])
+  assert.deepEqual(harness.metricsCalls.timings, [{ durationMs: 45, status: 'error' }])
+  assert.deepEqual(harness.metricsCalls.totals, [])
 
   const result = await service.run()
   assert.equal(result.status, 'completed')
@@ -370,6 +440,7 @@ test('lock is released after finishedAt clock failure and the error is propagate
       { iso: '2026-07-09T11:00:00.000Z' },
       { iso: '2026-07-09T11:05:00.000Z' },
     ],
+    timerValues: [100, 145, 200, 245],
   })
   const service = createExecutiveMemoryCaptureTriggerService(harness.dependencies)
 
@@ -378,9 +449,34 @@ test('lock is released after finishedAt clock failure and the error is propagate
     /clock finish failed/,
   )
 
+  assert.deepEqual(harness.metricsCalls.runs, [{ status: 'error' }])
+  assert.deepEqual(harness.metricsCalls.timings, [{ durationMs: 45, status: 'error' }])
+  assert.deepEqual(harness.metricsCalls.totals, [])
+
   const result = await service.run()
   assert.equal(result.status, 'completed')
   assert.equal(harness.orchestratorCalls.length, 2)
+})
+
+test('metrics are optional and do not change trigger behavior when omitted', async () => {
+  const harness = createDependencies()
+  const service = createExecutiveMemoryCaptureTriggerService({
+    clock: harness.dependencies.clock,
+    orchestrator: harness.dependencies.orchestrator,
+    timer: harness.dependencies.timer,
+  })
+
+  const result = await service.run()
+
+  assert.equal(result.status, 'completed')
+})
+
+test('retry policy explicitly disables automatic retries', () => {
+  assert.equal(EXECUTIVE_MEMORY_CAPTURE_TRIGGER_RETRY_POLICY.automaticRetryEnabled, false)
+  assert.equal(
+    EXECUTIVE_MEMORY_CAPTURE_TRIGGER_RETRY_POLICY.recommendedStrategy,
+    'external_controlled_retry',
+  )
 })
 
 test('different service instances do not share a global lock', async () => {
@@ -421,10 +517,11 @@ test('module remains structurally isolated from forbidden dependencies', async (
   )
 
   assert.equal(
-    /Date\.now|new Date|performance\.now|Math\.random|crypto\.randomUUID|setInterval|setTimeout|cron|scheduler|fastify|fetch|axios|window|document|localStorage|sessionStorage|\bany\b/i.test(source),
+    /Date\.now|new Date|Math\.random|crypto\.randomUUID|setInterval|setTimeout|cron|scheduler|fastify|fetch|axios|window|document|localStorage|sessionStorage|\bany\b/i.test(source),
     false,
   )
   assert.equal(source.includes('ExecutiveDashboardService'), false)
   assert.equal(source.includes('ExecutiveDashboardApplicationService'), false)
   assert.equal(source.includes('executiveDashboardRoutes'), false)
+  assert.equal(/retry\s*\(|backoff|while\s*\(.+retry|for\s*\(.+retry/i.test(source), false)
 })
