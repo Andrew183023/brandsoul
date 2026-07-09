@@ -53,6 +53,11 @@ export type {
   ExecutiveMemoryCaptureServiceDependencies,
 } from './ExecutiveMemoryCaptureService.js'
 export type {
+  ExecutiveMemoryOfficeDiscoveryInput,
+  ExecutiveMemoryOfficeDiscoveryItem,
+  ExecutiveMemoryOfficeDiscoveryPage,
+} from './ExecutiveMemoryOfficeDiscovery.js'
+export type {
   MorningBrief,
   MorningBriefEngineInput,
   MorningBriefItem,
@@ -104,6 +109,10 @@ export {
   ExecutiveMemoryCaptureService,
   createExecutiveMemoryCaptureService,
 } from './ExecutiveMemoryCaptureService.js'
+export {
+  ExecutiveMemoryOfficeDiscoveryService,
+  createExecutiveMemoryOfficeDiscoveryService,
+} from './ExecutiveMemoryOfficeDiscovery.js'
 export {
   ExecutiveExplainabilityLayer,
   createExecutiveExplainabilityLayer,
