@@ -49,6 +49,15 @@ export type {
   ExecutiveMemoryObservationIdentityInput,
 } from './ExecutiveMemoryTemporalIdentityTypes.js'
 export type {
+  ExecutiveMemoryObservationCaptureCycleListInput,
+  ExecutiveMemoryObservationListInput,
+  ExecutiveMemoryObservationLookupInput,
+  ExecutiveMemoryObservationRecord,
+  ExecutiveMemoryObservationStateListInput,
+  SaveExecutiveMemoryObservationInput,
+  SaveExecutiveMemoryObservationResult,
+} from './ExecutiveMemoryObservationRepository.js'
+export type {
   ExecutiveMemorySnapshotListInput,
   ExecutiveMemorySnapshotLookupInput,
   ExecutiveMemorySnapshotRecord,
@@ -127,6 +136,10 @@ export {
 export {
   EXECUTIVE_MEMORY_OBSERVATION_IDENTITY_VERSION,
 } from './ExecutiveMemoryTemporalIdentityTypes.js'
+export {
+  ExecutiveMemoryObservationRepository,
+  createExecutiveMemoryObservationRepository,
+} from './ExecutiveMemoryObservationRepository.js'
 export {
   ExecutiveMemoryRepository,
   buildExecutiveMemorySnapshotId,
