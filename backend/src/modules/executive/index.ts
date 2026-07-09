@@ -42,6 +42,13 @@ export type {
   ExecutiveMemoryTimelineProjection,
 } from './ExecutiveMemoryProjectionTypes.js'
 export type {
+  ExecutiveMemoryObservationFingerprintInput,
+  ExecutiveMemoryObservationFromProjectionInput,
+  ExecutiveMemoryObservationIdInput,
+  ExecutiveMemoryObservationIdentity,
+  ExecutiveMemoryObservationIdentityInput,
+} from './ExecutiveMemoryTemporalIdentityTypes.js'
+export type {
   ExecutiveMemorySnapshotListInput,
   ExecutiveMemorySnapshotLookupInput,
   ExecutiveMemorySnapshotRecord,
@@ -118,6 +125,9 @@ export {
   EXECUTIVE_MEMORY_PROJECTION_VERSION,
 } from './ExecutiveMemoryProjectionTypes.js'
 export {
+  EXECUTIVE_MEMORY_OBSERVATION_IDENTITY_VERSION,
+} from './ExecutiveMemoryTemporalIdentityTypes.js'
+export {
   ExecutiveMemoryRepository,
   buildExecutiveMemorySnapshotId,
   createExecutiveMemoryRepository,
@@ -146,6 +156,12 @@ export {
   createExecutiveExplainabilityLayer,
 } from './ExecutiveExplainabilityLayer.js'
 export { buildExecutiveMemoryProjection } from './ExecutiveMemoryProjection.js'
+export {
+  buildExecutiveMemoryObservationFingerprint,
+  buildExecutiveMemoryObservationId,
+  buildExecutiveMemoryObservationIdentity,
+  buildExecutiveMemoryObservationIdentityFromProjection,
+} from './ExecutiveMemoryTemporalIdentity.js'
 export {
   ExecutiveMetrics,
   createExecutiveMetrics,
