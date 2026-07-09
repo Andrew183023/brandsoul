@@ -53,6 +53,14 @@ export type {
   ExecutiveMemoryCaptureServiceDependencies,
 } from './ExecutiveMemoryCaptureService.js'
 export type {
+  ExecutiveMemoryCaptureBatchInput,
+  ExecutiveMemoryCaptureBatchItemResult,
+  ExecutiveMemoryCaptureBatchResult,
+  ExecutiveMemoryCaptureOfficeInput,
+  ExecutiveMemoryCaptureOfficeResult,
+  ExecutiveMemoryCaptureOrchestratorDependencies,
+} from './ExecutiveMemoryCaptureOrchestrator.js'
+export type {
   ExecutiveMemoryOfficeDiscoveryInput,
   ExecutiveMemoryOfficeDiscoveryItem,
   ExecutiveMemoryOfficeDiscoveryPage,
@@ -109,6 +117,10 @@ export {
   ExecutiveMemoryCaptureService,
   createExecutiveMemoryCaptureService,
 } from './ExecutiveMemoryCaptureService.js'
+export {
+  ExecutiveMemoryCaptureOrchestrator,
+  createExecutiveMemoryCaptureOrchestrator,
+} from './ExecutiveMemoryCaptureOrchestrator.js'
 export {
   ExecutiveMemoryOfficeDiscoveryService,
   createExecutiveMemoryOfficeDiscoveryService,
