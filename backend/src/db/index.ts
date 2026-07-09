@@ -2215,6 +2215,22 @@ async function initializePostgresLegalCaseSchema(db: BackendDatabase) {
     )
   `)
 
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS executive_memory_observations (
+      id TEXT PRIMARY KEY,
+      tenant_id INTEGER NOT NULL,
+      office_id TEXT NOT NULL,
+      projection_version INTEGER NOT NULL,
+      capture_cycle_id TEXT NOT NULL,
+      content_fingerprint TEXT NOT NULL,
+      observation_fingerprint TEXT NOT NULL,
+      captured_at TIMESTAMPTZ NOT NULL,
+      source_fingerprint TEXT NOT NULL,
+      state_snapshot_id TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `)
+
   await db.exec(`ALTER TABLE cases ADD COLUMN IF NOT EXISTS entity_id TEXT`)
   await db.exec(`ALTER TABLE cases ADD COLUMN IF NOT EXISTS created_by_user_id INTEGER`)
   await db.exec(`ALTER TABLE cases ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ`)
@@ -2596,6 +2612,22 @@ async function initializePostgresLegalCaseSchema(db: BackendDatabase) {
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_executive_memory_snapshots_source_fingerprint
     ON executive_memory_snapshots (tenant_id, office_id, source_fingerprint)
+  `)
+  await db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_executive_memory_observations_unique_observation
+    ON executive_memory_observations (tenant_id, office_id, observation_fingerprint)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_executive_memory_observations_office_captured
+    ON executive_memory_observations (tenant_id, office_id, captured_at DESC, created_at DESC)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_executive_memory_observations_state_captured
+    ON executive_memory_observations (tenant_id, office_id, content_fingerprint, captured_at DESC)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_executive_memory_observations_capture_cycle
+    ON executive_memory_observations (tenant_id, office_id, capture_cycle_id)
   `)
 
   await postgresAddTriggerIfMissing(
@@ -3098,6 +3130,22 @@ async function initializeSqliteLegalCaseSchema(db: BackendDatabase) {
   `)
 
   await db.exec(`
+    CREATE TABLE IF NOT EXISTS executive_memory_observations (
+      id TEXT PRIMARY KEY,
+      tenant_id INTEGER NOT NULL,
+      office_id TEXT NOT NULL,
+      projection_version INTEGER NOT NULL,
+      capture_cycle_id TEXT NOT NULL,
+      content_fingerprint TEXT NOT NULL,
+      observation_fingerprint TEXT NOT NULL,
+      captured_at TEXT NOT NULL,
+      source_fingerprint TEXT NOT NULL,
+      state_snapshot_id TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `)
+
+  await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_cases_tenant_entity
     ON cases (tenant_id, entity_id)
   `)
@@ -3249,6 +3297,22 @@ async function initializeSqliteLegalCaseSchema(db: BackendDatabase) {
   await db.exec(`
     CREATE INDEX IF NOT EXISTS idx_executive_memory_snapshots_source_fingerprint
     ON executive_memory_snapshots (tenant_id, office_id, source_fingerprint)
+  `)
+  await db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_executive_memory_observations_unique_observation
+    ON executive_memory_observations (tenant_id, office_id, observation_fingerprint)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_executive_memory_observations_office_captured
+    ON executive_memory_observations (tenant_id, office_id, captured_at DESC, created_at DESC)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_executive_memory_observations_state_captured
+    ON executive_memory_observations (tenant_id, office_id, content_fingerprint, captured_at DESC)
+  `)
+  await db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_executive_memory_observations_capture_cycle
+    ON executive_memory_observations (tenant_id, office_id, capture_cycle_id)
   `)
 }
 

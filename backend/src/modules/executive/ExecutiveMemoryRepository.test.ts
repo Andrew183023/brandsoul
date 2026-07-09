@@ -182,11 +182,13 @@ async function countSnapshots(
   return row?.count ?? 0
 }
 
-test('initializeDatabase creates executive memory snapshot table and indexes', async () => {
+test('initializeDatabase creates executive memory snapshot and observation tables with expected indexes', async () => {
   const harness = await createSqliteHarness('executive-memory-schema-')
 
   try {
-    const table = await harness.db.get<{ name: string }>(
+    await initializeDatabase(harness.db)
+
+    const snapshotTable = await harness.db.get<{ name: string }>(
       `
         SELECT name
         FROM sqlite_master
@@ -194,14 +196,71 @@ test('initializeDatabase creates executive memory snapshot table and indexes', a
           AND name = 'executive_memory_snapshots'
       `,
     )
-    const indexes = await harness.db.all<Array<{ name: string }>>(
+    const observationTable = await harness.db.get<{ name: string }>(
+      `
+        SELECT name
+        FROM sqlite_master
+        WHERE type = 'table'
+          AND name = 'executive_memory_observations'
+      `,
+    )
+    const snapshotIndexes = await harness.db.all<Array<{ name: string; unique: number }>>(
       `PRAGMA index_list(executive_memory_snapshots)`,
     )
+    const observationIndexes = await harness.db.all<Array<{ name: string; unique: number }>>(
+      `PRAGMA index_list(executive_memory_observations)`,
+    )
+    const observationColumns = await harness.db.all<Array<{
+      name: string
+      type: string
+      notnull: number
+      dflt_value: string | null
+      pk: number
+    }>>(`PRAGMA table_info(executive_memory_observations)`)
+    const observationForeignKeys = await harness.db.all<Array<{ table: string }>>(
+      `PRAGMA foreign_key_list(executive_memory_observations)`,
+    )
 
-    assert.equal(table?.name, 'executive_memory_snapshots')
-    assert.ok(indexes.some((index) => index.name === 'idx_executive_memory_snapshots_unique_content'))
-    assert.ok(indexes.some((index) => index.name === 'idx_executive_memory_snapshots_office_captured'))
-    assert.ok(indexes.some((index) => index.name === 'idx_executive_memory_snapshots_source_fingerprint'))
+    assert.equal(snapshotTable?.name, 'executive_memory_snapshots')
+    assert.equal(observationTable?.name, 'executive_memory_observations')
+    assert.ok(snapshotIndexes.some((index) => index.name === 'idx_executive_memory_snapshots_unique_content' && index.unique === 1))
+    assert.ok(snapshotIndexes.some((index) => index.name === 'idx_executive_memory_snapshots_office_captured'))
+    assert.ok(snapshotIndexes.some((index) => index.name === 'idx_executive_memory_snapshots_source_fingerprint'))
+
+    assert.ok(observationIndexes.some((index) => index.name === 'idx_executive_memory_observations_unique_observation' && index.unique === 1))
+    assert.ok(observationIndexes.some((index) => index.name === 'idx_executive_memory_observations_office_captured'))
+    assert.ok(observationIndexes.some((index) => index.name === 'idx_executive_memory_observations_state_captured'))
+    assert.ok(observationIndexes.some((index) => index.name === 'idx_executive_memory_observations_capture_cycle'))
+
+    const observationColumnNames = observationColumns.map((column) => column.name)
+    assert.deepEqual(observationColumnNames, [
+      'id',
+      'tenant_id',
+      'office_id',
+      'projection_version',
+      'capture_cycle_id',
+      'content_fingerprint',
+      'observation_fingerprint',
+      'captured_at',
+      'source_fingerprint',
+      'state_snapshot_id',
+      'created_at',
+    ])
+    assert.equal(observationColumns.find((column) => column.name === 'id')?.pk, 1)
+    assert.equal(observationColumns.find((column) => column.name === 'captured_at')?.notnull, 1)
+    assert.equal(observationColumns.find((column) => column.name === 'state_snapshot_id')?.notnull, 1)
+    assert.equal(
+      observationColumns.find((column) => column.name === 'created_at')?.dflt_value,
+      'CURRENT_TIMESTAMP',
+    )
+    assert.equal(observationColumnNames.includes('growth_json'), false)
+    assert.equal(observationColumnNames.includes('operational_json'), false)
+    assert.equal(observationColumnNames.includes('morning_brief_json'), false)
+    assert.equal(observationColumnNames.includes('executive_feed_json'), false)
+    assert.equal(observationColumnNames.includes('cases_json'), false)
+    assert.equal(observationColumnNames.includes('professionals_json'), false)
+    assert.equal(observationColumnNames.includes('entity_profile_json'), false)
+    assert.equal(observationForeignKeys.length, 0)
   } finally {
     await harness.cleanup()
   }
