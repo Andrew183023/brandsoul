@@ -61,6 +61,12 @@ export type {
   ExecutiveMemoryCaptureOrchestratorDependencies,
 } from './ExecutiveMemoryCaptureOrchestrator.js'
 export type {
+  ExecutiveMemoryCaptureTriggerClock,
+  ExecutiveMemoryCaptureTriggerInput,
+  ExecutiveMemoryCaptureTriggerResult,
+  ExecutiveMemoryCaptureTriggerServiceDependencies,
+} from './ExecutiveMemoryCaptureTriggerService.js'
+export type {
   ExecutiveMemoryOfficeDiscoveryInput,
   ExecutiveMemoryOfficeDiscoveryItem,
   ExecutiveMemoryOfficeDiscoveryPage,
@@ -121,6 +127,12 @@ export {
   ExecutiveMemoryCaptureOrchestrator,
   createExecutiveMemoryCaptureOrchestrator,
 } from './ExecutiveMemoryCaptureOrchestrator.js'
+export {
+  EXECUTIVE_MEMORY_CAPTURE_TRIGGER_DEFAULT_BATCH_LIMIT,
+  EXECUTIVE_MEMORY_CAPTURE_TRIGGER_MAX_BATCH_LIMIT,
+  ExecutiveMemoryCaptureTriggerService,
+  createExecutiveMemoryCaptureTriggerService,
+} from './ExecutiveMemoryCaptureTriggerService.js'
 export {
   ExecutiveMemoryOfficeDiscoveryService,
   createExecutiveMemoryOfficeDiscoveryService,
