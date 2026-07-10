@@ -58,6 +58,11 @@ export type {
   SaveExecutiveMemoryObservationResult,
 } from './ExecutiveMemoryObservationRepository.js'
 export type {
+  ExecutiveMemoryAtomicCaptureInput,
+  ExecutiveMemoryAtomicCaptureResult,
+  ExecutiveMemoryAtomicCaptureServiceDependencies,
+} from './ExecutiveMemoryAtomicCaptureService.js'
+export type {
   ExecutiveMemorySnapshotListInput,
   ExecutiveMemorySnapshotLookupInput,
   ExecutiveMemorySnapshotRecord,
@@ -140,6 +145,10 @@ export {
   ExecutiveMemoryObservationRepository,
   createExecutiveMemoryObservationRepository,
 } from './ExecutiveMemoryObservationRepository.js'
+export {
+  ExecutiveMemoryAtomicCaptureService,
+  createExecutiveMemoryAtomicCaptureService,
+} from './ExecutiveMemoryAtomicCaptureService.js'
 export {
   ExecutiveMemoryRepository,
   buildExecutiveMemorySnapshotId,
