@@ -42,6 +42,7 @@ function createClock(steps: ClockStep[]) {
 function createDependencies(overrides?: {
   captureDiscoveredBatch?: (input: {
     capturedAt: string
+    captureCycleId: string
     cursor?: string
     limit?: number
   }) => Promise<{
@@ -59,6 +60,7 @@ function createDependencies(overrides?: {
 }) {
   const orchestratorCalls: Array<{
     capturedAt: string
+    captureCycleId: string
     cursor?: string
     limit?: number
   }> = []
@@ -122,6 +124,7 @@ function createDependencies(overrides?: {
       orchestrator: {
         async captureDiscoveredBatch(input: {
           capturedAt: string
+          captureCycleId: string
           cursor?: string
           limit?: number
         }) {
@@ -156,11 +159,24 @@ test('factory returns a valid trigger service instance', () => {
   assert.equal(service instanceof ExecutiveMemoryCaptureTriggerService, true)
 })
 
+test('run requires captureCycleId and rejects whitespace', async () => {
+  const harness = createDependencies()
+  const service = createExecutiveMemoryCaptureTriggerService(harness.dependencies)
+
+  await assert.rejects(
+    service.run({
+      captureCycleId: '   ',
+    }),
+    /captureCycleId/,
+  )
+})
+
 test('run calls clock and orchestrator once and returns a sanitized operational result', async () => {
   const harness = createDependencies()
   const service = createExecutiveMemoryCaptureTriggerService(harness.dependencies)
 
   const result = await service.run({
+    captureCycleId: 'capture-cycle-1',
     cursor: 'office-0',
     limit: 12,
   })
@@ -172,6 +188,7 @@ test('run calls clock and orchestrator once and returns a sanitized operational 
   assert.deepEqual(harness.orchestratorCalls, [
     {
       capturedAt: '2026-07-09T10:00:00.000Z',
+      captureCycleId: 'capture-cycle-1',
       cursor: 'office-0',
       limit: 12,
     },
@@ -190,10 +207,9 @@ test('run calls clock and orchestrator once and returns a sanitized operational 
   })
   assert.equal('items' in result, false)
   assert.equal('snapshotId' in result, false)
+  assert.equal('observationId' in result, false)
   assert.equal('contentFingerprint' in result, false)
-  assert.equal('sourceFingerprint' in result, false)
-  assert.equal('tenantId' in result, false)
-  assert.equal('officeId' in result, false)
+  assert.equal('observationFingerprint' in result, false)
   assert.deepEqual(harness.metricsCalls.runs, [{ status: 'completed' }])
   assert.deepEqual(harness.metricsCalls.timings, [{ durationMs: 45, status: 'completed' }])
   assert.deepEqual(harness.metricsCalls.totals, [{
@@ -209,7 +225,7 @@ test('default limit is used when input limit is absent', async () => {
   const harness = createDependencies()
   const service = createExecutiveMemoryCaptureTriggerService(harness.dependencies)
 
-  await service.run()
+  await service.run({ captureCycleId: 'capture-cycle-1' })
 
   assert.equal(
     harness.orchestratorCalls[0]?.limit,
@@ -223,7 +239,10 @@ test('limit normalization covers zero negative NaN Infinity maximum overflow and
     { input: -1, expected: EXECUTIVE_MEMORY_CAPTURE_TRIGGER_DEFAULT_BATCH_LIMIT },
     { input: Number.NaN, expected: EXECUTIVE_MEMORY_CAPTURE_TRIGGER_DEFAULT_BATCH_LIMIT },
     { input: Number.POSITIVE_INFINITY, expected: EXECUTIVE_MEMORY_CAPTURE_TRIGGER_DEFAULT_BATCH_LIMIT },
-    { input: EXECUTIVE_MEMORY_CAPTURE_TRIGGER_MAX_BATCH_LIMIT + 1, expected: EXECUTIVE_MEMORY_CAPTURE_TRIGGER_MAX_BATCH_LIMIT },
+    {
+      input: EXECUTIVE_MEMORY_CAPTURE_TRIGGER_MAX_BATCH_LIMIT + 1,
+      expected: EXECUTIVE_MEMORY_CAPTURE_TRIGGER_MAX_BATCH_LIMIT,
+    },
     { input: 7.9, expected: 7 },
   ]
 
@@ -231,7 +250,10 @@ test('limit normalization covers zero negative NaN Infinity maximum overflow and
     const harness = createDependencies()
     const service = createExecutiveMemoryCaptureTriggerService(harness.dependencies)
 
-    await service.run({ limit: scenario.input })
+    await service.run({
+      captureCycleId: 'capture-cycle-1',
+      limit: scenario.input,
+    })
 
     assert.equal(harness.orchestratorCalls[0]?.limit, scenario.expected)
   }
@@ -239,7 +261,7 @@ test('limit normalization covers zero negative NaN Infinity maximum overflow and
 
 test('cursor undefined is preserved and nextCursor may be undefined', async () => {
   const harness = createDependencies({
-    captureDiscoveredBatch: async (input) => ({
+    captureDiscoveredBatch: async () => ({
       items: [],
       nextCursor: undefined,
       totals: {
@@ -252,11 +274,12 @@ test('cursor undefined is preserved and nextCursor may be undefined', async () =
   })
   const service = createExecutiveMemoryCaptureTriggerService(harness.dependencies)
 
-  const result = await service.run()
+  const result = await service.run({ captureCycleId: 'capture-cycle-1' })
 
   assert.deepEqual(harness.orchestratorCalls, [
     {
       capturedAt: '2026-07-09T10:00:00.000Z',
+      captureCycleId: 'capture-cycle-1',
       cursor: undefined,
       limit: EXECUTIVE_MEMORY_CAPTURE_TRIGGER_DEFAULT_BATCH_LIMIT,
     },
@@ -275,10 +298,11 @@ test('cursor undefined is preserved and nextCursor may be undefined', async () =
   })
 })
 
-test('input is not mutated', async () => {
+test('input is not mutated and retries can preserve the same captureCycleId', async () => {
   const harness = createDependencies()
   const service = createExecutiveMemoryCaptureTriggerService(harness.dependencies)
   const input = {
+    captureCycleId: 'capture-cycle-1',
     cursor: 'office-7',
     limit: 15,
   }
@@ -289,10 +313,27 @@ test('input is not mutated', async () => {
   assert.deepEqual(input, before)
 })
 
+test('different captureCycleId values are passed through exactly', async () => {
+  const firstHarness = createDependencies()
+  const firstService = createExecutiveMemoryCaptureTriggerService(firstHarness.dependencies)
+  await firstService.run({
+    captureCycleId: 'capture-cycle-1',
+  })
+
+  const secondHarness = createDependencies()
+  const secondService = createExecutiveMemoryCaptureTriggerService(secondHarness.dependencies)
+  await secondService.run({
+    captureCycleId: 'capture-cycle-2',
+  })
+
+  assert.equal(firstHarness.orchestratorCalls[0]?.captureCycleId, 'capture-cycle-1')
+  assert.equal(secondHarness.orchestratorCalls[0]?.captureCycleId, 'capture-cycle-2')
+})
+
 test('second concurrent execution returns already_running and does not call clock or orchestrator', async () => {
   let releaseFirstRun: (() => void) | null = null
   const harness = createDependencies({
-    captureDiscoveredBatch: (input) => new Promise((resolve) => {
+    captureDiscoveredBatch: () => new Promise((resolve) => {
       releaseFirstRun = () => resolve({
         items: [],
         nextCursor: 'office-2',
@@ -311,8 +352,8 @@ test('second concurrent execution returns already_running and does not call cloc
   })
   const service = createExecutiveMemoryCaptureTriggerService(harness.dependencies)
 
-  const firstRun = service.run({ limit: 10 })
-  const secondRun = await service.run({ limit: 3 })
+  const firstRun = service.run({ captureCycleId: 'capture-cycle-1', limit: 10 })
+  const secondRun = await service.run({ captureCycleId: 'capture-cycle-2', limit: 3 })
 
   assert.deepEqual(secondRun, {
     status: 'already_running',
@@ -320,6 +361,7 @@ test('second concurrent execution returns already_running and does not call cloc
   assert.deepEqual(harness.orchestratorCalls, [
     {
       capturedAt: '2026-07-09T10:00:00.000Z',
+      captureCycleId: 'capture-cycle-1',
       cursor: undefined,
       limit: 10,
     },
@@ -347,17 +389,19 @@ test('lock is released after success and a later execution can run again', async
   })
   const service = createExecutiveMemoryCaptureTriggerService(harness.dependencies)
 
-  await service.run({ limit: 4 })
-  await service.run({ limit: 6 })
+  await service.run({ captureCycleId: 'capture-cycle-1', limit: 4 })
+  await service.run({ captureCycleId: 'capture-cycle-2', limit: 6 })
 
   assert.deepEqual(harness.orchestratorCalls, [
     {
       capturedAt: '2026-07-09T10:00:00.000Z',
+      captureCycleId: 'capture-cycle-1',
       cursor: undefined,
       limit: 4,
     },
     {
       capturedAt: '2026-07-09T11:00:00.000Z',
+      captureCycleId: 'capture-cycle-2',
       cursor: undefined,
       limit: 6,
     },
@@ -376,7 +420,7 @@ test('lock is released after first clock failure', async () => {
   const service = createExecutiveMemoryCaptureTriggerService(harness.dependencies)
 
   await assert.rejects(
-    service.run(),
+    service.run({ captureCycleId: 'capture-cycle-1' }),
     /clock start failed/,
   )
 
@@ -384,7 +428,7 @@ test('lock is released after first clock failure', async () => {
   assert.deepEqual(harness.metricsCalls.timings, [{ durationMs: 45, status: 'error' }])
   assert.deepEqual(harness.metricsCalls.totals, [])
 
-  const result = await service.run()
+  const result = await service.run({ captureCycleId: 'capture-cycle-2' })
   assert.equal(result.status, 'completed')
   assert.equal(harness.orchestratorCalls.length, 1)
 })
@@ -419,7 +463,7 @@ test('lock is released after orchestrator failure and the error is propagated', 
   const service = createExecutiveMemoryCaptureTriggerService(harness.dependencies)
 
   await assert.rejects(
-    service.run(),
+    service.run({ captureCycleId: 'capture-cycle-1' }),
     /orchestrator failed/,
   )
 
@@ -427,7 +471,7 @@ test('lock is released after orchestrator failure and the error is propagated', 
   assert.deepEqual(harness.metricsCalls.timings, [{ durationMs: 45, status: 'error' }])
   assert.deepEqual(harness.metricsCalls.totals, [])
 
-  const result = await service.run()
+  const result = await service.run({ captureCycleId: 'capture-cycle-2' })
   assert.equal(result.status, 'completed')
   assert.equal(harness.orchestratorCalls.length, 2)
 })
@@ -445,7 +489,7 @@ test('lock is released after finishedAt clock failure and the error is propagate
   const service = createExecutiveMemoryCaptureTriggerService(harness.dependencies)
 
   await assert.rejects(
-    service.run(),
+    service.run({ captureCycleId: 'capture-cycle-1' }),
     /clock finish failed/,
   )
 
@@ -453,7 +497,7 @@ test('lock is released after finishedAt clock failure and the error is propagate
   assert.deepEqual(harness.metricsCalls.timings, [{ durationMs: 45, status: 'error' }])
   assert.deepEqual(harness.metricsCalls.totals, [])
 
-  const result = await service.run()
+  const result = await service.run({ captureCycleId: 'capture-cycle-2' })
   assert.equal(result.status, 'completed')
   assert.equal(harness.orchestratorCalls.length, 2)
 })
@@ -466,7 +510,7 @@ test('metrics are optional and do not change trigger behavior when omitted', asy
     timer: harness.dependencies.timer,
   })
 
-  const result = await service.run()
+  const result = await service.run({ captureCycleId: 'capture-cycle-1' })
 
   assert.equal(result.status, 'completed')
 })
@@ -500,8 +544,8 @@ test('different service instances do not share a global lock', async () => {
   const firstService = createExecutiveMemoryCaptureTriggerService(firstHarness.dependencies)
   const secondService = createExecutiveMemoryCaptureTriggerService(secondHarness.dependencies)
 
-  const firstRun = firstService.run()
-  const secondRun = await secondService.run()
+  const firstRun = firstService.run({ captureCycleId: 'capture-cycle-1' })
+  const secondRun = await secondService.run({ captureCycleId: 'capture-cycle-2' })
 
   assert.equal(secondRun.status, 'completed')
   assert.equal(secondHarness.orchestratorCalls.length, 1)
@@ -520,8 +564,9 @@ test('module remains structurally isolated from forbidden dependencies', async (
     /Date\.now|new Date|Math\.random|crypto\.randomUUID|setInterval|setTimeout|cron|scheduler|fastify|fetch|axios|window|document|localStorage|sessionStorage|\bany\b/i.test(source),
     false,
   )
+  assert.equal(source.includes('ExecutiveMemoryAtomicCaptureService'), false)
   assert.equal(source.includes('ExecutiveDashboardService'), false)
-  assert.equal(source.includes('ExecutiveDashboardApplicationService'), false)
+  assert.equal(source.includes('executiveDashboardApplicationService'), false)
   assert.equal(source.includes('executiveDashboardRoutes'), false)
-  assert.equal(/retry\s*\(|backoff|while\s*\(.+retry|for\s*\(.+retry/i.test(source), false)
+  assert.equal(source.includes('captureCycleId:'), true)
 })

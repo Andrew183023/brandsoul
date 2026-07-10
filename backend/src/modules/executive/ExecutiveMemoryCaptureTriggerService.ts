@@ -4,6 +4,7 @@ import type { ExecutiveMemoryCaptureOrchestrator } from './ExecutiveMemoryCaptur
 import type { ExecutiveMemoryCaptureTriggerMetricsRecorder } from './ExecutiveMetrics.js'
 
 export interface ExecutiveMemoryCaptureTriggerInput {
+  captureCycleId: string
   cursor?: string
   limit?: number
 }
@@ -76,20 +77,30 @@ function normalizeLimit(limit?: number) {
   return normalized
 }
 
+function assertNonEmptyString(value: string, label: string) {
+  if (value.trim().length === 0) {
+    throw new Error(`Executive memory capture trigger service requires ${label}.`)
+  }
+}
+
 export class ExecutiveMemoryCaptureTriggerService {
   private running = false
 
   constructor(private readonly dependencies: ExecutiveMemoryCaptureTriggerServiceDependencies) {}
 
   async run(
-    input: ExecutiveMemoryCaptureTriggerInput = {},
+    input: ExecutiveMemoryCaptureTriggerInput,
   ): Promise<ExecutiveMemoryCaptureTriggerResult> {
     if (this.running) {
-      this.dependencies.metrics?.recordExecutiveMemoryCaptureTriggerRun({ status: 'already_running' })
+      this.dependencies.metrics?.recordExecutiveMemoryCaptureTriggerRun({
+        status: 'already_running',
+      })
       return {
         status: 'already_running',
       }
     }
+
+    assertNonEmptyString(input.captureCycleId, 'captureCycleId')
 
     this.running = true
     let startedAtMonotonic: number | null = null
@@ -99,6 +110,7 @@ export class ExecutiveMemoryCaptureTriggerService {
       const startedAt = this.dependencies.clock.now().toISOString()
       const batchResult = await this.dependencies.orchestrator.captureDiscoveredBatch({
         capturedAt: startedAt,
+        captureCycleId: input.captureCycleId,
         cursor: input.cursor,
         limit: normalizeLimit(input.limit),
       })

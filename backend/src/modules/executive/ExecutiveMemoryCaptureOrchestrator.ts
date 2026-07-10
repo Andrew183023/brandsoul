@@ -1,5 +1,6 @@
 import type { EntityProfileDocument } from '../../domain/entityProfile.js'
-import type { ExecutiveMemoryCaptureService } from './ExecutiveMemoryCaptureService.js'
+import { buildExecutiveMemoryProjection } from './ExecutiveMemoryProjection.js'
+import type { ExecutiveMemoryAtomicCaptureService } from './ExecutiveMemoryAtomicCaptureService.js'
 import type { ExecutiveMemoryOfficeDiscoveryService } from './ExecutiveMemoryOfficeDiscovery.js'
 import type { DecisionCenterEngine } from './DecisionCenterEngine.js'
 import type { ExecutiveTimelineEngine } from './ExecutiveTimelineEngine.js'
@@ -23,21 +24,27 @@ export interface ExecutiveMemoryCaptureOfficeInput {
   tenantId: number
   officeId: string
   capturedAt: string
+  captureCycleId: string
 }
 
 export interface ExecutiveMemoryCaptureOfficeResult {
   status: 'captured'
-  created: boolean
   tenantId: number
   officeId: string
   capturedAt: string
+  captureCycleId: string
   snapshotId: string
+  snapshotCreated: boolean
+  observationId: string
+  observationCreated: boolean
   contentFingerprint: string
   sourceFingerprint: string
+  observationFingerprint: string
 }
 
 export interface ExecutiveMemoryCaptureBatchInput {
   capturedAt: string
+  captureCycleId: string
   cursor?: string
   limit?: number
 }
@@ -46,10 +53,14 @@ export interface ExecutiveMemoryCaptureBatchItemResult {
   tenantId: number
   officeId: string
   status: 'captured' | 'error'
-  created?: boolean
+  captureCycleId?: string
   snapshotId?: string
+  snapshotCreated?: boolean
+  observationId?: string
+  observationCreated?: boolean
   contentFingerprint?: string
   sourceFingerprint?: string
+  observationFingerprint?: string
   error?: string
 }
 
@@ -95,7 +106,7 @@ export interface ExecutiveMemoryCaptureOrchestratorDependencies {
   officeHealthEngine: Pick<OfficeHealthEngine, 'build'>
   decisionCenterEngine: Pick<DecisionCenterEngine, 'build'>
   executiveTimelineEngine: Pick<ExecutiveTimelineEngine, 'build'>
-  memoryCaptureService: Pick<ExecutiveMemoryCaptureService, 'capture'>
+  atomicCaptureService: Pick<ExecutiveMemoryAtomicCaptureService, 'capture'>
   officeDiscoveryService?: Pick<ExecutiveMemoryOfficeDiscoveryService, 'listEligibleOffices'>
 }
 
@@ -117,11 +128,15 @@ export class ExecutiveMemoryCaptureOrchestrator {
   ): Promise<ExecutiveMemoryCaptureOfficeResult> {
     assertNonEmptyString(input.officeId, 'officeId')
     assertNonEmptyString(input.capturedAt, 'capturedAt')
+    assertNonEmptyString(input.captureCycleId, 'captureCycleId')
 
     const [entity, cases, professionals] = await Promise.all([
       this.dependencies.entityRepository.getEntityById(input.officeId),
       this.dependencies.caseRepository.listCasesByEntity(input.tenantId, input.officeId),
-      this.dependencies.officeProfessionalService.listOfficeProfessionals(input.tenantId, input.officeId),
+      this.dependencies.officeProfessionalService.listOfficeProfessionals(
+        input.tenantId,
+        input.officeId,
+      ),
     ])
 
     const growth = await this.dependencies.growthIntelligenceService.build({
@@ -159,7 +174,7 @@ export class ExecutiveMemoryCaptureOrchestrator {
       generatedAt: input.capturedAt,
     })
 
-    const captured = await this.dependencies.memoryCaptureService.capture({
+    const projection = buildExecutiveMemoryProjection({
       tenantId: input.tenantId,
       officeId: input.officeId,
       capturedAt: input.capturedAt,
@@ -170,15 +185,24 @@ export class ExecutiveMemoryCaptureOrchestrator {
       executiveTimeline,
     })
 
+    const captured = await this.dependencies.atomicCaptureService.capture({
+      projection,
+      captureCycleId: input.captureCycleId,
+    })
+
     return {
       status: 'captured',
-      created: captured.created,
       tenantId: captured.tenantId,
       officeId: captured.officeId,
       capturedAt: captured.capturedAt,
+      captureCycleId: captured.captureCycleId,
       snapshotId: captured.snapshotId,
+      snapshotCreated: captured.snapshotCreated,
+      observationId: captured.observationId,
+      observationCreated: captured.observationCreated,
       contentFingerprint: captured.contentFingerprint,
       sourceFingerprint: captured.sourceFingerprint,
+      observationFingerprint: captured.observationFingerprint,
     }
   }
 
@@ -190,6 +214,7 @@ export class ExecutiveMemoryCaptureOrchestrator {
     }
 
     assertNonEmptyString(input.capturedAt, 'capturedAt')
+    assertNonEmptyString(input.captureCycleId, 'captureCycleId')
 
     const page = await this.dependencies.officeDiscoveryService.listEligibleOffices({
       cursor: input.cursor,
@@ -207,19 +232,24 @@ export class ExecutiveMemoryCaptureOrchestrator {
           tenantId: office.tenantId,
           officeId: office.officeId,
           capturedAt: input.capturedAt,
+          captureCycleId: input.captureCycleId,
         })
 
         items.push({
           tenantId: result.tenantId,
           officeId: result.officeId,
           status: 'captured',
-          created: result.created,
+          captureCycleId: result.captureCycleId,
           snapshotId: result.snapshotId,
+          snapshotCreated: result.snapshotCreated,
+          observationId: result.observationId,
+          observationCreated: result.observationCreated,
           contentFingerprint: result.contentFingerprint,
           sourceFingerprint: result.sourceFingerprint,
+          observationFingerprint: result.observationFingerprint,
         })
         capturedCount += 1
-        if (result.created) {
+        if (result.observationCreated) {
           createdCount += 1
         }
       } catch {

@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import test from 'node:test'
 
+import { buildExecutiveMemoryProjection } from './ExecutiveMemoryProjection.js'
 import {
   ExecutiveMemoryCaptureOrchestrator,
   createExecutiveMemoryCaptureOrchestrator,
@@ -30,9 +31,9 @@ function createDecisionCenter() {
         priority: 'high' as const,
         impact: 'high' as const,
         confidence: 88,
-        explanation: 'Expandir com segurança.',
+        explanation: 'Expandir com seguranca.',
         evidence: [],
-        recommendedActions: ['Priorizar expansão.'],
+        recommendedActions: ['Priorizar expansao.'],
         blockingFactors: [],
       },
     ],
@@ -47,7 +48,7 @@ function createExecutiveTimeline() {
         category: 'growth' as const,
         importance: 'high' as const,
         temporalKind: 'observed' as const,
-        title: 'Expansão observada',
+        title: 'Expansao observada',
         summary: 'Existe oportunidade observada.',
         evidence: [
           {
@@ -141,14 +142,18 @@ function createDependencies() {
   const decisionCenter = createDecisionCenter()
   const executiveTimeline = createExecutiveTimeline()
   const captureResult = {
-    created: true,
-    snapshotId: 'executive_memory_snapshot:7:office-1:fingerprint',
     tenantId: 7,
     officeId: 'office-1',
     projectionVersion: 1,
+    captureCycleId: 'capture-cycle-1',
     capturedAt: '2026-07-08T11:00:00.000Z',
+    snapshotId: 'executive_memory_snapshot:7:office-1:fingerprint',
+    snapshotCreated: true,
+    observationId: 'executive_memory_observation:7:office-1:observation-fingerprint',
+    observationCreated: true,
     contentFingerprint: 'fingerprint',
     sourceFingerprint: 'source-fingerprint',
+    observationFingerprint: 'observation-fingerprint',
   }
 
   return {
@@ -182,37 +187,37 @@ function createDependencies() {
         },
       },
       growthIntelligenceService: {
-        build(input: unknown) {
+        build() {
           calls.push('growth')
           return growth
         },
       },
       operationalIntelligenceService: {
-        build(input: unknown) {
+        build() {
           calls.push('operational')
           return operational
         },
       },
       officeHealthEngine: {
-        build(input: unknown) {
+        build() {
           calls.push('officeHealth')
           return officeHealth
         },
       },
       decisionCenterEngine: {
-        build(input: unknown) {
+        build() {
           calls.push('decisionCenter')
           return decisionCenter
         },
       },
       executiveTimelineEngine: {
-        build(input: unknown) {
+        build() {
           calls.push('timeline')
           return executiveTimeline
         },
       },
-      memoryCaptureService: {
-        async capture(input: unknown) {
+      atomicCaptureService: {
+        async capture() {
           calls.push('capture')
           return captureResult
         },
@@ -279,7 +284,7 @@ test('captureOffice loads canonical data once and captures executive memory once
         return harness.executiveTimeline
       },
     },
-    memoryCaptureService: {
+    atomicCaptureService: {
       async capture(input) {
         captureInputs.push(input as Record<string, unknown>)
         harness.calls.push('capture')
@@ -292,17 +297,22 @@ test('captureOffice loads canonical data once and captures executive memory once
     tenantId: 7,
     officeId: 'office-1',
     capturedAt: '2026-07-08T11:00:00.000Z',
+    captureCycleId: 'capture-cycle-1',
   })
 
   assert.deepEqual(result, {
     status: 'captured',
-    created: true,
     tenantId: 7,
     officeId: 'office-1',
     capturedAt: '2026-07-08T11:00:00.000Z',
+    captureCycleId: 'capture-cycle-1',
     snapshotId: 'executive_memory_snapshot:7:office-1:fingerprint',
+    snapshotCreated: true,
+    observationId: 'executive_memory_observation:7:office-1:observation-fingerprint',
+    observationCreated: true,
     contentFingerprint: 'fingerprint',
     sourceFingerprint: 'source-fingerprint',
+    observationFingerprint: 'observation-fingerprint',
   })
   assert.deepEqual(harness.calls, [
     'entity:office-1',
@@ -335,24 +345,30 @@ test('captureOffice loads canonical data once and captures executive memory once
   assert.equal(timelineInputs[0]?.officeHealth, harness.officeHealth)
   assert.equal(timelineInputs[0]?.decisionCenter, harness.decisionCenter)
   assert.equal(timelineInputs[0]?.generatedAt, '2026-07-08T11:00:00.000Z')
-  assert.equal(captureInputs[0]?.officeHealth, harness.officeHealth)
-  assert.equal(captureInputs[0]?.decisionCenter, harness.decisionCenter)
-  assert.equal(captureInputs[0]?.executiveTimeline, harness.executiveTimeline)
-  assert.equal(captureInputs[0]?.sourceGrowthGeneratedAt, harness.growth.generatedAt)
-  assert.equal(captureInputs[0]?.sourceOperationalGeneratedAt, harness.operational.generatedAt)
-  assert.equal('growth' in (captureInputs[0] ?? {}), false)
-  assert.equal('operational' in (captureInputs[0] ?? {}), false)
-  assert.equal('morningBrief' in (captureInputs[0] ?? {}), false)
-  assert.equal('executiveFeed' in (captureInputs[0] ?? {}), false)
+  assert.equal(captureInputs[0]?.captureCycleId, 'capture-cycle-1')
+  assert.deepEqual(
+    captureInputs[0]?.projection,
+    buildExecutiveMemoryProjection({
+      tenantId: 7,
+      officeId: 'office-1',
+      capturedAt: '2026-07-08T11:00:00.000Z',
+      sourceGrowthGeneratedAt: harness.growth.generatedAt,
+      sourceOperationalGeneratedAt: harness.operational.generatedAt,
+      officeHealth: harness.officeHealth,
+      decisionCenter: harness.decisionCenter,
+      executiveTimeline: harness.executiveTimeline,
+    }),
+  )
 })
 
-test('captureOffice preserves input object and accepts explicit capturedAt only', async () => {
+test('captureOffice preserves input object and accepts explicit capturedAt and captureCycleId only', async () => {
   const harness = createDependencies()
   const orchestrator = createExecutiveMemoryCaptureOrchestrator(harness.dependencies)
   const input = {
     tenantId: 7,
     officeId: 'office-1',
     capturedAt: '2026-07-08T11:00:00.000Z',
+    captureCycleId: 'capture-cycle-1',
   }
   const before = structuredClone(input)
 
@@ -361,12 +377,13 @@ test('captureOffice preserves input object and accepts explicit capturedAt only'
   assert.deepEqual(input, before)
 })
 
-test('captureOffice propagates entity cases growth operational executive and capture failures', async () => {
+test('captureOffice propagates entity cases growth operational executive and atomic capture failures', async () => {
   const base = createDependencies()
   const officeInput = {
     tenantId: 7,
     officeId: 'office-1',
     capturedAt: '2026-07-08T11:00:00.000Z',
+    captureCycleId: 'capture-cycle-1',
   }
 
   await assert.rejects(
@@ -426,7 +443,7 @@ test('captureOffice propagates entity cases growth operational executive and cap
           throw new Error('executive failed')
         },
       },
-      memoryCaptureService: {
+      atomicCaptureService: {
         async capture() {
           captureCalled = true
           return base.captureResult
@@ -440,7 +457,7 @@ test('captureOffice propagates entity cases growth operational executive and cap
   await assert.rejects(
     createExecutiveMemoryCaptureOrchestrator({
       ...base.dependencies,
-      memoryCaptureService: {
+      atomicCaptureService: {
         async capture() {
           throw new Error('capture failed')
         },
@@ -472,12 +489,13 @@ test('captureOffice uses null entityProfile when entity is absent', async () => 
     tenantId: 7,
     officeId: 'office-1',
     capturedAt: '2026-07-08T11:00:00.000Z',
+    captureCycleId: 'capture-cycle-1',
   })
 
   assert.equal(growthInputs[0]?.entityProfile, null)
 })
 
-test('captureOffice rejects blank officeId and capturedAt', async () => {
+test('captureOffice rejects blank officeId capturedAt and captureCycleId', async () => {
   const harness = createDependencies()
   const orchestrator = createExecutiveMemoryCaptureOrchestrator(harness.dependencies)
 
@@ -486,6 +504,7 @@ test('captureOffice rejects blank officeId and capturedAt', async () => {
       tenantId: 7,
       officeId: '   ',
       capturedAt: '2026-07-08T11:00:00.000Z',
+      captureCycleId: 'capture-cycle-1',
     }),
     /officeId/,
   )
@@ -495,28 +514,48 @@ test('captureOffice rejects blank officeId and capturedAt', async () => {
       tenantId: 7,
       officeId: 'office-1',
       capturedAt: '   ',
+      captureCycleId: 'capture-cycle-1',
     }),
     /capturedAt/,
   )
+
+  await assert.rejects(
+    orchestrator.captureOffice({
+      tenantId: 7,
+      officeId: 'office-1',
+      capturedAt: '2026-07-08T11:00:00.000Z',
+      captureCycleId: '   ',
+    }),
+    /captureCycleId/,
+  )
 })
 
-test('captureDiscoveredBatch processes offices sequentially preserves order cursor and totals', async () => {
+test('captureDiscoveredBatch processes offices sequentially preserves order cycle cursor and totals', async () => {
   const harness = createDependencies()
   const processed: string[] = []
   const orchestrator = createExecutiveMemoryCaptureOrchestrator({
     ...harness.dependencies,
-    memoryCaptureService: {
+    atomicCaptureService: {
       async capture(input) {
-        const captureInput = input as { officeId: string; tenantId: number; capturedAt: string }
-        processed.push(`${captureInput.tenantId}:${captureInput.officeId}:${captureInput.capturedAt}`)
+        const captureInput = input as {
+          projection: { officeId: string; tenantId: number; capturedAt: string }
+          captureCycleId: string
+        }
+        processed.push(
+          `${captureInput.projection.tenantId}:${captureInput.projection.officeId}:${captureInput.projection.capturedAt}:${captureInput.captureCycleId}`,
+        )
         return {
           ...harness.captureResult,
-          tenantId: captureInput.tenantId,
-          officeId: captureInput.officeId,
-          snapshotId: `snapshot:${captureInput.officeId}`,
-          contentFingerprint: `content:${captureInput.officeId}`,
-          sourceFingerprint: `source:${captureInput.officeId}`,
-          created: captureInput.officeId === 'office-1',
+          tenantId: captureInput.projection.tenantId,
+          officeId: captureInput.projection.officeId,
+          captureCycleId: captureInput.captureCycleId,
+          snapshotId: `snapshot:${captureInput.projection.officeId}`,
+          snapshotCreated: captureInput.projection.officeId === 'office-1',
+          observationId: `observation:${captureInput.projection.officeId}:${captureInput.captureCycleId}`,
+          observationCreated: captureInput.projection.officeId === 'office-1',
+          contentFingerprint: `content:${captureInput.projection.officeId}`,
+          sourceFingerprint: `source:${captureInput.projection.officeId}`,
+          observationFingerprint: `observation-fingerprint:${captureInput.projection.officeId}:${captureInput.captureCycleId}`,
         }
       },
     },
@@ -526,11 +565,12 @@ test('captureDiscoveredBatch processes offices sequentially preserves order curs
     limit: 2,
     cursor: 'office-0',
     capturedAt: '2026-07-08T11:00:00.000Z',
+    captureCycleId: 'capture-cycle-1',
   })
 
   assert.deepEqual(processed, [
-    '7:office-1:2026-07-08T11:00:00.000Z',
-    '8:office-2:2026-07-08T11:00:00.000Z',
+    '7:office-1:2026-07-08T11:00:00.000Z:capture-cycle-1',
+    '8:office-2:2026-07-08T11:00:00.000Z:capture-cycle-1',
   ])
   assert.deepEqual(result, {
     items: [
@@ -538,19 +578,27 @@ test('captureDiscoveredBatch processes offices sequentially preserves order curs
         tenantId: 7,
         officeId: 'office-1',
         status: 'captured',
-        created: true,
+        captureCycleId: 'capture-cycle-1',
         snapshotId: 'snapshot:office-1',
+        snapshotCreated: true,
+        observationId: 'observation:office-1:capture-cycle-1',
+        observationCreated: true,
         contentFingerprint: 'content:office-1',
         sourceFingerprint: 'source:office-1',
+        observationFingerprint: 'observation-fingerprint:office-1:capture-cycle-1',
       },
       {
         tenantId: 8,
         officeId: 'office-2',
         status: 'captured',
-        created: false,
+        captureCycleId: 'capture-cycle-1',
         snapshotId: 'snapshot:office-2',
+        snapshotCreated: false,
+        observationId: 'observation:office-2:capture-cycle-1',
+        observationCreated: false,
         contentFingerprint: 'content:office-2',
         sourceFingerprint: 'source:office-2',
+        observationFingerprint: 'observation-fingerprint:office-2:capture-cycle-1',
       },
     ],
     nextCursor: 'office-2',
@@ -567,9 +615,9 @@ test('captureDiscoveredBatch continues on item error and sanitizes error payload
   const harness = createDependencies()
   const orchestrator = createExecutiveMemoryCaptureOrchestrator({
     ...harness.dependencies,
-    memoryCaptureService: {
+    atomicCaptureService: {
       async capture(input) {
-        const officeId = (input as { officeId: string }).officeId
+        const officeId = (input as { projection: { officeId: string } }).projection.officeId
         if (officeId === 'office-2') {
           throw new Error('sensitive internal payload')
         }
@@ -581,6 +629,7 @@ test('captureDiscoveredBatch continues on item error and sanitizes error payload
 
   const result = await orchestrator.captureDiscoveredBatch({
     capturedAt: '2026-07-08T11:00:00.000Z',
+    captureCycleId: 'capture-cycle-1',
   })
 
   assert.deepEqual(result, {
@@ -589,10 +638,14 @@ test('captureDiscoveredBatch continues on item error and sanitizes error payload
         tenantId: 7,
         officeId: 'office-1',
         status: 'captured',
-        created: true,
+        captureCycleId: 'capture-cycle-1',
         snapshotId: 'executive_memory_snapshot:7:office-1:fingerprint',
+        snapshotCreated: true,
+        observationId: 'executive_memory_observation:7:office-1:observation-fingerprint',
+        observationCreated: true,
         contentFingerprint: 'fingerprint',
         sourceFingerprint: 'source-fingerprint',
+        observationFingerprint: 'observation-fingerprint',
       },
       {
         tenantId: 8,
@@ -612,7 +665,7 @@ test('captureDiscoveredBatch continues on item error and sanitizes error payload
   assert.equal(JSON.stringify(result).includes('sensitive internal payload'), false)
 })
 
-test('captureDiscoveredBatch requires officeDiscoveryService and capturedAt', async () => {
+test('captureDiscoveredBatch requires officeDiscoveryService capturedAt and captureCycleId', async () => {
   const harness = createDependencies()
   const withoutDiscovery = createExecutiveMemoryCaptureOrchestrator({
     ...harness.dependencies,
@@ -622,6 +675,7 @@ test('captureDiscoveredBatch requires officeDiscoveryService and capturedAt', as
   await assert.rejects(
     withoutDiscovery.captureDiscoveredBatch({
       capturedAt: '2026-07-08T11:00:00.000Z',
+      captureCycleId: 'capture-cycle-1',
     }),
     /officeDiscoveryService/,
   )
@@ -629,9 +683,141 @@ test('captureDiscoveredBatch requires officeDiscoveryService and capturedAt', as
   await assert.rejects(
     createExecutiveMemoryCaptureOrchestrator(harness.dependencies).captureDiscoveredBatch({
       capturedAt: '   ',
+      captureCycleId: 'capture-cycle-1',
     }),
     /capturedAt/,
   )
+
+  await assert.rejects(
+    createExecutiveMemoryCaptureOrchestrator(harness.dependencies).captureDiscoveredBatch({
+      capturedAt: '2026-07-08T11:00:00.000Z',
+      captureCycleId: '   ',
+    }),
+    /captureCycleId/,
+  )
+})
+
+test('same cycle retry new cycle same state and A to B to A semantics are preserved in outputs', async () => {
+  const harness = createDependencies()
+  const cycleCallCounts = new Map<string, number>()
+  const orchestrator = createExecutiveMemoryCaptureOrchestrator({
+    ...harness.dependencies,
+    atomicCaptureService: {
+      async capture(input) {
+        const captureInput = input as {
+          projection: { tenantId: number; officeId: string; capturedAt: string }
+          captureCycleId: string
+        }
+        const previousCalls = cycleCallCounts.get(captureInput.captureCycleId) ?? 0
+        cycleCallCounts.set(captureInput.captureCycleId, previousCalls + 1)
+
+        let state: {
+          snapshotCreated: boolean
+          observationCreated: boolean
+          snapshotId: string
+          contentFingerprint: string
+        } | null = null
+
+        if (captureInput.captureCycleId === 'cycle-1') {
+          state = previousCalls === 0
+            ? {
+                snapshotCreated: true,
+                observationCreated: true,
+                snapshotId: 'snapshot:A',
+                contentFingerprint: 'content:A',
+              }
+            : {
+                snapshotCreated: false,
+                observationCreated: false,
+                snapshotId: 'snapshot:A',
+                contentFingerprint: 'content:A',
+              }
+        } else if (captureInput.captureCycleId === 'cycle-2') {
+          state = {
+            snapshotCreated: false,
+            observationCreated: true,
+            snapshotId: 'snapshot:A',
+            contentFingerprint: 'content:A',
+          }
+        } else if (captureInput.captureCycleId === 'cycle-3') {
+          state = {
+            snapshotCreated: true,
+            observationCreated: true,
+            snapshotId: 'snapshot:B',
+            contentFingerprint: 'content:B',
+          }
+        } else if (captureInput.captureCycleId === 'cycle-4') {
+          state = {
+            snapshotCreated: false,
+            observationCreated: true,
+            snapshotId: 'snapshot:A',
+            contentFingerprint: 'content:A',
+          }
+        }
+
+        if (!state) {
+          throw new Error('unexpected cycle')
+        }
+
+        return {
+          tenantId: captureInput.projection.tenantId,
+          officeId: captureInput.projection.officeId,
+          projectionVersion: 1,
+          captureCycleId: captureInput.captureCycleId,
+          capturedAt: captureInput.projection.capturedAt,
+          snapshotId: state.snapshotId,
+          snapshotCreated: state.snapshotCreated,
+          observationId: `observation:${captureInput.captureCycleId}`,
+          observationCreated: state.observationCreated,
+          contentFingerprint: state.contentFingerprint,
+          sourceFingerprint: 'source:stable',
+          observationFingerprint: `observation-fingerprint:${captureInput.captureCycleId}`,
+        }
+      },
+    },
+  })
+
+  const first = await orchestrator.captureOffice({
+    tenantId: 7,
+    officeId: 'office-1',
+    capturedAt: '2026-07-08T11:00:00.000Z',
+    captureCycleId: 'cycle-1',
+  })
+  const retry = await orchestrator.captureOffice({
+    tenantId: 7,
+    officeId: 'office-1',
+    capturedAt: '2026-07-08T11:05:00.000Z',
+    captureCycleId: 'cycle-1',
+  })
+  const sameStateNewCycle = await orchestrator.captureOffice({
+    tenantId: 7,
+    officeId: 'office-1',
+    capturedAt: '2026-07-08T11:10:00.000Z',
+    captureCycleId: 'cycle-2',
+  })
+  const stateB = await orchestrator.captureOffice({
+    tenantId: 7,
+    officeId: 'office-1',
+    capturedAt: '2026-07-08T11:15:00.000Z',
+    captureCycleId: 'cycle-3',
+  })
+  const stateAReturn = await orchestrator.captureOffice({
+    tenantId: 7,
+    officeId: 'office-1',
+    capturedAt: '2026-07-08T11:20:00.000Z',
+    captureCycleId: 'cycle-4',
+  })
+
+  assert.equal(first.snapshotCreated, true)
+  assert.equal(first.observationCreated, true)
+  assert.equal(retry.snapshotCreated, false)
+  assert.equal(retry.observationCreated, false)
+  assert.equal(sameStateNewCycle.snapshotCreated, false)
+  assert.equal(sameStateNewCycle.observationCreated, true)
+  assert.equal(stateB.snapshotCreated, true)
+  assert.equal(stateB.observationCreated, true)
+  assert.equal(stateAReturn.snapshotCreated, false)
+  assert.equal(stateAReturn.observationCreated, true)
 })
 
 test('factory creates orchestrator instance', () => {
@@ -653,6 +839,7 @@ test('module remains structurally isolated from forbidden dependencies', async (
   )
   assert.equal(source.includes('ExecutiveDashboardApplicationService'), false)
   assert.equal(source.includes('ExecutiveDashboardService'), false)
-  assert.equal(source.includes('userId'), false)
+  assert.equal(source.includes('ExecutiveMemoryCaptureService'), false)
   assert.equal(source.includes('request'), false)
+  assert.equal(source.includes('transaction('), false)
 })
