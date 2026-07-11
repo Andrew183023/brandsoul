@@ -12,11 +12,13 @@ import { createObservabilityService } from '../../services/observabilityService.
 import {
   ExecutiveMemoryAtomicCaptureService,
   EXECUTIVE_MEMORY_CAPTURE_CYCLE_ID_PREFIX,
+  EXECUTIVE_MEMORY_OPERATIONAL_RUNS_TOTAL,
   ExecutiveMemoryCaptureExecutionService,
   ExecutiveMemoryCaptureOrchestrator,
   ExecutiveMemoryCaptureTriggerService,
   ExecutiveMemoryOfficeDiscoveryService,
   ExecutiveMetrics,
+  ExecutiveMemoryOperationalRunService,
   createExecutiveMemoryRuntime,
 } from './index.js'
 import { buildExecutiveMemoryProjection } from './ExecutiveMemoryProjection.js'
@@ -315,6 +317,7 @@ test('factory returns a valid executive memory runtime', () => {
   assert.equal(runtime.orchestrator instanceof ExecutiveMemoryCaptureOrchestrator, true)
   assert.equal(runtime.triggerService instanceof ExecutiveMemoryCaptureTriggerService, true)
   assert.equal(runtime.metrics instanceof ExecutiveMetrics, true)
+  assert.equal(runtime.operationalRunService instanceof ExecutiveMemoryOperationalRunService, true)
   assert.equal(typeof runtime.createExecution, 'function')
   assert.equal(typeof runtime.createExecutionService, 'function')
 })
@@ -366,6 +369,22 @@ test('composition does not generate captureCycleId values or call trigger run an
   assert.equal(secondExecution instanceof ExecutiveMemoryCaptureExecutionService, true)
   assert.notEqual(firstExecution, secondExecution)
   assert.equal(cycleIdCalls, 0)
+})
+
+test('composition exposes a shared operational run service without creating executions or consuming ids', () => {
+  let uuidCalls = 0
+  const runtime = createExecutiveMemoryRuntime(createDependencies({
+    captureCycleIdSourceDependencies: {
+      generateUuid() {
+        uuidCalls += 1
+        return '123e4567-e89b-42d3-a456-426614174000'
+      },
+    },
+  }))
+
+  assert.equal(runtime.operationalRunService instanceof ExecutiveMemoryOperationalRunService, true)
+  assert.equal(runtime.operationalRunService, runtime.operationalRunService)
+  assert.equal(uuidCalls, 0)
 })
 
 test('createExecution uses the runtime default source without consuming ids during composition or execution creation', () => {
@@ -521,6 +540,242 @@ test('office discovery uses the provided database and atomic capture uses the pr
   }
 })
 
+test('operationalRunService uses the productive chain and stays passive until run is called', async () => {
+  const harness = await createSqliteHarness('executive-memory-runtime-operational-run-')
+
+  try {
+    const user = await harness.authRepository.createUser({
+      name: 'Owner',
+      email: 'owner-runtime-run@example.com',
+      passwordHash: 'hash',
+      isActive: true,
+    })
+    const tenant = await harness.authRepository.createTenant({
+      name: 'Tenant 8',
+      slug: 'tenant-8',
+      businessModel: 'hybrid',
+      isActive: true,
+    })
+
+    await harness.authRepository.createMembership({
+      userId: user.id,
+      tenantId: tenant.id,
+      role: 'owner',
+      isActive: true,
+    })
+    await harness.entityRepository.createEntity({
+      id: 'office-runtime-run-1',
+      ownerId: `user:${user.id}:tenant:${tenant.id}`,
+      ownerUserId: user.id,
+      ownerTenantId: tenant.id,
+      entityProfile: {
+        metadata: {
+          businessConfig: {
+            businessType: 'legal',
+          },
+          lifecycle: {
+            status: 'active',
+          },
+        },
+      } as EntityProfileDocument,
+    })
+
+    const observability = createObservabilityService()
+    let uuidCalls = 0
+    const runtime = createExecutiveMemoryRuntime(createDependencies({
+      db: harness.db,
+      observability,
+      entityRepository: harness.entityRepository,
+      captureCycleIdSourceDependencies: {
+        generateUuid() {
+          uuidCalls += 1
+          return '123e4567-e89b-42d3-a456-426614174000'
+        },
+      },
+    }))
+
+    assert.equal(uuidCalls, 0)
+
+    const result = await runtime.operationalRunService.run({
+      maxBatches: 1,
+      limit: 5,
+    })
+
+    assert.equal(uuidCalls, 1)
+    assert.equal(result.status, 'completed')
+    assert.equal(
+      result.captureCycleId,
+      `${EXECUTIVE_MEMORY_CAPTURE_CYCLE_ID_PREFIX}:123e4567-e89b-42d3-a456-426614174000`,
+    )
+    assert.equal(result.batchesExecuted, 1)
+    assert.deepEqual(result.totals, {
+      processed: 1,
+      captured: 1,
+      created: 1,
+      failed: 0,
+    })
+    assert.equal(
+      readCount(await harness.db.get('SELECT COUNT(*) AS count FROM executive_memory_snapshots')),
+      1,
+    )
+    assert.equal(
+      readCount(await harness.db.get('SELECT COUNT(*) AS count FROM executive_memory_observations')),
+      1,
+    )
+    assert.equal(
+      observability.getMetricsSnapshot().customCounters[EXECUTIVE_MEMORY_OPERATIONAL_RUNS_TOTAL],
+      2,
+    )
+  } finally {
+    await harness.cleanup()
+  }
+})
+
+test('shared operationalRunService keeps sequential and concurrent runs independent', async () => {
+  const sequentialHarness = await createSqliteHarness('executive-memory-runtime-operational-sequential-')
+
+  try {
+    const user = await sequentialHarness.authRepository.createUser({
+      name: 'Owner',
+      email: 'owner-runtime-seq@example.com',
+      passwordHash: 'hash',
+      isActive: true,
+    })
+    const tenant = await sequentialHarness.authRepository.createTenant({
+      name: 'Tenant 9',
+      slug: 'tenant-9',
+      businessModel: 'hybrid',
+      isActive: true,
+    })
+
+    await sequentialHarness.authRepository.createMembership({
+      userId: user.id,
+      tenantId: tenant.id,
+      role: 'owner',
+      isActive: true,
+    })
+    await sequentialHarness.entityRepository.createEntity({
+      id: 'office-runtime-seq-1',
+      ownerId: `user:${user.id}:tenant:${tenant.id}`,
+      ownerUserId: user.id,
+      ownerTenantId: tenant.id,
+      entityProfile: {
+        metadata: {
+          businessConfig: {
+            businessType: 'legal',
+          },
+          lifecycle: {
+            status: 'active',
+          },
+        },
+      } as EntityProfileDocument,
+    })
+
+    const uuidValues = [
+      '123e4567-e89b-42d3-a456-426614174010',
+      '123e4567-e89b-42d3-a456-426614174011',
+      '123e4567-e89b-42d3-a456-426614174012',
+    ]
+    const runtime = createExecutiveMemoryRuntime(createDependencies({
+      db: sequentialHarness.db,
+      entityRepository: sequentialHarness.entityRepository,
+      captureCycleIdSourceDependencies: {
+        generateUuid() {
+          const next = uuidValues.shift()
+          if (!next) {
+            throw new Error('uuid exhausted')
+          }
+
+          return next
+        },
+      },
+    }))
+
+    const first = await runtime.operationalRunService.run({ maxBatches: 1, limit: 5 })
+    const second = await runtime.operationalRunService.run({ maxBatches: 1, limit: 5 })
+
+    assert.notEqual(first.captureCycleId, second.captureCycleId)
+    assert.equal(first.status, 'completed')
+    assert.equal(second.status, 'completed')
+  } finally {
+    await sequentialHarness.cleanup()
+  }
+
+  const concurrentHarness = await createSqliteHarness('executive-memory-runtime-operational-concurrent-')
+
+  try {
+    const user = await concurrentHarness.authRepository.createUser({
+      name: 'Owner',
+      email: 'owner-runtime-concurrent@example.com',
+      passwordHash: 'hash',
+      isActive: true,
+    })
+    const tenant = await concurrentHarness.authRepository.createTenant({
+      name: 'Tenant 10',
+      slug: 'tenant-10',
+      businessModel: 'hybrid',
+      isActive: true,
+    })
+
+    await concurrentHarness.authRepository.createMembership({
+      userId: user.id,
+      tenantId: tenant.id,
+      role: 'owner',
+      isActive: true,
+    })
+    await concurrentHarness.entityRepository.createEntity({
+      id: 'office-runtime-concurrent-1',
+      ownerId: `user:${user.id}:tenant:${tenant.id}`,
+      ownerUserId: user.id,
+      ownerTenantId: tenant.id,
+      entityProfile: {
+        metadata: {
+          businessConfig: {
+            businessType: 'legal',
+          },
+          lifecycle: {
+            status: 'active',
+          },
+        },
+      } as EntityProfileDocument,
+    })
+
+    const uuidValues = [
+      '123e4567-e89b-42d3-a456-426614174020',
+      '123e4567-e89b-42d3-a456-426614174021',
+    ]
+    const runtime = createExecutiveMemoryRuntime(createDependencies({
+      db: concurrentHarness.db,
+      entityRepository: concurrentHarness.entityRepository,
+      captureCycleIdSourceDependencies: {
+        generateUuid() {
+          const next = uuidValues.shift()
+          if (!next) {
+            throw new Error('uuid exhausted')
+          }
+
+          return next
+        },
+      },
+    }))
+
+    const [first, second] = await Promise.all([
+      runtime.operationalRunService.run({ maxBatches: 1, limit: 5 }),
+      runtime.operationalRunService.run({ maxBatches: 1, limit: 5 }),
+    ])
+
+    assert.equal(first.captureCycleId?.startsWith(EXECUTIVE_MEMORY_CAPTURE_CYCLE_ID_PREFIX), true)
+    assert.equal(second.captureCycleId?.startsWith(EXECUTIVE_MEMORY_CAPTURE_CYCLE_ID_PREFIX), true)
+    assert.notEqual(first.captureCycleId, second.captureCycleId)
+    assert.deepEqual(
+      [first.status, second.status].sort(),
+      ['already_running', 'completed'],
+    )
+  } finally {
+    await concurrentHarness.cleanup()
+  }
+})
+
 test('two runtime compositions create independent service instances', () => {
   const first = createExecutiveMemoryRuntime(createDependencies())
   const second = createExecutiveMemoryRuntime(createDependencies())
@@ -530,6 +785,7 @@ test('two runtime compositions create independent service instances', () => {
   assert.notEqual(first.orchestrator, second.orchestrator)
   assert.notEqual(first.triggerService, second.triggerService)
   assert.notEqual(first.metrics, second.metrics)
+  assert.notEqual(first.operationalRunService, second.operationalRunService)
 })
 
 test('composition module does not import or instantiate legacy state-only capture service', async () => {

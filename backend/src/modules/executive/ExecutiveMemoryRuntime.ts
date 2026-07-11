@@ -21,6 +21,18 @@ import {
   type ExecutiveMemoryCaptureOrchestrator,
 } from './ExecutiveMemoryCaptureOrchestrator.js'
 import {
+  createExecutiveMemoryOperationalRunCoordinator,
+  type ExecutiveMemoryOperationalRunCoordinator,
+} from './ExecutiveMemoryOperationalRunCoordinator.js'
+import {
+  createExecutiveMemoryOperationalRunService,
+  type ExecutiveMemoryOperationalRunService,
+} from './ExecutiveMemoryOperationalRunService.js'
+import {
+  createExecutiveMemoryOperationalRunner,
+  type ExecutiveMemoryOperationalRunner,
+} from './ExecutiveMemoryOperationalRunner.js'
+import {
   createExecutiveMemoryCaptureTriggerService,
   type ExecutiveMemoryCaptureTriggerClock,
   type ExecutiveMemoryCaptureTriggerService,
@@ -50,6 +62,7 @@ export interface ExecutiveMemoryRuntime {
   orchestrator: ExecutiveMemoryCaptureOrchestrator
   triggerService: ExecutiveMemoryCaptureTriggerService
   metrics: ExecutiveMetrics
+  operationalRunService: ExecutiveMemoryOperationalRunService
   createExecution(): ExecutiveMemoryCaptureExecutionService
   createExecutionService(
     captureCycleIdSource: ExecutiveMemoryCaptureCycleIdSource,
@@ -120,6 +133,23 @@ export function createExecutiveMemoryRuntime(
   })
   const captureCycleIdSource = dependencies.captureCycleIdSource
     ?? createExecutiveMemoryCaptureCycleIdSource(dependencies.captureCycleIdSourceDependencies)
+  const createExecution = (
+    source: ExecutiveMemoryCaptureCycleIdSource = captureCycleIdSource,
+  ) => createExecutiveMemoryCaptureExecutionService({
+    triggerService,
+    captureCycleIdSource: source,
+  })
+  const operationalRunner = createExecutiveMemoryOperationalRunner()
+  const operationalRunCoordinator = createExecutiveMemoryOperationalRunCoordinator({
+    runtime: {
+      createExecution,
+    },
+    operationalRunner,
+  })
+  const operationalRunService = createExecutiveMemoryOperationalRunService({
+    coordinator: operationalRunCoordinator,
+    metrics,
+  })
 
   return {
     officeDiscoveryService,
@@ -127,17 +157,12 @@ export function createExecutiveMemoryRuntime(
     orchestrator,
     triggerService,
     metrics,
+    operationalRunService,
     createExecution() {
-      return createExecutiveMemoryCaptureExecutionService({
-        triggerService,
-        captureCycleIdSource,
-      })
+      return createExecution()
     },
     createExecutionService(captureCycleIdSource: ExecutiveMemoryCaptureCycleIdSource) {
-      return createExecutiveMemoryCaptureExecutionService({
-        triggerService,
-        captureCycleIdSource,
-      })
+      return createExecution(captureCycleIdSource)
     },
   }
 }
