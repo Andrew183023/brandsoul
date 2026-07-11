@@ -93,6 +93,12 @@ export type {
   ExecutiveMemoryCaptureExecutionTotals,
 } from './ExecutiveMemoryCaptureExecutionService.js'
 export type {
+  ExecutiveMemoryOperationalRunnerExecution,
+  ExecutiveMemoryOperationalRunnerInput,
+  ExecutiveMemoryOperationalRunnerResult,
+  ExecutiveMemoryOperationalRunnerStatus,
+} from './ExecutiveMemoryOperationalRunner.js'
+export type {
   ExecutiveMemoryCaptureTriggerClock,
   ExecutiveMemoryCaptureTriggerInput,
   ExecutiveMemoryCaptureRetryPolicy,
@@ -186,6 +192,12 @@ export {
   ExecutiveMemoryCaptureExecutionService,
   createExecutiveMemoryCaptureExecutionService,
 } from './ExecutiveMemoryCaptureExecutionService.js'
+export {
+  EXECUTIVE_MEMORY_OPERATIONAL_RUNNER_DEFAULT_MAX_BATCHES,
+  EXECUTIVE_MEMORY_OPERATIONAL_RUNNER_MAX_BATCHES,
+  ExecutiveMemoryOperationalRunner,
+  createExecutiveMemoryOperationalRunner,
+} from './ExecutiveMemoryOperationalRunner.js'
 export {
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_DEFAULT_BATCH_LIMIT,
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_MAX_BATCH_LIMIT,
