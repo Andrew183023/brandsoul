@@ -110,6 +110,15 @@ export type {
   ExecutiveMemoryOperationalRunServiceResult,
 } from './ExecutiveMemoryOperationalRunService.js'
 export type {
+  ExecutiveMemoryOperationalInvocationActor,
+  ExecutiveMemoryOperationalInvocationAuthorizationDecision,
+  ExecutiveMemoryOperationalInvocationAuthorizationInput,
+  ExecutiveMemoryOperationalInvocationAuthorizationPolicy,
+  ExecutiveMemoryOperationalInvocationRequest,
+  ExecutiveMemoryOperationalInvocationResult,
+  ExecutiveMemoryOperationalInvocationServiceDependencies,
+} from './ExecutiveMemoryOperationalInvocationService.js'
+export type {
   ExecutiveMemoryCaptureTriggerClock,
   ExecutiveMemoryCaptureTriggerInput,
   ExecutiveMemoryCaptureRetryPolicy,
@@ -219,6 +228,11 @@ export {
   ExecutiveMemoryOperationalRunService,
   createExecutiveMemoryOperationalRunService,
 } from './ExecutiveMemoryOperationalRunService.js'
+export {
+  ExecutiveMemoryOperationalInvocationForbiddenError,
+  ExecutiveMemoryOperationalInvocationService,
+  createExecutiveMemoryOperationalInvocationService,
+} from './ExecutiveMemoryOperationalInvocationService.js'
 export {
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_DEFAULT_BATCH_LIMIT,
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_MAX_BATCH_LIMIT,
