@@ -8,6 +8,11 @@ import {
   type ExecutiveMemoryAtomicCaptureService,
 } from './ExecutiveMemoryAtomicCaptureService.js'
 import {
+  createExecutiveMemoryCaptureExecutionService,
+  type ExecutiveMemoryCaptureCycleIdSource,
+  type ExecutiveMemoryCaptureExecutionService,
+} from './ExecutiveMemoryCaptureExecutionService.js'
+import {
   createExecutiveMemoryCaptureOrchestrator,
   type ExecutiveMemoryCaptureOrchestrator,
 } from './ExecutiveMemoryCaptureOrchestrator.js'
@@ -41,6 +46,9 @@ export interface ExecutiveMemoryRuntime {
   orchestrator: ExecutiveMemoryCaptureOrchestrator
   triggerService: ExecutiveMemoryCaptureTriggerService
   metrics: ExecutiveMetrics
+  createExecutionService(
+    captureCycleIdSource: ExecutiveMemoryCaptureCycleIdSource,
+  ): ExecutiveMemoryCaptureExecutionService
 }
 
 export interface ExecutiveMemoryRuntimeDependencies {
@@ -110,5 +118,11 @@ export function createExecutiveMemoryRuntime(
     orchestrator,
     triggerService,
     metrics,
+    createExecutionService(captureCycleIdSource: ExecutiveMemoryCaptureCycleIdSource) {
+      return createExecutiveMemoryCaptureExecutionService({
+        triggerService,
+        captureCycleIdSource,
+      })
+    },
   }
 }

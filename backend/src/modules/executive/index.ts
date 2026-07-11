@@ -82,6 +82,17 @@ export type {
   ExecutiveMemoryCaptureOrchestratorDependencies,
 } from './ExecutiveMemoryCaptureOrchestrator.js'
 export type {
+  ExecutiveMemoryCaptureCycleIdSource,
+  ExecutiveMemoryCaptureExecutionBatchSummary,
+  ExecutiveMemoryCaptureExecutionContinueInput,
+  ExecutiveMemoryCaptureExecutionRetryInput,
+  ExecutiveMemoryCaptureExecutionServiceDependencies,
+  ExecutiveMemoryCaptureExecutionStartInput,
+  ExecutiveMemoryCaptureExecutionState,
+  ExecutiveMemoryCaptureExecutionStatus,
+  ExecutiveMemoryCaptureExecutionTotals,
+} from './ExecutiveMemoryCaptureExecutionService.js'
+export type {
   ExecutiveMemoryCaptureTriggerClock,
   ExecutiveMemoryCaptureTriggerInput,
   ExecutiveMemoryCaptureRetryPolicy,
@@ -166,6 +177,10 @@ export {
   ExecutiveMemoryCaptureOrchestrator,
   createExecutiveMemoryCaptureOrchestrator,
 } from './ExecutiveMemoryCaptureOrchestrator.js'
+export {
+  ExecutiveMemoryCaptureExecutionService,
+  createExecutiveMemoryCaptureExecutionService,
+} from './ExecutiveMemoryCaptureExecutionService.js'
 export {
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_DEFAULT_BATCH_LIMIT,
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_MAX_BATCH_LIMIT,

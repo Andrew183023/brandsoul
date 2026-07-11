@@ -11,6 +11,7 @@ import { EntityRepository } from '../../repositories/entityRepository.js'
 import { createObservabilityService } from '../../services/observabilityService.js'
 import {
   ExecutiveMemoryAtomicCaptureService,
+  ExecutiveMemoryCaptureExecutionService,
   ExecutiveMemoryCaptureOrchestrator,
   ExecutiveMemoryCaptureTriggerService,
   ExecutiveMemoryOfficeDiscoveryService,
@@ -305,6 +306,7 @@ test('factory returns a valid executive memory runtime', () => {
   assert.equal(runtime.orchestrator instanceof ExecutiveMemoryCaptureOrchestrator, true)
   assert.equal(runtime.triggerService instanceof ExecutiveMemoryCaptureTriggerService, true)
   assert.equal(runtime.metrics instanceof ExecutiveMetrics, true)
+  assert.equal(typeof runtime.createExecutionService, 'function')
 })
 
 test('composition is side-effect free and does not mutate dependencies', () => {
@@ -330,6 +332,30 @@ test('composition is side-effect free and does not mutate dependencies', () => {
     hasTimer: Boolean(dependencies.timer),
     hasObservability: Boolean(dependencies.observability),
   }, before)
+})
+
+test('composition does not generate captureCycleId values or call trigger run and createExecutionService returns independent instances', () => {
+  const dependencies = createDependencies()
+  const runtime = createExecutiveMemoryRuntime(dependencies)
+  let cycleIdCalls = 0
+
+  const firstExecution = runtime.createExecutionService({
+    nextCaptureCycleId() {
+      cycleIdCalls += 1
+      return 'cycle-1'
+    },
+  })
+  const secondExecution = runtime.createExecutionService({
+    nextCaptureCycleId() {
+      cycleIdCalls += 1
+      return 'cycle-2'
+    },
+  })
+
+  assert.equal(firstExecution instanceof ExecutiveMemoryCaptureExecutionService, true)
+  assert.equal(secondExecution instanceof ExecutiveMemoryCaptureExecutionService, true)
+  assert.notEqual(firstExecution, secondExecution)
+  assert.equal(cycleIdCalls, 0)
 })
 
 test('office discovery uses the provided database and atomic capture uses the provided database', async () => {
