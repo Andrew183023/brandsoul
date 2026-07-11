@@ -12,9 +12,18 @@ export const EXECUTIVE_MEMORY_CAPTURE_TRIGGER_BATCH_PROCESSED_TOTAL = 'executive
 export const EXECUTIVE_MEMORY_CAPTURE_TRIGGER_BATCH_CAPTURED_TOTAL = 'executive_memory_capture_trigger_batch_captured_total'
 export const EXECUTIVE_MEMORY_CAPTURE_TRIGGER_BATCH_CREATED_TOTAL = 'executive_memory_capture_trigger_batch_created_total'
 export const EXECUTIVE_MEMORY_CAPTURE_TRIGGER_BATCH_FAILED_TOTAL = 'executive_memory_capture_trigger_batch_failed_total'
+export const EXECUTIVE_MEMORY_OPERATIONAL_RUNS_TOTAL = 'executive_memory_operational_runs_total'
 
 export type ExecutiveMetricsStatus = 'success' | 'error'
 export type ExecutiveMemoryCaptureTriggerMetricsStatus = 'completed' | 'already_running' | 'error'
+export type ExecutiveMemoryOperationalRunMetricsStatus =
+  | 'requested'
+  | 'completed'
+  | 'failed'
+  | 'already_running'
+  | 'running'
+  | 'batch_limit_reached'
+  | 'error'
 
 export interface ExecutiveMetricsRecorder {
   recordTiming(metric: string, durationMs: number, labels?: Record<string, string>): void
@@ -38,6 +47,12 @@ export interface ExecutiveMemoryCaptureTriggerMetricsRecorder {
   }): void
 }
 
+export interface ExecutiveMemoryOperationalRunMetricsRecorder {
+  recordExecutiveMemoryOperationalRun(args: {
+    status: ExecutiveMemoryOperationalRunMetricsStatus
+  }): void
+}
+
 type ExecutiveMetricArgs = {
   status?: ExecutiveMetricsStatus
 }
@@ -58,8 +73,20 @@ function buildExecutiveMemoryCaptureTriggerLabels(
   }
 }
 
+function buildExecutiveMemoryOperationalRunLabels(
+  status: ExecutiveMemoryOperationalRunMetricsStatus,
+) {
+  return {
+    source: 'executive_memory_operational_run',
+    status,
+  }
+}
+
 export class ExecutiveMetrics
-implements ExecutiveMetricsRecorder, ExecutiveMemoryCaptureTriggerMetricsRecorder {
+implements
+ExecutiveMetricsRecorder,
+ExecutiveMemoryCaptureTriggerMetricsRecorder,
+ExecutiveMemoryOperationalRunMetricsRecorder {
   constructor(private readonly observability?: ObservabilityService) {}
 
   recordTiming(metric: string, durationMs: number, labels?: Record<string, string>) {
@@ -127,6 +154,16 @@ implements ExecutiveMetricsRecorder, ExecutiveMemoryCaptureTriggerMetricsRecorde
     this.incrementCounter(EXECUTIVE_MEMORY_CAPTURE_TRIGGER_BATCH_CAPTURED_TOTAL, args.captured, labels)
     this.incrementCounter(EXECUTIVE_MEMORY_CAPTURE_TRIGGER_BATCH_CREATED_TOTAL, args.created, labels)
     this.incrementCounter(EXECUTIVE_MEMORY_CAPTURE_TRIGGER_BATCH_FAILED_TOTAL, args.failed, labels)
+  }
+
+  recordExecutiveMemoryOperationalRun(args: {
+    status: ExecutiveMemoryOperationalRunMetricsStatus
+  }) {
+    this.incrementCounter(
+      EXECUTIVE_MEMORY_OPERATIONAL_RUNS_TOTAL,
+      1,
+      buildExecutiveMemoryOperationalRunLabels(args.status),
+    )
   }
 }
 

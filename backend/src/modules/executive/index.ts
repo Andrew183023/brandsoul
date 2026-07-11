@@ -105,6 +105,11 @@ export type {
   ExecutiveMemoryOperationalRunResult,
 } from './ExecutiveMemoryOperationalRunCoordinator.js'
 export type {
+  ExecutiveMemoryOperationalRunRequest,
+  ExecutiveMemoryOperationalRunServiceDependencies,
+  ExecutiveMemoryOperationalRunServiceResult,
+} from './ExecutiveMemoryOperationalRunService.js'
+export type {
   ExecutiveMemoryCaptureTriggerClock,
   ExecutiveMemoryCaptureTriggerInput,
   ExecutiveMemoryCaptureRetryPolicy,
@@ -141,7 +146,9 @@ export type {
 } from './OfficeHealthTypes.js'
 export type {
   ExecutiveMemoryCaptureTriggerMetricsRecorder,
+  ExecutiveMemoryOperationalRunMetricsRecorder,
   ExecutiveMemoryCaptureTriggerMetricsStatus,
+  ExecutiveMemoryOperationalRunMetricsStatus,
   ExecutiveMetricsRecorder,
   ExecutiveMetricsStatus,
 } from './ExecutiveMetrics.js'
@@ -209,6 +216,10 @@ export {
   createExecutiveMemoryOperationalRunCoordinator,
 } from './ExecutiveMemoryOperationalRunCoordinator.js'
 export {
+  ExecutiveMemoryOperationalRunService,
+  createExecutiveMemoryOperationalRunService,
+} from './ExecutiveMemoryOperationalRunService.js'
+export {
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_DEFAULT_BATCH_LIMIT,
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_MAX_BATCH_LIMIT,
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_RETRY_POLICY,
@@ -243,6 +254,7 @@ export {
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_BATCH_CREATED_TOTAL,
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_BATCH_FAILED_TOTAL,
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_BATCH_PROCESSED_TOTAL,
+  EXECUTIVE_MEMORY_OPERATIONAL_RUNS_TOTAL,
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_RUN_MS,
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_RUNS_TOTAL,
   OFFICE_HEALTH_BUILD_MS,

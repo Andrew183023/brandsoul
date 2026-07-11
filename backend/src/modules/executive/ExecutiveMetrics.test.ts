@@ -13,6 +13,7 @@ import {
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_BATCH_CREATED_TOTAL,
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_BATCH_FAILED_TOTAL,
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_BATCH_PROCESSED_TOTAL,
+  EXECUTIVE_MEMORY_OPERATIONAL_RUNS_TOTAL,
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_RUN_MS,
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_RUNS_TOTAL,
   OFFICE_HEALTH_BUILD_MS,
@@ -125,4 +126,28 @@ test('executive memory trigger metrics record completed and error runs with safe
   assert.equal(serialized.includes('cursor'), false)
   assert.equal(serialized.includes('fingerprint'), false)
   assert.equal(serialized.includes('error_message'), false)
+})
+
+test('executive memory operational run metrics record requested terminal and error statuses with safe labels', () => {
+  const observability = createObservabilityService()
+  const metrics = createExecutiveMetrics(observability)
+
+  metrics.recordExecutiveMemoryOperationalRun({ status: 'requested' })
+  metrics.recordExecutiveMemoryOperationalRun({ status: 'completed' })
+  metrics.recordExecutiveMemoryOperationalRun({ status: 'error' })
+
+  const snapshot = observability.getMetricsSnapshot()
+  assert.equal(snapshot.customCounters[EXECUTIVE_MEMORY_OPERATIONAL_RUNS_TOTAL], 3)
+
+  const serialized = JSON.stringify({
+    counters: snapshot.customCounterSeries,
+  })
+  assert.equal(serialized.includes('source=executive_memory_operational_run,status=requested'), true)
+  assert.equal(serialized.includes('source=executive_memory_operational_run,status=completed'), true)
+  assert.equal(serialized.includes('source=executive_memory_operational_run,status=error'), true)
+  assert.equal(serialized.includes('tenantId'), false)
+  assert.equal(serialized.includes('officeId'), false)
+  assert.equal(serialized.includes('cursor'), false)
+  assert.equal(serialized.includes('captureCycleId'), false)
+  assert.equal(serialized.includes('fingerprint'), false)
 })
