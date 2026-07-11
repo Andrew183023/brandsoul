@@ -119,6 +119,10 @@ export type {
   ExecutiveMemoryOperationalInvocationServiceDependencies,
 } from './ExecutiveMemoryOperationalInvocationService.js'
 export type {
+  ExecutiveMemoryOperationalInvocationAllowedRole,
+  ExecutiveMemoryOperationalInvocationPolicyDependencies,
+} from './ExecutiveMemoryOperationalInvocationPolicy.js'
+export type {
   ExecutiveMemoryCaptureTriggerClock,
   ExecutiveMemoryCaptureTriggerInput,
   ExecutiveMemoryCaptureRetryPolicy,
@@ -233,6 +237,12 @@ export {
   ExecutiveMemoryOperationalInvocationService,
   createExecutiveMemoryOperationalInvocationService,
 } from './ExecutiveMemoryOperationalInvocationService.js'
+export {
+  EXECUTIVE_MEMORY_OPERATIONAL_INVOCATION_ALLOWED_ROLES,
+  EXECUTIVE_MEMORY_OPERATIONAL_INVOCATION_DENY_REASONS,
+  ExecutiveMemoryOperationalInvocationPolicy,
+  createExecutiveMemoryOperationalInvocationPolicy,
+} from './ExecutiveMemoryOperationalInvocationPolicy.js'
 export {
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_DEFAULT_BATCH_LIMIT,
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_MAX_BATCH_LIMIT,
