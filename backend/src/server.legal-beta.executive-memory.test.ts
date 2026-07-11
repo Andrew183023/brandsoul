@@ -156,11 +156,17 @@ test('buildLegalBetaServer creates a distinct executive memory runtime per app i
   }
 })
 
-test('server.legal-beta runtime wiring stays side-effect free and non-operational', { concurrency: false }, async () => {
+test('server.legal-beta registers the executive memory route without operational bootstrap side effects', { concurrency: false }, async () => {
   const source = await readFile(new URL('./server.legal-beta.ts', import.meta.url), 'utf-8')
+  const routesSource = await readFile(
+    new URL('./api/routes/legalBetaExecutiveMemoryOperationalInvocationRoutes.ts', import.meta.url),
+    'utf-8',
+  )
 
   assert.equal(source.includes('createExecutiveMemoryRuntime'), true)
   assert.equal(source.includes('executiveMemoryRuntime'), true)
+  assert.equal(routesSource.includes('createExecutiveMemoryOperationalInvocationAdapter'), true)
+  assert.equal(routesSource.includes("'/admin/executive-memory/run'"), true)
   assert.equal(source.includes('triggerService.run('), false)
   assert.equal(source.includes('captureDiscoveredBatch('), false)
   assert.equal(source.includes('captureOffice('), false)
@@ -170,4 +176,5 @@ test('server.legal-beta runtime wiring stays side-effect free and non-operationa
   assert.equal(source.includes('Math.random'), false)
   assert.equal(source.includes('cron'), false)
   assert.equal(source.includes('scheduler'), false)
+  assert.equal(source.includes('.invoke('), false)
 })

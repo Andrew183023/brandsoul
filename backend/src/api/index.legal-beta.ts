@@ -6,6 +6,7 @@ import { registerExecutiveDashboardRoutes } from './routes/executiveDashboardRou
 import { registerLegalBetaCaseRoutes } from './routes/legalBetaCaseRoutes.js'
 import { registerLegalBetaClientPortalRoutes } from './routes/legalBetaClientPortalRoutes.js'
 import { registerLegalBetaDiscoveryRoutes } from './routes/legalBetaDiscoveryRoutes.js'
+import { registerLegalBetaExecutiveMemoryOperationalInvocationRoutes } from './routes/legalBetaExecutiveMemoryOperationalInvocationRoutes.js'
 import { registerLegalBetaGrowthIntelligenceRoutes } from './routes/legalBetaGrowthIntelligenceRoutes.js'
 import { registerLegalBetaHealthRoute } from './routes/legalBetaHealthRoute.js'
 import { registerLegalBetaOperationalIntelligenceRoutes } from './routes/legalBetaOperationalIntelligenceRoutes.js'
@@ -26,6 +27,7 @@ export async function registerLegalBetaApi(app: FastifyInstance) {
   await registerLegalBetaCaseRoutes(app)
   await registerLegalBetaOperationalIntelligenceRoutes(app)
   await registerLegalBetaGrowthIntelligenceRoutes(app)
+  await registerLegalBetaExecutiveMemoryOperationalInvocationRoutes(app)
   await registerExecutiveDashboardRoutes(app)
   await registerRegionalGrowthRoutes(app)
 }
