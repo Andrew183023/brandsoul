@@ -16,6 +16,8 @@ import {
   ExecutiveMemoryCaptureExecutionService,
   ExecutiveMemoryCaptureOrchestrator,
   ExecutiveMemoryCaptureTriggerService,
+  ExecutiveMemoryOperationalInvocationForbiddenError,
+  ExecutiveMemoryOperationalInvocationService,
   ExecutiveMemoryOfficeDiscoveryService,
   ExecutiveMetrics,
   ExecutiveMemoryOperationalRunService,
@@ -318,6 +320,7 @@ test('factory returns a valid executive memory runtime', () => {
   assert.equal(runtime.triggerService instanceof ExecutiveMemoryCaptureTriggerService, true)
   assert.equal(runtime.metrics instanceof ExecutiveMetrics, true)
   assert.equal(runtime.operationalRunService instanceof ExecutiveMemoryOperationalRunService, true)
+  assert.equal(runtime.operationalInvocationService instanceof ExecutiveMemoryOperationalInvocationService, true)
   assert.equal(typeof runtime.createExecution, 'function')
   assert.equal(typeof runtime.createExecutionService, 'function')
 })
@@ -384,6 +387,8 @@ test('composition exposes a shared operational run service without creating exec
 
   assert.equal(runtime.operationalRunService instanceof ExecutiveMemoryOperationalRunService, true)
   assert.equal(runtime.operationalRunService, runtime.operationalRunService)
+  assert.equal(runtime.operationalInvocationService instanceof ExecutiveMemoryOperationalInvocationService, true)
+  assert.equal(runtime.operationalInvocationService, runtime.operationalInvocationService)
   assert.equal(uuidCalls, 0)
 })
 
@@ -631,6 +636,330 @@ test('operationalRunService uses the productive chain and stays passive until ru
   }
 })
 
+test('operationalInvocationService uses the productive authorized chain and stays passive until invoke is called', async () => {
+  const harness = await createSqliteHarness('executive-memory-runtime-operational-invocation-')
+
+  try {
+    const user = await harness.authRepository.createUser({
+      name: 'Owner',
+      email: 'owner-runtime-invocation@example.com',
+      passwordHash: 'hash',
+      isActive: true,
+    })
+    const tenant = await harness.authRepository.createTenant({
+      name: 'Tenant 11',
+      slug: 'tenant-11',
+      businessModel: 'hybrid',
+      isActive: true,
+    })
+
+    await harness.authRepository.createMembership({
+      userId: user.id,
+      tenantId: tenant.id,
+      role: 'owner',
+      isActive: true,
+    })
+    await harness.entityRepository.createEntity({
+      id: 'office-runtime-invocation-1',
+      ownerId: `user:${user.id}:tenant:${tenant.id}`,
+      ownerUserId: user.id,
+      ownerTenantId: tenant.id,
+      entityProfile: {
+        metadata: {
+          businessConfig: {
+            businessType: 'legal',
+          },
+          lifecycle: {
+            status: 'active',
+          },
+        },
+      } as EntityProfileDocument,
+    })
+
+    const observability = createObservabilityService()
+    let uuidCalls = 0
+    const runtime = createExecutiveMemoryRuntime(createDependencies({
+      db: harness.db,
+      observability,
+      entityRepository: harness.entityRepository,
+      captureCycleIdSourceDependencies: {
+        generateUuid() {
+          uuidCalls += 1
+          return '123e4567-e89b-42d3-a456-426614174100'
+        },
+      },
+    }))
+
+    assert.equal(uuidCalls, 0)
+    assert.equal(
+      readCount(await harness.db.get('SELECT COUNT(*) AS count FROM executive_memory_snapshots')),
+      0,
+    )
+    assert.equal(
+      readCount(await harness.db.get('SELECT COUNT(*) AS count FROM executive_memory_observations')),
+      0,
+    )
+
+    const result = await runtime.operationalInvocationService.invoke({
+      actor: {
+        actorId: `user:${user.id}`,
+        tenantId: tenant.id,
+        roles: ['admin'],
+      },
+      maxBatches: 1,
+      limit: 5,
+    })
+
+    assert.equal(uuidCalls, 1)
+    assert.equal(result.status, 'completed')
+    assert.equal(
+      result.captureCycleId,
+      `${EXECUTIVE_MEMORY_CAPTURE_CYCLE_ID_PREFIX}:123e4567-e89b-42d3-a456-426614174100`,
+    )
+    assert.deepEqual(result.totals, {
+      processed: 1,
+      captured: 1,
+      created: 1,
+      failed: 0,
+    })
+    assert.equal(result.batchesExecuted, 1)
+    assert.equal('executionState' in result, false)
+    assert.equal(
+      readCount(await harness.db.get('SELECT COUNT(*) AS count FROM executive_memory_snapshots')),
+      1,
+    )
+    assert.equal(
+      readCount(await harness.db.get('SELECT COUNT(*) AS count FROM executive_memory_observations')),
+      1,
+    )
+    assert.equal(
+      observability.getMetricsSnapshot().customCounters[EXECUTIVE_MEMORY_OPERATIONAL_RUNS_TOTAL],
+      2,
+    )
+  } finally {
+    await harness.cleanup()
+  }
+})
+
+test('operationalInvocationService denies forbidden actors without executing or consuming ids', async () => {
+  const harness = await createSqliteHarness('executive-memory-runtime-operational-invocation-denied-')
+
+  try {
+    const user = await harness.authRepository.createUser({
+      name: 'Owner',
+      email: 'owner-runtime-invocation-denied@example.com',
+      passwordHash: 'hash',
+      isActive: true,
+    })
+    const tenant = await harness.authRepository.createTenant({
+      name: 'Tenant 12',
+      slug: 'tenant-12',
+      businessModel: 'hybrid',
+      isActive: true,
+    })
+
+    await harness.authRepository.createMembership({
+      userId: user.id,
+      tenantId: tenant.id,
+      role: 'owner',
+      isActive: true,
+    })
+    await harness.entityRepository.createEntity({
+      id: 'office-runtime-invocation-denied-1',
+      ownerId: `user:${user.id}:tenant:${tenant.id}`,
+      ownerUserId: user.id,
+      ownerTenantId: tenant.id,
+      entityProfile: {
+        metadata: {
+          businessConfig: {
+            businessType: 'legal',
+          },
+          lifecycle: {
+            status: 'active',
+          },
+        },
+      } as EntityProfileDocument,
+    })
+
+    const observability = createObservabilityService()
+    let uuidCalls = 0
+    const runtime = createExecutiveMemoryRuntime(createDependencies({
+      db: harness.db,
+      observability,
+      entityRepository: harness.entityRepository,
+      captureCycleIdSourceDependencies: {
+        generateUuid() {
+          uuidCalls += 1
+          return '123e4567-e89b-42d3-a456-426614174101'
+        },
+      },
+    }))
+
+    await assert.rejects(
+      () => runtime.operationalInvocationService.invoke({
+        actor: {
+          actorId: `user:${user.id}`,
+          tenantId: tenant.id,
+          roles: ['client'],
+        },
+      }),
+      ExecutiveMemoryOperationalInvocationForbiddenError,
+    )
+
+    assert.equal(uuidCalls, 0)
+    assert.equal(
+      readCount(await harness.db.get('SELECT COUNT(*) AS count FROM executive_memory_snapshots')),
+      0,
+    )
+    assert.equal(
+      readCount(await harness.db.get('SELECT COUNT(*) AS count FROM executive_memory_observations')),
+      0,
+    )
+    assert.equal(
+      observability.getMetricsSnapshot().customCounters[EXECUTIVE_MEMORY_OPERATIONAL_RUNS_TOTAL] ?? 0,
+      0,
+    )
+  } finally {
+    await harness.cleanup()
+  }
+})
+
+test('shared operationalInvocationService authorizes admin owner and operator and keeps concurrent invocations independent', async () => {
+  const harness = await createSqliteHarness('executive-memory-runtime-operational-invocation-concurrent-')
+
+  try {
+    const user = await harness.authRepository.createUser({
+      name: 'Owner',
+      email: 'owner-runtime-invocation-concurrent@example.com',
+      passwordHash: 'hash',
+      isActive: true,
+    })
+    const tenant = await harness.authRepository.createTenant({
+      name: 'Tenant 13',
+      slug: 'tenant-13',
+      businessModel: 'hybrid',
+      isActive: true,
+    })
+
+    await harness.authRepository.createMembership({
+      userId: user.id,
+      tenantId: tenant.id,
+      role: 'owner',
+      isActive: true,
+    })
+    await harness.entityRepository.createEntity({
+      id: 'office-runtime-invocation-concurrent-1',
+      ownerId: `user:${user.id}:tenant:${tenant.id}`,
+      ownerUserId: user.id,
+      ownerTenantId: tenant.id,
+      entityProfile: {
+        metadata: {
+          businessConfig: {
+            businessType: 'legal',
+          },
+          lifecycle: {
+            status: 'active',
+          },
+        },
+      } as EntityProfileDocument,
+    })
+
+    const uuidValues = [
+      '123e4567-e89b-42d3-a456-426614174110',
+      '123e4567-e89b-42d3-a456-426614174111',
+      '123e4567-e89b-42d3-a456-426614174112',
+      '123e4567-e89b-42d3-a456-426614174113',
+      '123e4567-e89b-42d3-a456-426614174114',
+    ]
+    let uuidCalls = 0
+    const runtime = createExecutiveMemoryRuntime(createDependencies({
+      db: harness.db,
+      entityRepository: harness.entityRepository,
+      captureCycleIdSourceDependencies: {
+        generateUuid() {
+          uuidCalls += 1
+          const next = uuidValues.shift()
+          if (!next) {
+            throw new Error('uuid exhausted')
+          }
+
+          return next
+        },
+      },
+    }))
+
+    for (const role of ['admin', 'owner', 'operator'] as const) {
+      const result = await runtime.operationalInvocationService.invoke({
+        actor: {
+          actorId: `user:${user.id}`,
+          tenantId: tenant.id,
+          roles: [role],
+        },
+        maxBatches: 1,
+        limit: 5,
+      })
+
+      assert.equal(result.status, 'completed')
+      assert.equal(result.captureCycleId?.startsWith(EXECUTIVE_MEMORY_CAPTURE_CYCLE_ID_PREFIX), true)
+    }
+
+    const [first, second] = await Promise.all([
+      runtime.operationalInvocationService.invoke({
+        actor: {
+          actorId: `user:${user.id}`,
+          tenantId: tenant.id,
+          roles: ['admin'],
+        },
+        maxBatches: 1,
+        limit: 5,
+      }),
+      runtime.operationalInvocationService.invoke({
+        actor: {
+          actorId: `user:${user.id}`,
+          tenantId: tenant.id,
+          roles: ['owner'],
+        },
+        maxBatches: 1,
+        limit: 5,
+      }),
+    ])
+
+    assert.deepEqual(
+      [first.status, second.status].sort(),
+      ['already_running', 'completed'],
+    )
+    assert.equal(first.captureCycleId?.startsWith(EXECUTIVE_MEMORY_CAPTURE_CYCLE_ID_PREFIX), true)
+    assert.equal(second.captureCycleId?.startsWith(EXECUTIVE_MEMORY_CAPTURE_CYCLE_ID_PREFIX), true)
+    assert.notEqual(first.captureCycleId, second.captureCycleId)
+
+    const uuidCallsBeforeDenied = uuidCalls
+
+    await assert.rejects(
+      () => Promise.all([
+        runtime.operationalInvocationService.invoke({
+          actor: {
+            actorId: `user:${user.id}`,
+            tenantId: tenant.id,
+            roles: ['client'],
+          },
+        }),
+        runtime.operationalInvocationService.invoke({
+          actor: {
+            actorId: `user:${user.id}`,
+            tenantId: tenant.id,
+            roles: ['client'],
+          },
+        }),
+      ]),
+      ExecutiveMemoryOperationalInvocationForbiddenError,
+    )
+
+    assert.equal(uuidCalls, uuidCallsBeforeDenied)
+  } finally {
+    await harness.cleanup()
+  }
+})
+
 test('shared operationalRunService keeps sequential and concurrent runs independent', async () => {
   const sequentialHarness = await createSqliteHarness('executive-memory-runtime-operational-sequential-')
 
@@ -786,6 +1115,7 @@ test('two runtime compositions create independent service instances', () => {
   assert.notEqual(first.triggerService, second.triggerService)
   assert.notEqual(first.metrics, second.metrics)
   assert.notEqual(first.operationalRunService, second.operationalRunService)
+  assert.notEqual(first.operationalInvocationService, second.operationalInvocationService)
 })
 
 test('composition module does not import or instantiate legacy state-only capture service', async () => {
@@ -820,6 +1150,12 @@ test('composition module stays isolated from runtime execution and server wiring
     'cron',
     'scheduler',
     'jobs',
+    '.authorize(',
+    '.invoke(',
+    '.run(',
+    '.start(',
+    'continueExecution(',
+    'retry(',
     'trigger.run(',
     'captureDiscoveredBatch(',
     'captureOffice(',

@@ -21,6 +21,13 @@ import {
   type ExecutiveMemoryCaptureOrchestrator,
 } from './ExecutiveMemoryCaptureOrchestrator.js'
 import {
+  createExecutiveMemoryOperationalInvocationService,
+  type ExecutiveMemoryOperationalInvocationService,
+} from './ExecutiveMemoryOperationalInvocationService.js'
+import {
+  createExecutiveMemoryOperationalInvocationPolicy,
+} from './ExecutiveMemoryOperationalInvocationPolicy.js'
+import {
   createExecutiveMemoryOperationalRunCoordinator,
   type ExecutiveMemoryOperationalRunCoordinator,
 } from './ExecutiveMemoryOperationalRunCoordinator.js'
@@ -63,6 +70,7 @@ export interface ExecutiveMemoryRuntime {
   triggerService: ExecutiveMemoryCaptureTriggerService
   metrics: ExecutiveMetrics
   operationalRunService: ExecutiveMemoryOperationalRunService
+  operationalInvocationService: ExecutiveMemoryOperationalInvocationService
   createExecution(): ExecutiveMemoryCaptureExecutionService
   createExecutionService(
     captureCycleIdSource: ExecutiveMemoryCaptureCycleIdSource,
@@ -150,6 +158,11 @@ export function createExecutiveMemoryRuntime(
     coordinator: operationalRunCoordinator,
     metrics,
   })
+  const operationalInvocationPolicy = createExecutiveMemoryOperationalInvocationPolicy()
+  const operationalInvocationService = createExecutiveMemoryOperationalInvocationService({
+    authorizationPolicy: operationalInvocationPolicy,
+    operationalRunService,
+  })
 
   return {
     officeDiscoveryService,
@@ -158,6 +171,7 @@ export function createExecutiveMemoryRuntime(
     triggerService,
     metrics,
     operationalRunService,
+    operationalInvocationService,
     createExecution() {
       return createExecution()
     },
