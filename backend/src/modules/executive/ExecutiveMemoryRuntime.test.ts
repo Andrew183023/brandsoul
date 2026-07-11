@@ -11,6 +11,7 @@ import { EntityRepository } from '../../repositories/entityRepository.js'
 import { createObservabilityService } from '../../services/observabilityService.js'
 import {
   ExecutiveMemoryAtomicCaptureService,
+  EXECUTIVE_MEMORY_CAPTURE_CYCLE_ID_PREFIX,
   ExecutiveMemoryCaptureExecutionService,
   ExecutiveMemoryCaptureOrchestrator,
   ExecutiveMemoryCaptureTriggerService,
@@ -28,6 +29,12 @@ type RuntimeDependenciesOverrides = {
   }
   timer?: {
     now(): number
+  }
+  captureCycleIdSource?: {
+    nextCaptureCycleId(): string
+  }
+  captureCycleIdSourceDependencies?: {
+    generateUuid?: () => string
   }
   entityRepository?: {
     getEntityById(officeId: string): Promise<{ entityProfile: EntityProfileDocument } | null>
@@ -170,6 +177,8 @@ function createDependencies(overrides: RuntimeDependenciesOverrides = {}) {
         return 100
       },
     },
+    captureCycleIdSource: overrides.captureCycleIdSource,
+    captureCycleIdSourceDependencies: overrides.captureCycleIdSourceDependencies,
     entityRepository: overrides.entityRepository ?? {
       async getEntityById() {
         return {
@@ -306,6 +315,7 @@ test('factory returns a valid executive memory runtime', () => {
   assert.equal(runtime.orchestrator instanceof ExecutiveMemoryCaptureOrchestrator, true)
   assert.equal(runtime.triggerService instanceof ExecutiveMemoryCaptureTriggerService, true)
   assert.equal(runtime.metrics instanceof ExecutiveMetrics, true)
+  assert.equal(typeof runtime.createExecution, 'function')
   assert.equal(typeof runtime.createExecutionService, 'function')
 })
 
@@ -356,6 +366,97 @@ test('composition does not generate captureCycleId values or call trigger run an
   assert.equal(secondExecution instanceof ExecutiveMemoryCaptureExecutionService, true)
   assert.notEqual(firstExecution, secondExecution)
   assert.equal(cycleIdCalls, 0)
+})
+
+test('createExecution uses the runtime default source without consuming ids during composition or execution creation', () => {
+  let uuidCalls = 0
+  const runtime = createExecutiveMemoryRuntime(createDependencies({
+    captureCycleIdSourceDependencies: {
+      generateUuid() {
+        uuidCalls += 1
+        return '123e4567-e89b-42d3-a456-426614174000'
+      },
+    },
+  }))
+
+  assert.equal(uuidCalls, 0)
+
+  const execution = runtime.createExecution()
+
+  assert.equal(execution instanceof ExecutiveMemoryCaptureExecutionService, true)
+  assert.equal(uuidCalls, 0)
+  assert.deepEqual(execution.getState(), {
+    status: 'idle',
+    captureCycleId: undefined,
+    cursor: undefined,
+    totals: {
+      processed: 0,
+      captured: 0,
+      created: 0,
+      failed: 0,
+    },
+    lastBatch: undefined,
+  })
+})
+
+test('createExecution consumes exactly one id on start and different executions keep independent lifecycle and ids', async () => {
+  const runtime = createExecutiveMemoryRuntime(createDependencies({
+    captureCycleIdSourceDependencies: {
+      generateUuid: (() => {
+        const values = [
+          '123e4567-e89b-42d3-a456-426614174000',
+          '123e4567-e89b-42d3-a456-426614174001',
+        ]
+        return () => {
+          const next = values.shift()
+          if (!next) {
+            throw new Error('uuid exhausted')
+          }
+
+          return next
+        }
+      })(),
+    },
+  }))
+
+  const first = runtime.createExecution()
+  const second = runtime.createExecution()
+
+  assert.notEqual(first, second)
+  assert.equal(first.getState().status, 'idle')
+  assert.equal(second.getState().status, 'idle')
+
+  const firstResult = await first.start()
+
+  assert.equal(
+    firstResult.captureCycleId,
+    `${EXECUTIVE_MEMORY_CAPTURE_CYCLE_ID_PREFIX}:123e4567-e89b-42d3-a456-426614174000`,
+  )
+  assert.equal(second.getState().status, 'idle')
+
+  const secondResult = await second.start()
+
+  assert.equal(
+    secondResult.captureCycleId,
+    `${EXECUTIVE_MEMORY_CAPTURE_CYCLE_ID_PREFIX}:123e4567-e89b-42d3-a456-426614174001`,
+  )
+})
+
+test('custom runtime captureCycleIdSource is respected by createExecution and continue reuses the same id', async () => {
+  const runtime = createExecutiveMemoryRuntime(createDependencies({
+    captureCycleIdSource: {
+      nextCaptureCycleId() {
+        return 'cycle-custom-1'
+      },
+    },
+  }))
+  const execution = runtime.createExecution()
+
+  const firstState = await execution.start()
+  const continueState = await execution.continueExecution()
+
+  assert.equal(firstState.captureCycleId, 'cycle-custom-1')
+  assert.equal(continueState.captureCycleId, 'cycle-custom-1')
 })
 
 test('office discovery uses the provided database and atomic capture uses the provided database', async () => {

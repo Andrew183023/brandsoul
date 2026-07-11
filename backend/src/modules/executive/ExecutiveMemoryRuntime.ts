@@ -8,6 +8,10 @@ import {
   type ExecutiveMemoryAtomicCaptureService,
 } from './ExecutiveMemoryAtomicCaptureService.js'
 import {
+  createExecutiveMemoryCaptureCycleIdSource,
+  type ExecutiveMemoryCaptureCycleIdSourceDependencies,
+} from './ExecutiveMemoryCaptureCycleIdSource.js'
+import {
   createExecutiveMemoryCaptureExecutionService,
   type ExecutiveMemoryCaptureCycleIdSource,
   type ExecutiveMemoryCaptureExecutionService,
@@ -46,6 +50,7 @@ export interface ExecutiveMemoryRuntime {
   orchestrator: ExecutiveMemoryCaptureOrchestrator
   triggerService: ExecutiveMemoryCaptureTriggerService
   metrics: ExecutiveMetrics
+  createExecution(): ExecutiveMemoryCaptureExecutionService
   createExecutionService(
     captureCycleIdSource: ExecutiveMemoryCaptureCycleIdSource,
   ): ExecutiveMemoryCaptureExecutionService
@@ -57,6 +62,8 @@ export interface ExecutiveMemoryRuntimeDependencies {
   timer?: {
     now(): number
   }
+  captureCycleIdSource?: ExecutiveMemoryCaptureCycleIdSource
+  captureCycleIdSourceDependencies?: ExecutiveMemoryCaptureCycleIdSourceDependencies
   observability?: ObservabilityService
   entityRepository: Pick<EntityRepository, 'getEntityById'>
   caseRepository: {
@@ -111,6 +118,8 @@ export function createExecutiveMemoryRuntime(
     metrics,
     timer: dependencies.timer,
   })
+  const captureCycleIdSource = dependencies.captureCycleIdSource
+    ?? createExecutiveMemoryCaptureCycleIdSource(dependencies.captureCycleIdSourceDependencies)
 
   return {
     officeDiscoveryService,
@@ -118,6 +127,12 @@ export function createExecutiveMemoryRuntime(
     orchestrator,
     triggerService,
     metrics,
+    createExecution() {
+      return createExecutiveMemoryCaptureExecutionService({
+        triggerService,
+        captureCycleIdSource,
+      })
+    },
     createExecutionService(captureCycleIdSource: ExecutiveMemoryCaptureCycleIdSource) {
       return createExecutiveMemoryCaptureExecutionService({
         triggerService,
