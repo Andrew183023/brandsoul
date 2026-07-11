@@ -119,6 +119,10 @@ export type {
   ExecutiveMemoryOperationalInvocationServiceDependencies,
 } from './ExecutiveMemoryOperationalInvocationService.js'
 export type {
+  ExecutiveMemoryOperationalInvocationAdapterDependencies,
+  ExecutiveMemoryOperationalInvocationAdapterRequest,
+} from './ExecutiveMemoryOperationalInvocationAdapter.js'
+export type {
   ExecutiveMemoryOperationalInvocationAllowedRole,
   ExecutiveMemoryOperationalInvocationPolicyDependencies,
 } from './ExecutiveMemoryOperationalInvocationPolicy.js'
@@ -232,6 +236,10 @@ export {
   ExecutiveMemoryOperationalRunService,
   createExecutiveMemoryOperationalRunService,
 } from './ExecutiveMemoryOperationalRunService.js'
+export {
+  ExecutiveMemoryOperationalInvocationAdapter,
+  createExecutiveMemoryOperationalInvocationAdapter,
+} from './ExecutiveMemoryOperationalInvocationAdapter.js'
 export {
   ExecutiveMemoryOperationalInvocationForbiddenError,
   ExecutiveMemoryOperationalInvocationService,
