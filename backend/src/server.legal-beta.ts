@@ -17,6 +17,11 @@ import { createSigningKeyService } from './auth/signingKeyService.js'
 import { createTokenService } from './auth/tokenService.js'
 import { getCorsOrigins, validateRuntimeConfig } from './config/env.js'
 import { createDatabaseConnection, getDatabaseConfig, initializeDatabase } from './db/index.js'
+import { createExecutiveMemoryRuntime } from './modules/executive/index.js'
+import { createCaseRepository } from './modules/legalCases/caseRepository.js'
+import { createLegalBetaCaseService } from './modules/legalCases/legalBetaCaseService.js'
+import { createGrowthIntelligenceService } from './modules/legalGrowth/growthIntelligenceService.js'
+import { createOperationalIntelligenceService } from './modules/legalSignals/operationalIntelligenceService.js'
 import { createEntityRepository } from './repositories/entityRepository.js'
 import { createAssetStorageService, getAssetStorageConfig } from './services/assetStorageService.js'
 import { createObservabilityService } from './services/observabilityService.js'
@@ -126,6 +131,33 @@ export async function buildLegalBetaServer() {
   })
 
   const entityRepository = createEntityRepository(connection)
+  const caseRepository = createCaseRepository(connection)
+  const officeProfessionalService = createLegalBetaCaseService(
+    connection,
+    sovereignMutationCommandService,
+    {
+      observability,
+      logger: app.log,
+    },
+  )
+  const growthIntelligenceService = createGrowthIntelligenceService({ observability })
+  const operationalIntelligenceService = createOperationalIntelligenceService({ observability })
+  const executiveMemoryRuntime = createExecutiveMemoryRuntime({
+    db: connection,
+    observability,
+    clock: {
+      now: () => new Date(),
+    },
+    entityRepository,
+    caseRepository,
+    officeProfessionalService: {
+      listOfficeProfessionals(tenantId: number, officeId: string) {
+        return officeProfessionalService.listOfficeProfessionals(tenantId, officeId)
+      },
+    },
+    growthIntelligenceService,
+    operationalIntelligenceService,
+  })
   const assetStorageService = createAssetStorageService(getAssetStorageConfig(process.cwd()))
 
   app.decorate('backendContext', {
@@ -137,6 +169,7 @@ export async function buildLegalBetaServer() {
     sovereignMutationCommandService,
     entityRepository,
     assetStorageService,
+    executiveMemoryRuntime,
     auth: {
       config: authConfig,
       authIdentityStoreRepository,
