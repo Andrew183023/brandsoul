@@ -178,6 +178,11 @@ export {
   createExecutiveMemoryCaptureOrchestrator,
 } from './ExecutiveMemoryCaptureOrchestrator.js'
 export {
+  CryptoExecutiveMemoryCaptureCycleIdSource,
+  EXECUTIVE_MEMORY_CAPTURE_CYCLE_ID_PREFIX,
+  createExecutiveMemoryCaptureCycleIdSource,
+} from './ExecutiveMemoryCaptureCycleIdSource.js'
+export {
   ExecutiveMemoryCaptureExecutionService,
   createExecutiveMemoryCaptureExecutionService,
 } from './ExecutiveMemoryCaptureExecutionService.js'
