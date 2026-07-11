@@ -89,6 +89,10 @@ export type {
   ExecutiveMemoryCaptureTriggerServiceDependencies,
 } from './ExecutiveMemoryCaptureTriggerService.js'
 export type {
+  ExecutiveMemoryRuntime,
+  ExecutiveMemoryRuntimeDependencies,
+} from './ExecutiveMemoryRuntime.js'
+export type {
   ExecutiveMemoryOfficeDiscoveryInput,
   ExecutiveMemoryOfficeDiscoveryItem,
   ExecutiveMemoryOfficeDiscoveryPage,
@@ -169,6 +173,7 @@ export {
   ExecutiveMemoryCaptureTriggerService,
   createExecutiveMemoryCaptureTriggerService,
 } from './ExecutiveMemoryCaptureTriggerService.js'
+export { createExecutiveMemoryRuntime } from './ExecutiveMemoryRuntime.js'
 export {
   ExecutiveMemoryOfficeDiscoveryService,
   createExecutiveMemoryOfficeDiscoveryService,
