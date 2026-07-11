@@ -99,6 +99,12 @@ export type {
   ExecutiveMemoryOperationalRunnerStatus,
 } from './ExecutiveMemoryOperationalRunner.js'
 export type {
+  ExecutiveMemoryOperationalRunCoordinatorDependencies,
+  ExecutiveMemoryOperationalRunCoordinatorRuntime,
+  ExecutiveMemoryOperationalRunInput,
+  ExecutiveMemoryOperationalRunResult,
+} from './ExecutiveMemoryOperationalRunCoordinator.js'
+export type {
   ExecutiveMemoryCaptureTriggerClock,
   ExecutiveMemoryCaptureTriggerInput,
   ExecutiveMemoryCaptureRetryPolicy,
@@ -198,6 +204,10 @@ export {
   ExecutiveMemoryOperationalRunner,
   createExecutiveMemoryOperationalRunner,
 } from './ExecutiveMemoryOperationalRunner.js'
+export {
+  ExecutiveMemoryOperationalRunCoordinator,
+  createExecutiveMemoryOperationalRunCoordinator,
+} from './ExecutiveMemoryOperationalRunCoordinator.js'
 export {
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_DEFAULT_BATCH_LIMIT,
   EXECUTIVE_MEMORY_CAPTURE_TRIGGER_MAX_BATCH_LIMIT,
