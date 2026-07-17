@@ -13,6 +13,7 @@ export interface ExecutiveMemoryOperationalRunServiceDependencies {
 }
 
 export interface ExecutiveMemoryOperationalRunRequest {
+  tenantId: number
   maxBatches?: number
   limit?: number
 }
@@ -56,6 +57,12 @@ function cloneExecutionState(
   }
 }
 
+function requirePositiveTenantId(tenantId: number) {
+  if (!Number.isInteger(tenantId) || tenantId <= 0) {
+    throw new Error('Executive memory operational run service requires tenantId.')
+  }
+}
+
 function buildServiceResult(
   result: ExecutiveMemoryOperationalRunResult,
 ): ExecutiveMemoryOperationalRunServiceResult {
@@ -80,13 +87,15 @@ export class ExecutiveMemoryOperationalRunService {
   }
 
   async run(
-    request: ExecutiveMemoryOperationalRunRequest = {},
+    request: ExecutiveMemoryOperationalRunRequest,
   ): Promise<ExecutiveMemoryOperationalRunServiceResult> {
+    requirePositiveTenantId(request.tenantId)
     this.metrics.recordExecutiveMemoryOperationalRun({ status: 'requested' })
 
     let result: ExecutiveMemoryOperationalRunResult
     try {
       result = await this.dependencies.coordinator.run({
+        tenantId: request.tenantId,
         maxBatches: request.maxBatches,
         limit: request.limit,
       } satisfies ExecutiveMemoryOperationalRunInput)

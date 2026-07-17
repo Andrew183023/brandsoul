@@ -128,7 +128,10 @@ function createHarness(overrides?: {
     limit?: number
   }) => Promise<RunnerResult>
 }) {
-  const createExecutionCalls: ReturnType<typeof createExecution>['execution'][] = []
+  const createExecutionCalls: Array<{
+    tenantId: number
+    execution: ReturnType<typeof createExecution>['execution']
+  }> = []
   const runCalls: Array<{
     execution: ReturnType<typeof createExecution>['execution']
     maxBatches?: number
@@ -141,9 +144,9 @@ function createHarness(overrides?: {
     runCalls,
     dependencies: {
       runtime: {
-        createExecution() {
+        createExecution(tenantId: number) {
           const executionRecord = overrides?.createExecution?.() ?? createExecution(`execution-${executionIndex += 1}`).execution
-          createExecutionCalls.push(executionRecord)
+          createExecutionCalls.push({ tenantId, execution: executionRecord })
           return executionRecord
         },
       },
@@ -207,14 +210,15 @@ test('composition is side-effect free and does not create executions or call the
 test('run creates exactly one execution and delegates to the runner exactly once', async () => {
   const harness = createHarness()
   const coordinator = createExecutiveMemoryOperationalRunCoordinator(harness.dependencies)
-  const input = { maxBatches: 9, limit: 25 }
+  const input = { tenantId: 22, maxBatches: 9, limit: 25 }
   const before = structuredClone(input)
 
   const result = await coordinator.run(input)
 
   assert.equal(harness.createExecutionCalls.length, 1)
   assert.equal(harness.runCalls.length, 1)
-  assert.equal(harness.runCalls[0]?.execution, harness.createExecutionCalls[0])
+  assert.equal(harness.createExecutionCalls[0]?.tenantId, 22)
+  assert.equal(harness.runCalls[0]?.execution, harness.createExecutionCalls[0]?.execution)
   assert.equal(harness.runCalls[0]?.maxBatches, 9)
   assert.equal(harness.runCalls[0]?.limit, 25)
   assert.deepEqual(input, before)
@@ -274,7 +278,7 @@ test('preserves all runner statuses without semantic conversion', async () => {
     })
     const coordinator = createExecutiveMemoryOperationalRunCoordinator(harness.dependencies)
 
-    const result = await coordinator.run()
+    const result = await coordinator.run({ tenantId: 7 })
 
     assert.equal(result.status, status)
     assert.equal(result.captureCycleId, 'cycle-status')
@@ -293,13 +297,15 @@ test('sequential runs create distinct executions', async () => {
   const harness = createHarness()
   const coordinator = createExecutiveMemoryOperationalRunCoordinator(harness.dependencies)
 
-  await coordinator.run()
-  await coordinator.run()
+  await coordinator.run({ tenantId: 1 })
+  await coordinator.run({ tenantId: 2 })
 
   assert.equal(harness.createExecutionCalls.length, 2)
-  assert.notEqual(harness.createExecutionCalls[0], harness.createExecutionCalls[1])
-  assert.equal(harness.runCalls[0]?.execution, harness.createExecutionCalls[0])
-  assert.equal(harness.runCalls[1]?.execution, harness.createExecutionCalls[1])
+  assert.notEqual(harness.createExecutionCalls[0]?.execution, harness.createExecutionCalls[1]?.execution)
+  assert.equal(harness.createExecutionCalls[0]?.tenantId, 1)
+  assert.equal(harness.createExecutionCalls[1]?.tenantId, 2)
+  assert.equal(harness.runCalls[0]?.execution, harness.createExecutionCalls[0]?.execution)
+  assert.equal(harness.runCalls[1]?.execution, harness.createExecutionCalls[1]?.execution)
 })
 
 test('concurrent runs create distinct executions and invoke the runner once per execution', async () => {
@@ -330,15 +336,17 @@ test('concurrent runs create distinct executions and invoke the runner once per 
   })
   const coordinator = createExecutiveMemoryOperationalRunCoordinator(harness.dependencies)
 
-  const first = coordinator.run()
-  const second = coordinator.run()
+  const first = coordinator.run({ tenantId: 10 })
+  const second = coordinator.run({ tenantId: 20 })
 
   await Promise.resolve()
   assert.equal(harness.createExecutionCalls.length, 2)
-  assert.notEqual(harness.createExecutionCalls[0], harness.createExecutionCalls[1])
+  assert.notEqual(harness.createExecutionCalls[0]?.execution, harness.createExecutionCalls[1]?.execution)
+  assert.equal(harness.createExecutionCalls[0]?.tenantId, 10)
+  assert.equal(harness.createExecutionCalls[1]?.tenantId, 20)
   assert.equal(harness.runCalls.length, 2)
-  assert.equal(harness.runCalls[0]?.execution, harness.createExecutionCalls[0])
-  assert.equal(harness.runCalls[1]?.execution, harness.createExecutionCalls[1])
+  assert.equal(harness.runCalls[0]?.execution, harness.createExecutionCalls[0]?.execution)
+  assert.equal(harness.runCalls[1]?.execution, harness.createExecutionCalls[1]?.execution)
 
   releaseFirst?.()
   releaseSecond?.()
@@ -357,7 +365,7 @@ test('createExecution failure is propagated and the runner is not called', async
   }
   const coordinator = createExecutiveMemoryOperationalRunCoordinator(harness.dependencies)
 
-  await assert.rejects(() => coordinator.run(), expected)
+  await assert.rejects(() => coordinator.run({ tenantId: 7 }), expected)
   assert.equal(harness.runCalls.length, 0)
 })
 
@@ -369,7 +377,7 @@ test('runner failure is propagated without retry or second execution', async () 
   })
   const coordinator = createExecutiveMemoryOperationalRunCoordinator(harness.dependencies)
 
-  await assert.rejects(() => coordinator.run(), /runner failed/)
+  await assert.rejects(() => coordinator.run({ tenantId: 7 }), /runner failed/)
   assert.equal(harness.createExecutionCalls.length, 1)
   assert.equal(harness.runCalls.length, 1)
 })
@@ -381,7 +389,7 @@ test('coordinator never calls execution start continueExecution or retry directl
   })
   const coordinator = createExecutiveMemoryOperationalRunCoordinator(harness.dependencies)
 
-  await coordinator.run()
+  await coordinator.run({ tenantId: 7 })
 
   assert.deepEqual(executionRecord.calls, {
     start: 0,

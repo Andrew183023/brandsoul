@@ -12,6 +12,7 @@ export interface ExecutiveMemoryOperationalInvocationActor {
 
 export interface ExecutiveMemoryOperationalInvocationRequest {
   actor: ExecutiveMemoryOperationalInvocationActor
+  tenantId: number
   maxBatches?: number
   limit?: number
 }
@@ -62,6 +63,12 @@ export class ExecutiveMemoryOperationalInvocationForbiddenError extends Error {
 function requireActorId(actorId: string) {
   if (!actorId.trim()) {
     throw new Error('Executive memory operational invocation requires actor.actorId.')
+  }
+}
+
+function requirePositiveTenantId(tenantId: number) {
+  if (!Number.isInteger(tenantId) || tenantId <= 0) {
+    throw new Error('Executive memory operational invocation requires tenantId.')
   }
 }
 
@@ -123,6 +130,7 @@ export class ExecutiveMemoryOperationalInvocationService {
     }
 
     requireActorId(request.actor.actorId)
+    requirePositiveTenantId(request.tenantId)
 
     const authorizationDecision = await this.dependencies.authorizationPolicy.authorize(
       buildAuthorizationInput(request),
@@ -133,6 +141,7 @@ export class ExecutiveMemoryOperationalInvocationService {
     }
 
     const result = await this.dependencies.operationalRunService.run({
+      tenantId: request.tenantId,
       maxBatches: request.maxBatches,
       limit: request.limit,
     } satisfies ExecutiveMemoryOperationalRunRequest)

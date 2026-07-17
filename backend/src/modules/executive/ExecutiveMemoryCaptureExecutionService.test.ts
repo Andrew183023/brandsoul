@@ -22,14 +22,17 @@ type TriggerRunResult = {
 }
 
 function createHarness(overrides?: {
+  tenantId?: number
   nextCaptureCycleIds?: string[]
   run?: (input: {
+    tenantId: number
     captureCycleId: string
     cursor?: string
     limit?: number
   }) => Promise<TriggerRunResult>
 }) {
   const triggerCalls: Array<{
+    tenantId: number
     captureCycleId: string
     cursor?: string
     limit?: number
@@ -41,6 +44,7 @@ function createHarness(overrides?: {
     triggerCalls,
     identityCalls,
     dependencies: {
+      tenantId: overrides?.tenantId ?? 7,
       captureCycleIdSource: {
         nextCaptureCycleId() {
           const nextId = nextCaptureCycleIds.shift()
@@ -54,6 +58,7 @@ function createHarness(overrides?: {
       },
       triggerService: {
         async run(input: {
+          tenantId: number
           captureCycleId: string
           cursor?: string
           limit?: number
@@ -97,6 +102,7 @@ test('start generates exactly one captureCycleId and executes at most one batch 
 
   assert.deepEqual(harness.identityCalls, ['cycle-1'])
   assert.deepEqual(harness.triggerCalls, [{
+    tenantId: 7,
     captureCycleId: 'cycle-1',
     cursor: undefined,
     limit: 12,
@@ -168,6 +174,7 @@ test('concurrent start rejects the second call before consuming a second capture
 
   assert.deepEqual(harness.identityCalls, ['cycle-1'])
   assert.deepEqual(harness.triggerCalls, [{
+    tenantId: 7,
     captureCycleId: 'cycle-1',
     cursor: undefined,
     limit: 6,
@@ -268,11 +275,13 @@ test('continueExecution reuses the same captureCycleId and previous nextCursor w
   assert.deepEqual(harness.identityCalls, ['cycle-1'])
   assert.deepEqual(harness.triggerCalls, [
     {
+      tenantId: 7,
       captureCycleId: 'cycle-1',
       cursor: undefined,
       limit: 3,
     },
     {
+      tenantId: 7,
       captureCycleId: 'cycle-1',
       cursor: 'office-2',
       limit: 4,
@@ -349,16 +358,19 @@ test('trigger failure preserves cycle and cursor and retry reuses both without g
   assert.deepEqual(harness.identityCalls, ['cycle-1'])
   assert.deepEqual(harness.triggerCalls, [
     {
+      tenantId: 7,
       captureCycleId: 'cycle-1',
       cursor: undefined,
       limit: undefined,
     },
     {
+      tenantId: 7,
       captureCycleId: 'cycle-1',
       cursor: 'office-2',
       limit: undefined,
     },
     {
+      tenantId: 7,
       captureCycleId: 'cycle-1',
       cursor: 'office-2',
       limit: undefined,
@@ -516,6 +528,59 @@ test('different execution services do not share state or capture cycle ownership
 
   assert.equal(firstResult.captureCycleId, 'cycle-a')
   assert.equal(secondResult.captureCycleId, 'cycle-b')
+})
+
+test('execution requires tenantId and preserves the original tenant across lifecycle calls', async () => {
+  assert.throws(
+    () => createExecutiveMemoryCaptureExecutionService(createHarness({ tenantId: 0 }).dependencies),
+    /tenantId/,
+  )
+
+  let callIndex = 0
+  const harness = createHarness({
+    tenantId: 9,
+    run: async () => {
+      callIndex += 1
+      if (callIndex === 1) {
+        return {
+          status: 'completed',
+          startedAt: '2026-07-11T10:00:00.000Z',
+          finishedAt: '2026-07-11T10:01:00.000Z',
+          nextCursor: 'cursor-1',
+          totals: {
+            processed: 1,
+            captured: 1,
+            created: 1,
+            failed: 0,
+          },
+        }
+      }
+
+      if (callIndex === 2) {
+        throw new Error('boom')
+      }
+
+      return {
+        status: 'completed',
+        startedAt: '2026-07-11T10:02:00.000Z',
+        finishedAt: '2026-07-11T10:03:00.000Z',
+        nextCursor: undefined,
+        totals: {
+          processed: 1,
+          captured: 1,
+          created: 0,
+          failed: 0,
+        },
+      }
+    },
+  })
+  const service = createExecutiveMemoryCaptureExecutionService(harness.dependencies)
+
+  await service.start()
+  await service.continueExecution()
+  await service.retry()
+
+  assert.deepEqual(harness.triggerCalls.map((call) => call.tenantId), [9, 9, 9])
 })
 
 test('inputs are not mutated and whitespace captureCycleId from the source is rejected', async () => {

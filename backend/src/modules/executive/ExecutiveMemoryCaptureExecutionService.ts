@@ -41,6 +41,7 @@ export interface ExecutiveMemoryCaptureExecutionState {
 }
 
 export interface ExecutiveMemoryCaptureExecutionServiceDependencies {
+  tenantId: number
   triggerService: Pick<ExecutiveMemoryCaptureTriggerService, 'run'>
   captureCycleIdSource: ExecutiveMemoryCaptureCycleIdSource
 }
@@ -91,6 +92,12 @@ function assertNonEmptyString(value: string, label: string) {
   }
 }
 
+function assertPositiveInteger(value: number, label: string) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`Executive memory capture execution service requires ${label}.`)
+  }
+}
+
 function normalizeFailureMessage() {
   return 'Executive memory capture execution failed.'
 }
@@ -130,7 +137,9 @@ export class ExecutiveMemoryCaptureExecutionService {
 
   constructor(
     private readonly dependencies: ExecutiveMemoryCaptureExecutionServiceDependencies,
-  ) {}
+  ) {
+    assertPositiveInteger(dependencies.tenantId, 'tenantId')
+  }
 
   getState(): ExecutiveMemoryCaptureExecutionState {
     return {
@@ -164,6 +173,7 @@ export class ExecutiveMemoryCaptureExecutionService {
       this.state.captureCycleId = captureCycleId
 
       return await this.runBatch({
+        tenantId: this.dependencies.tenantId,
         captureCycleId,
         cursor: undefined,
         limit: input.limit,
@@ -195,6 +205,7 @@ export class ExecutiveMemoryCaptureExecutionService {
     }
 
     return this.runBatch({
+      tenantId: this.dependencies.tenantId,
       captureCycleId: this.state.captureCycleId,
       cursor: this.state.cursor,
       limit: input.limit,
@@ -215,6 +226,7 @@ export class ExecutiveMemoryCaptureExecutionService {
     }
 
     return this.runBatch({
+      tenantId: this.dependencies.tenantId,
       captureCycleId: this.state.captureCycleId,
       cursor: this.state.cursor,
       limit: input.limit,
@@ -232,6 +244,7 @@ export class ExecutiveMemoryCaptureExecutionService {
 
     try {
       const result = await this.dependencies.triggerService.run({
+        tenantId: input.tenantId,
         captureCycleId: input.captureCycleId,
         cursor: input.cursor,
         limit: input.limit,

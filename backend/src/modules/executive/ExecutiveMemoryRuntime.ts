@@ -71,8 +71,9 @@ export interface ExecutiveMemoryRuntime {
   metrics: ExecutiveMetrics
   operationalRunService: ExecutiveMemoryOperationalRunService
   operationalInvocationService: ExecutiveMemoryOperationalInvocationService
-  createExecution(): ExecutiveMemoryCaptureExecutionService
+  createExecution(tenantId: number): ExecutiveMemoryCaptureExecutionService
   createExecutionService(
+    tenantId: number,
     captureCycleIdSource: ExecutiveMemoryCaptureCycleIdSource,
   ): ExecutiveMemoryCaptureExecutionService
 }
@@ -142,8 +143,10 @@ export function createExecutiveMemoryRuntime(
   const captureCycleIdSource = dependencies.captureCycleIdSource
     ?? createExecutiveMemoryCaptureCycleIdSource(dependencies.captureCycleIdSourceDependencies)
   const createExecution = (
+    tenantId: number,
     source: ExecutiveMemoryCaptureCycleIdSource = captureCycleIdSource,
   ) => createExecutiveMemoryCaptureExecutionService({
+    tenantId,
     triggerService,
     captureCycleIdSource: source,
   })
@@ -172,11 +175,14 @@ export function createExecutiveMemoryRuntime(
     metrics,
     operationalRunService,
     operationalInvocationService,
-    createExecution() {
-      return createExecution()
+    createExecution(tenantId: number) {
+      return createExecution(tenantId)
     },
-    createExecutionService(captureCycleIdSource: ExecutiveMemoryCaptureCycleIdSource) {
-      return createExecution(captureCycleIdSource)
+    createExecutionService(
+      tenantId: number,
+      captureCycleIdSource: ExecutiveMemoryCaptureCycleIdSource,
+    ) {
+      return createExecution(tenantId, captureCycleIdSource)
     },
   }
 }

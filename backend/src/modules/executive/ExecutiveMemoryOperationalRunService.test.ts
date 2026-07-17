@@ -90,16 +90,17 @@ function buildCoordinatorResult(
 
 function createHarness(overrides?: {
   result?: CoordinatorResult
-  run?: (input: { maxBatches?: number; limit?: number }) => Promise<CoordinatorResult>
+  run?: (input: { tenantId: number; maxBatches?: number; limit?: number }) => Promise<CoordinatorResult>
 }) {
-  const runCalls: Array<{ maxBatches?: number; limit?: number }> = []
+  const runCalls: Array<{ tenantId: number; maxBatches?: number; limit?: number }> = []
 
   return {
     runCalls,
     dependencies: {
       coordinator: {
-        async run(input: { maxBatches?: number; limit?: number } = {}) {
+        async run(input: { tenantId: number; maxBatches?: number; limit?: number }) {
           runCalls.push({
+            tenantId: input.tenantId,
             maxBatches: input.maxBatches,
             limit: input.limit,
           })
@@ -136,13 +137,14 @@ test('composition is side-effect free and does not call the coordinator', () => 
   assert.equal(harness.runCalls.length, 0)
 })
 
-test('run supports undefined request and delegates exactly once to the coordinator', async () => {
+test('run delegates exactly once to the coordinator with tenant scope', async () => {
   const harness = createHarness()
   const service = createExecutiveMemoryOperationalRunService(harness.dependencies)
 
-  const result = await service.run()
+  const result = await service.run({ tenantId: 11 })
 
   assert.deepEqual(harness.runCalls, [{
+    tenantId: 11,
     maxBatches: undefined,
     limit: undefined,
   }])
@@ -152,12 +154,12 @@ test('run supports undefined request and delegates exactly once to the coordinat
 test('request fields are propagated without mutation', async () => {
   const harness = createHarness()
   const service = createExecutiveMemoryOperationalRunService(harness.dependencies)
-  const request = { maxBatches: 12, limit: 25 }
+  const request = { tenantId: 22, maxBatches: 12, limit: 25 }
   const before = structuredClone(request)
 
   await service.run(request)
 
-  assert.deepEqual(harness.runCalls, [{ maxBatches: 12, limit: 25 }])
+  assert.deepEqual(harness.runCalls, [{ tenantId: 22, maxBatches: 12, limit: 25 }])
   assert.deepEqual(request, before)
 })
 
@@ -206,7 +208,7 @@ test('coordinator errors are propagated without retry or duplicate delegation', 
   })
   const service = createExecutiveMemoryOperationalRunService(harness.dependencies)
 
-  await assert.rejects(() => service.run({ maxBatches: 3, limit: 10 }), expected)
+  await assert.rejects(() => service.run({ tenantId: 7, maxBatches: 3, limit: 10 }), expected)
   assert.equal(harness.runCalls.length, 1)
 })
 
@@ -233,13 +235,13 @@ test('sequential and concurrent runs remain independent', async () => {
   })
   const service = createExecutiveMemoryOperationalRunService(harness.dependencies)
 
-  const first = service.run({ maxBatches: 1 })
-  const second = service.run({ maxBatches: 2 })
+  const first = service.run({ tenantId: 1, maxBatches: 1 })
+  const second = service.run({ tenantId: 2, maxBatches: 2 })
   await Promise.resolve()
 
   assert.equal(harness.runCalls.length, 2)
-  assert.deepEqual(harness.runCalls[0], { maxBatches: 1, limit: undefined })
-  assert.deepEqual(harness.runCalls[1], { maxBatches: 2, limit: undefined })
+  assert.deepEqual(harness.runCalls[0], { tenantId: 1, maxBatches: 1, limit: undefined })
+  assert.deepEqual(harness.runCalls[1], { tenantId: 2, maxBatches: 2, limit: undefined })
 
   releaseFirst?.()
   releaseSecond?.()
@@ -259,7 +261,7 @@ test('operational run service records requested terminal and thrown error observ
     observability,
   })
 
-  await successService.run({ maxBatches: 4, limit: 25 })
+  await successService.run({ tenantId: 9, maxBatches: 4, limit: 25 })
 
   const failureHarness = createHarness({
     run: async () => {

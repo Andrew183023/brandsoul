@@ -46,6 +46,7 @@ function createHarness(overrides?: {
       tenantId?: number
       roles?: string[]
     }
+    tenantId: number
     maxBatches?: number
     limit?: number
   }) => Promise<InvocationResult>
@@ -57,6 +58,7 @@ function createHarness(overrides?: {
       tenantId?: number
       roles?: string[]
     }
+    tenantId: number
     maxBatches?: number
     limit?: number
   }> = []
@@ -71,6 +73,7 @@ function createHarness(overrides?: {
             tenantId?: number
             roles?: string[]
           }
+          tenantId: number
           maxBatches?: number
           limit?: number
         }) {
@@ -80,6 +83,7 @@ function createHarness(overrides?: {
               tenantId: input.actor.tenantId,
               roles: input.actor.roles ? [...input.actor.roles] : undefined,
             },
+            tenantId: input.tenantId,
             maxBatches: input.maxBatches,
             limit: input.limit,
           })
@@ -158,6 +162,7 @@ test('principal is translated into canonical actor fields', async () => {
       tenantId: 55,
       roles: ['admin', 'operator'],
     },
+    tenantId: 55,
     maxBatches: 4,
     limit: 25,
   }])
@@ -193,6 +198,7 @@ test('body extras cannot override actor tenant or roles', async () => {
       tenantId: 10,
       roles: ['owner'],
     },
+    tenantId: 10,
     maxBatches: 2,
     limit: 8,
   }])
@@ -216,6 +222,7 @@ test('adapter propagates maxBatches and limit without mutation', async () => {
       tenantId: 22,
       roles: ['admin', 'owner'],
     },
+    tenantId: 22,
     maxBatches: 12,
     limit: 30,
   })

@@ -4,6 +4,7 @@ import type { ExecutiveMemoryCaptureOrchestrator } from './ExecutiveMemoryCaptur
 import type { ExecutiveMemoryCaptureTriggerMetricsRecorder } from './ExecutiveMetrics.js'
 
 export interface ExecutiveMemoryCaptureTriggerInput {
+  tenantId: number
   captureCycleId: string
   cursor?: string
   limit?: number
@@ -83,6 +84,12 @@ function assertNonEmptyString(value: string, label: string) {
   }
 }
 
+function assertPositiveInteger(value: number, label: string) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`Executive memory capture trigger service requires ${label}.`)
+  }
+}
+
 export class ExecutiveMemoryCaptureTriggerService {
   private running = false
 
@@ -100,6 +107,7 @@ export class ExecutiveMemoryCaptureTriggerService {
       }
     }
 
+    assertPositiveInteger(input.tenantId, 'tenantId')
     assertNonEmptyString(input.captureCycleId, 'captureCycleId')
 
     this.running = true
@@ -109,6 +117,7 @@ export class ExecutiveMemoryCaptureTriggerService {
       startedAtMonotonic = (this.dependencies.timer ?? performance).now()
       const startedAt = this.dependencies.clock.now().toISOString()
       const batchResult = await this.dependencies.orchestrator.captureDiscoveredBatch({
+        tenantId: input.tenantId,
         capturedAt: startedAt,
         captureCycleId: input.captureCycleId,
         cursor: input.cursor,

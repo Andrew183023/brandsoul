@@ -41,6 +41,7 @@ function buildInvocationRequest(
       tenantId: request.principal.tenantId,
       roles: cloneRoles(request.principal.roles),
     },
+    tenantId: request.principal.tenantId,
     maxBatches: request.maxBatches,
     limit: request.limit,
   }

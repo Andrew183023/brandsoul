@@ -5,7 +5,7 @@ import type {
 } from './ExecutiveMemoryOperationalRunner.js'
 
 export interface ExecutiveMemoryOperationalRunCoordinatorRuntime {
-  createExecution(): ExecutiveMemoryOperationalRunnerExecution
+  createExecution(tenantId: number): ExecutiveMemoryOperationalRunnerExecution
 }
 
 export interface ExecutiveMemoryOperationalRunCoordinatorDependencies {
@@ -20,6 +20,7 @@ export interface ExecutiveMemoryOperationalRunCoordinatorDependencies {
 }
 
 export interface ExecutiveMemoryOperationalRunInput {
+  tenantId: number
   maxBatches?: number
   limit?: number
 }
@@ -51,8 +52,8 @@ export class ExecutiveMemoryOperationalRunCoordinator {
     private readonly dependencies: ExecutiveMemoryOperationalRunCoordinatorDependencies,
   ) {}
 
-  async run(input: ExecutiveMemoryOperationalRunInput = {}): Promise<ExecutiveMemoryOperationalRunResult> {
-    const execution = this.dependencies.runtime.createExecution()
+  async run(input: ExecutiveMemoryOperationalRunInput): Promise<ExecutiveMemoryOperationalRunResult> {
+    const execution = this.dependencies.runtime.createExecution(input.tenantId)
     const runnerResult = await this.dependencies.operationalRunner.runToBoundary({
       execution,
       maxBatches: input.maxBatches,

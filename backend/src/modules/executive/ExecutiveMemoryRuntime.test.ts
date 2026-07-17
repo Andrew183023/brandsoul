@@ -355,13 +355,13 @@ test('composition does not generate captureCycleId values or call trigger run an
   const runtime = createExecutiveMemoryRuntime(dependencies)
   let cycleIdCalls = 0
 
-  const firstExecution = runtime.createExecutionService({
+  const firstExecution = runtime.createExecutionService(7, {
     nextCaptureCycleId() {
       cycleIdCalls += 1
       return 'cycle-1'
     },
   })
-  const secondExecution = runtime.createExecutionService({
+  const secondExecution = runtime.createExecutionService(8, {
     nextCaptureCycleId() {
       cycleIdCalls += 1
       return 'cycle-2'
@@ -405,7 +405,7 @@ test('createExecution uses the runtime default source without consuming ids duri
 
   assert.equal(uuidCalls, 0)
 
-  const execution = runtime.createExecution()
+  const execution = runtime.createExecution(7)
 
   assert.equal(execution instanceof ExecutiveMemoryCaptureExecutionService, true)
   assert.equal(uuidCalls, 0)
@@ -443,8 +443,8 @@ test('createExecution consumes exactly one id on start and different executions 
     },
   }))
 
-  const first = runtime.createExecution()
-  const second = runtime.createExecution()
+  const first = runtime.createExecution(7)
+  const second = runtime.createExecution(8)
 
   assert.notEqual(first, second)
   assert.equal(first.getState().status, 'idle')
@@ -474,7 +474,7 @@ test('custom runtime captureCycleIdSource is respected by createExecution and co
       },
     },
   }))
-  const execution = runtime.createExecution()
+  const execution = runtime.createExecution(7)
 
   const firstState = await execution.start()
   const continueState = await execution.continueExecution()
@@ -531,7 +531,7 @@ test('office discovery uses the provided database and atomic capture uses the pr
       entityRepository: harness.entityRepository,
     }))
 
-    const page = await runtime.officeDiscoveryService.listEligibleOffices()
+    const page = await runtime.officeDiscoveryService.listEligibleOffices({ tenantId: tenant.id })
     assert.deepEqual(page.items, [{ tenantId: tenant.id, officeId: 'office-1' }])
 
     const captured = await runtime.atomicCaptureService.capture({
@@ -602,6 +602,7 @@ test('operationalRunService uses the productive chain and stays passive until ru
     assert.equal(uuidCalls, 0)
 
     const result = await runtime.operationalRunService.run({
+      tenantId: tenant.id,
       maxBatches: 1,
       limit: 5,
     })
@@ -706,6 +707,7 @@ test('operationalInvocationService uses the productive authorized chain and stay
         tenantId: tenant.id,
         roles: ['admin'],
       },
+      tenantId: tenant.id,
       maxBatches: 1,
       limit: 5,
     })
@@ -802,6 +804,7 @@ test('operationalInvocationService denies forbidden actors without executing or 
           tenantId: tenant.id,
           roles: ['client'],
         },
+        tenantId: tenant.id,
       }),
       ExecutiveMemoryOperationalInvocationForbiddenError,
     )
@@ -895,6 +898,7 @@ test('shared operationalInvocationService authorizes admin owner and operator an
           tenantId: tenant.id,
           roles: [role],
         },
+        tenantId: tenant.id,
         maxBatches: 1,
         limit: 5,
       })
@@ -910,6 +914,7 @@ test('shared operationalInvocationService authorizes admin owner and operator an
           tenantId: tenant.id,
           roles: ['admin'],
         },
+        tenantId: tenant.id,
         maxBatches: 1,
         limit: 5,
       }),
@@ -919,6 +924,7 @@ test('shared operationalInvocationService authorizes admin owner and operator an
           tenantId: tenant.id,
           roles: ['owner'],
         },
+        tenantId: tenant.id,
         maxBatches: 1,
         limit: 5,
       }),
@@ -942,6 +948,7 @@ test('shared operationalInvocationService authorizes admin owner and operator an
             tenantId: tenant.id,
             roles: ['client'],
           },
+          tenantId: tenant.id,
         }),
         runtime.operationalInvocationService.invoke({
           actor: {
@@ -949,6 +956,7 @@ test('shared operationalInvocationService authorizes admin owner and operator an
             tenantId: tenant.id,
             roles: ['client'],
           },
+          tenantId: tenant.id,
         }),
       ]),
       ExecutiveMemoryOperationalInvocationForbiddenError,
@@ -1020,8 +1028,8 @@ test('shared operationalRunService keeps sequential and concurrent runs independ
       },
     }))
 
-    const first = await runtime.operationalRunService.run({ maxBatches: 1, limit: 5 })
-    const second = await runtime.operationalRunService.run({ maxBatches: 1, limit: 5 })
+    const first = await runtime.operationalRunService.run({ tenantId: tenant.id, maxBatches: 1, limit: 5 })
+    const second = await runtime.operationalRunService.run({ tenantId: tenant.id, maxBatches: 1, limit: 5 })
 
     assert.notEqual(first.captureCycleId, second.captureCycleId)
     assert.equal(first.status, 'completed')
@@ -1089,8 +1097,8 @@ test('shared operationalRunService keeps sequential and concurrent runs independ
     }))
 
     const [first, second] = await Promise.all([
-      runtime.operationalRunService.run({ maxBatches: 1, limit: 5 }),
-      runtime.operationalRunService.run({ maxBatches: 1, limit: 5 }),
+      runtime.operationalRunService.run({ tenantId: tenant.id, maxBatches: 1, limit: 5 }),
+      runtime.operationalRunService.run({ tenantId: tenant.id, maxBatches: 1, limit: 5 }),
     ])
 
     assert.equal(first.captureCycleId?.startsWith(EXECUTIVE_MEMORY_CAPTURE_CYCLE_ID_PREFIX), true)

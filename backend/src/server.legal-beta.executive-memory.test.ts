@@ -125,7 +125,7 @@ test('buildLegalBetaServer composes executive memory runtime once per app withou
     assert.ok(runtime.orchestrator)
     assert.ok(runtime.triggerService)
     assert.ok(runtime.metrics)
-    const execution = runtime.createExecution()
+    const execution = runtime.createExecution(1)
     assert.ok(execution)
     assert.equal(execution.getState().status, 'idle')
     assert.equal(app.backendContext.executiveMemoryRuntime, runtime)
@@ -134,7 +134,7 @@ test('buildLegalBetaServer composes executive memory runtime once per app withou
     assert.equal(await readTableCount(app.backendContext.connection, 'executive_memory_observations'), 0)
 
     const routes = app.printRoutes()
-    assert.equal(routes.includes('executive-memory'), false)
+    assert.equal(routes.includes('/admin/executive-memory/run'), true)
   } finally {
     ExecutiveMemoryCaptureTriggerService.prototype.run = originalRun
     await harness.close()

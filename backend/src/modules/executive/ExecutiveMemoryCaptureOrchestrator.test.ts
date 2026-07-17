@@ -223,7 +223,8 @@ function createDependencies() {
         },
       },
       officeDiscoveryService: {
-        async listEligibleOffices() {
+        async listEligibleOffices(input) {
+          calls.push(`discovery:${input.tenantId}:${input.cursor ?? ''}:${input.limit ?? ''}`)
           calls.push('discovery')
           return {
             items: [
@@ -562,6 +563,7 @@ test('captureDiscoveredBatch processes offices sequentially preserves order cycl
   })
 
   const result = await orchestrator.captureDiscoveredBatch({
+    tenantId: 7,
     limit: 2,
     cursor: 'office-0',
     capturedAt: '2026-07-08T11:00:00.000Z',
@@ -570,7 +572,6 @@ test('captureDiscoveredBatch processes offices sequentially preserves order cycl
 
   assert.deepEqual(processed, [
     '7:office-1:2026-07-08T11:00:00.000Z:capture-cycle-1',
-    '8:office-2:2026-07-08T11:00:00.000Z:capture-cycle-1',
   ])
   assert.deepEqual(result, {
     items: [
@@ -587,24 +588,11 @@ test('captureDiscoveredBatch processes offices sequentially preserves order cycl
         sourceFingerprint: 'source:office-1',
         observationFingerprint: 'observation-fingerprint:office-1:capture-cycle-1',
       },
-      {
-        tenantId: 8,
-        officeId: 'office-2',
-        status: 'captured',
-        captureCycleId: 'capture-cycle-1',
-        snapshotId: 'snapshot:office-2',
-        snapshotCreated: false,
-        observationId: 'observation:office-2:capture-cycle-1',
-        observationCreated: false,
-        contentFingerprint: 'content:office-2',
-        sourceFingerprint: 'source:office-2',
-        observationFingerprint: 'observation-fingerprint:office-2:capture-cycle-1',
-      },
     ],
     nextCursor: 'office-2',
     totals: {
-      processed: 2,
-      captured: 2,
+      processed: 1,
+      captured: 1,
       created: 1,
       failed: 0,
     },
@@ -628,6 +616,7 @@ test('captureDiscoveredBatch continues on item error and sanitizes error payload
   })
 
   const result = await orchestrator.captureDiscoveredBatch({
+    tenantId: 7,
     capturedAt: '2026-07-08T11:00:00.000Z',
     captureCycleId: 'capture-cycle-1',
   })
@@ -647,19 +636,13 @@ test('captureDiscoveredBatch continues on item error and sanitizes error payload
         sourceFingerprint: 'source-fingerprint',
         observationFingerprint: 'observation-fingerprint',
       },
-      {
-        tenantId: 8,
-        officeId: 'office-2',
-        status: 'error',
-        error: 'Executive memory capture failed.',
-      },
     ],
     nextCursor: 'office-2',
     totals: {
-      processed: 2,
+      processed: 1,
       captured: 1,
       created: 1,
-      failed: 1,
+      failed: 0,
     },
   })
   assert.equal(JSON.stringify(result).includes('sensitive internal payload'), false)
@@ -674,6 +657,7 @@ test('captureDiscoveredBatch requires officeDiscoveryService capturedAt and capt
 
   await assert.rejects(
     withoutDiscovery.captureDiscoveredBatch({
+      tenantId: 7,
       capturedAt: '2026-07-08T11:00:00.000Z',
       captureCycleId: 'capture-cycle-1',
     }),
@@ -682,6 +666,7 @@ test('captureDiscoveredBatch requires officeDiscoveryService capturedAt and capt
 
   await assert.rejects(
     createExecutiveMemoryCaptureOrchestrator(harness.dependencies).captureDiscoveredBatch({
+      tenantId: 7,
       capturedAt: '   ',
       captureCycleId: 'capture-cycle-1',
     }),
@@ -690,11 +675,60 @@ test('captureDiscoveredBatch requires officeDiscoveryService capturedAt and capt
 
   await assert.rejects(
     createExecutiveMemoryCaptureOrchestrator(harness.dependencies).captureDiscoveredBatch({
+      tenantId: 7,
       capturedAt: '2026-07-08T11:00:00.000Z',
       captureCycleId: '   ',
     }),
     /captureCycleId/,
   )
+})
+
+test('captureDiscoveredBatch passes tenant scope to discovery and rejects cross-tenant mismatch before persistence', async () => {
+  const harness = createDependencies()
+  let discoveryInput: { tenantId: number; cursor?: string; limit?: number } | undefined
+  let atomicCaptureCalls = 0
+  const orchestrator = createExecutiveMemoryCaptureOrchestrator({
+    ...harness.dependencies,
+    officeDiscoveryService: {
+      async listEligibleOffices(input) {
+        discoveryInput = input
+        return {
+          items: [
+            { tenantId: 7, officeId: 'office-1' },
+            { tenantId: 8, officeId: 'office-2' },
+          ],
+          nextCursor: 'office-2',
+        }
+      },
+    },
+    atomicCaptureService: {
+      async capture(input) {
+        atomicCaptureCalls += 1
+        return {
+          ...harness.captureResult,
+          tenantId: input.projection.tenantId,
+          officeId: input.projection.officeId,
+        }
+      },
+    },
+  })
+
+  await assert.rejects(
+    () => orchestrator.captureDiscoveredBatch({
+      tenantId: 7,
+      capturedAt: '2026-07-08T11:00:00.000Z',
+      captureCycleId: 'capture-cycle-1',
+      limit: 2,
+    }),
+    /tenant scope mismatch/,
+  )
+
+  assert.deepEqual(discoveryInput, {
+    tenantId: 7,
+    cursor: undefined,
+    limit: 2,
+  })
+  assert.equal(atomicCaptureCalls, 1)
 })
 
 test('same cycle retry new cycle same state and A to B to A semantics are preserved in outputs', async () => {

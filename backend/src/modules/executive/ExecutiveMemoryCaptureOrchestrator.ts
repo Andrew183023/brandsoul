@@ -43,6 +43,7 @@ export interface ExecutiveMemoryCaptureOfficeResult {
 }
 
 export interface ExecutiveMemoryCaptureBatchInput {
+  tenantId: number
   capturedAt: string
   captureCycleId: string
   cursor?: string
@@ -116,6 +117,19 @@ function assertNonEmptyString(value: string, label: string) {
   }
 }
 
+function assertPositiveInteger(value: number, label: string) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`Executive memory capture orchestrator requires ${label}.`)
+  }
+}
+
+export class ExecutiveMemoryTenantScopeMismatchError extends Error {
+  constructor() {
+    super('Executive memory capture tenant scope mismatch.')
+    this.name = 'ExecutiveMemoryTenantScopeMismatchError'
+  }
+}
+
 function normalizeBatchError() {
   return 'Executive memory capture failed.'
 }
@@ -126,6 +140,7 @@ export class ExecutiveMemoryCaptureOrchestrator {
   async captureOffice(
     input: ExecutiveMemoryCaptureOfficeInput,
   ): Promise<ExecutiveMemoryCaptureOfficeResult> {
+    assertPositiveInteger(input.tenantId, 'tenantId')
     assertNonEmptyString(input.officeId, 'officeId')
     assertNonEmptyString(input.capturedAt, 'capturedAt')
     assertNonEmptyString(input.captureCycleId, 'captureCycleId')
@@ -213,10 +228,12 @@ export class ExecutiveMemoryCaptureOrchestrator {
       throw new Error('Executive memory capture orchestrator requires officeDiscoveryService.')
     }
 
+    assertPositiveInteger(input.tenantId, 'tenantId')
     assertNonEmptyString(input.capturedAt, 'capturedAt')
     assertNonEmptyString(input.captureCycleId, 'captureCycleId')
 
     const page = await this.dependencies.officeDiscoveryService.listEligibleOffices({
+      tenantId: input.tenantId,
       cursor: input.cursor,
       limit: input.limit,
     })
@@ -227,9 +244,13 @@ export class ExecutiveMemoryCaptureOrchestrator {
     let failedCount = 0
 
     for (const office of page.items) {
+      if (office.tenantId !== input.tenantId) {
+        throw new ExecutiveMemoryTenantScopeMismatchError()
+      }
+
       try {
         const result = await this.captureOffice({
-          tenantId: office.tenantId,
+          tenantId: input.tenantId,
           officeId: office.officeId,
           capturedAt: input.capturedAt,
           captureCycleId: input.captureCycleId,

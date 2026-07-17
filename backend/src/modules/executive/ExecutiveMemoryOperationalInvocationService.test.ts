@@ -88,14 +88,14 @@ function createHarness(overrides?: {
     actor: { actorId: string; tenantId?: number; roles?: string[] }
     request: { maxBatches?: number; limit?: number }
   }) => Promise<{ allowed: boolean; reason?: string }> | { allowed: boolean; reason?: string }
-  run?: (input: { maxBatches?: number; limit?: number }) => Promise<ServiceResult>
+  run?: (input: { tenantId: number; maxBatches?: number; limit?: number }) => Promise<ServiceResult>
   result?: ServiceResult
 }) {
   const authorizeCalls: Array<{
     actor: { actorId: string; tenantId?: number; roles?: string[] }
     request: { maxBatches?: number; limit?: number }
   }> = []
-  const runCalls: Array<{ maxBatches?: number; limit?: number }> = []
+  const runCalls: Array<{ tenantId: number; maxBatches?: number; limit?: number }> = []
 
   return {
     authorizeCalls,
@@ -126,8 +126,9 @@ function createHarness(overrides?: {
         },
       },
       operationalRunService: {
-        async run(input: { maxBatches?: number; limit?: number } = {}) {
+        async run(input: { tenantId: number; maxBatches?: number; limit?: number }) {
           runCalls.push({
+            tenantId: input.tenantId,
             maxBatches: input.maxBatches,
             limit: input.limit,
           })
@@ -169,6 +170,7 @@ test('invoke calls authorization exactly once and delegates exactly once when al
       tenantId: 11,
       roles: ['admin'],
     },
+    tenantId: 11,
     maxBatches: 4,
     limit: 25,
   })
@@ -185,6 +187,7 @@ test('invoke calls authorization exactly once and delegates exactly once when al
     },
   }])
   assert.deepEqual(harness.runCalls, [{
+    tenantId: 11,
     maxBatches: 4,
     limit: 25,
   }])
@@ -206,6 +209,7 @@ test('request is not mutated and authorization input is cloned', async () => {
       tenantId: 12,
       roles: ['operator'],
     },
+    tenantId: 12,
     maxBatches: 6,
     limit: 10,
   }
@@ -215,6 +219,7 @@ test('request is not mutated and authorization input is cloned', async () => {
 
   assert.deepEqual(request, before)
   assert.deepEqual(harness.runCalls, [{
+    tenantId: 12,
     maxBatches: 6,
     limit: 10,
   }])

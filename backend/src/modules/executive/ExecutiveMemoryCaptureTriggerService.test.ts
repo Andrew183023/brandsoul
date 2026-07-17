@@ -41,6 +41,7 @@ function createClock(steps: ClockStep[]) {
 
 function createDependencies(overrides?: {
   captureDiscoveredBatch?: (input: {
+    tenantId: number
     capturedAt: string
     captureCycleId: string
     cursor?: string
@@ -59,6 +60,7 @@ function createDependencies(overrides?: {
   timerValues?: number[]
 }) {
   const orchestratorCalls: Array<{
+    tenantId: number
     capturedAt: string
     captureCycleId: string
     cursor?: string
@@ -123,6 +125,7 @@ function createDependencies(overrides?: {
       },
       orchestrator: {
         async captureDiscoveredBatch(input: {
+          tenantId: number
           capturedAt: string
           captureCycleId: string
           cursor?: string
@@ -165,6 +168,7 @@ test('run requires captureCycleId and rejects whitespace', async () => {
 
   await assert.rejects(
     service.run({
+      tenantId: 7,
       captureCycleId: '   ',
     }),
     /captureCycleId/,
@@ -176,6 +180,7 @@ test('run calls clock and orchestrator once and returns a sanitized operational 
   const service = createExecutiveMemoryCaptureTriggerService(harness.dependencies)
 
   const result = await service.run({
+    tenantId: 7,
     captureCycleId: 'capture-cycle-1',
     cursor: 'office-0',
     limit: 12,
@@ -187,6 +192,7 @@ test('run calls clock and orchestrator once and returns a sanitized operational 
   ])
   assert.deepEqual(harness.orchestratorCalls, [
     {
+      tenantId: 7,
       capturedAt: '2026-07-09T10:00:00.000Z',
       captureCycleId: 'capture-cycle-1',
       cursor: 'office-0',
@@ -225,7 +231,7 @@ test('default limit is used when input limit is absent', async () => {
   const harness = createDependencies()
   const service = createExecutiveMemoryCaptureTriggerService(harness.dependencies)
 
-  await service.run({ captureCycleId: 'capture-cycle-1' })
+  await service.run({ tenantId: 7, captureCycleId: 'capture-cycle-1' })
 
   assert.equal(
     harness.orchestratorCalls[0]?.limit,
@@ -251,6 +257,7 @@ test('limit normalization covers zero negative NaN Infinity maximum overflow and
     const service = createExecutiveMemoryCaptureTriggerService(harness.dependencies)
 
     await service.run({
+      tenantId: 7,
       captureCycleId: 'capture-cycle-1',
       limit: scenario.input,
     })
@@ -274,10 +281,11 @@ test('cursor undefined is preserved and nextCursor may be undefined', async () =
   })
   const service = createExecutiveMemoryCaptureTriggerService(harness.dependencies)
 
-  const result = await service.run({ captureCycleId: 'capture-cycle-1' })
+  const result = await service.run({ tenantId: 7, captureCycleId: 'capture-cycle-1' })
 
   assert.deepEqual(harness.orchestratorCalls, [
     {
+      tenantId: 7,
       capturedAt: '2026-07-09T10:00:00.000Z',
       captureCycleId: 'capture-cycle-1',
       cursor: undefined,
@@ -302,6 +310,7 @@ test('input is not mutated and retries can preserve the same captureCycleId', as
   const harness = createDependencies()
   const service = createExecutiveMemoryCaptureTriggerService(harness.dependencies)
   const input = {
+    tenantId: 7,
     captureCycleId: 'capture-cycle-1',
     cursor: 'office-7',
     limit: 15,
@@ -317,12 +326,14 @@ test('different captureCycleId values are passed through exactly', async () => {
   const firstHarness = createDependencies()
   const firstService = createExecutiveMemoryCaptureTriggerService(firstHarness.dependencies)
   await firstService.run({
+    tenantId: 7,
     captureCycleId: 'capture-cycle-1',
   })
 
   const secondHarness = createDependencies()
   const secondService = createExecutiveMemoryCaptureTriggerService(secondHarness.dependencies)
   await secondService.run({
+    tenantId: 8,
     captureCycleId: 'capture-cycle-2',
   })
 
@@ -352,14 +363,15 @@ test('second concurrent execution returns already_running and does not call cloc
   })
   const service = createExecutiveMemoryCaptureTriggerService(harness.dependencies)
 
-  const firstRun = service.run({ captureCycleId: 'capture-cycle-1', limit: 10 })
-  const secondRun = await service.run({ captureCycleId: 'capture-cycle-2', limit: 3 })
+  const firstRun = service.run({ tenantId: 7, captureCycleId: 'capture-cycle-1', limit: 10 })
+  const secondRun = await service.run({ tenantId: 8, captureCycleId: 'capture-cycle-2', limit: 3 })
 
   assert.deepEqual(secondRun, {
     status: 'already_running',
   })
   assert.deepEqual(harness.orchestratorCalls, [
     {
+      tenantId: 7,
       capturedAt: '2026-07-09T10:00:00.000Z',
       captureCycleId: 'capture-cycle-1',
       cursor: undefined,
@@ -389,17 +401,19 @@ test('lock is released after success and a later execution can run again', async
   })
   const service = createExecutiveMemoryCaptureTriggerService(harness.dependencies)
 
-  await service.run({ captureCycleId: 'capture-cycle-1', limit: 4 })
-  await service.run({ captureCycleId: 'capture-cycle-2', limit: 6 })
+  await service.run({ tenantId: 7, captureCycleId: 'capture-cycle-1', limit: 4 })
+  await service.run({ tenantId: 7, captureCycleId: 'capture-cycle-2', limit: 6 })
 
   assert.deepEqual(harness.orchestratorCalls, [
     {
+      tenantId: 7,
       capturedAt: '2026-07-09T10:00:00.000Z',
       captureCycleId: 'capture-cycle-1',
       cursor: undefined,
       limit: 4,
     },
     {
+      tenantId: 7,
       capturedAt: '2026-07-09T11:00:00.000Z',
       captureCycleId: 'capture-cycle-2',
       cursor: undefined,
@@ -420,7 +434,7 @@ test('lock is released after first clock failure', async () => {
   const service = createExecutiveMemoryCaptureTriggerService(harness.dependencies)
 
   await assert.rejects(
-    service.run({ captureCycleId: 'capture-cycle-1' }),
+    service.run({ tenantId: 7, captureCycleId: 'capture-cycle-1' }),
     /clock start failed/,
   )
 
@@ -428,7 +442,7 @@ test('lock is released after first clock failure', async () => {
   assert.deepEqual(harness.metricsCalls.timings, [{ durationMs: 45, status: 'error' }])
   assert.deepEqual(harness.metricsCalls.totals, [])
 
-  const result = await service.run({ captureCycleId: 'capture-cycle-2' })
+  const result = await service.run({ tenantId: 7, captureCycleId: 'capture-cycle-2' })
   assert.equal(result.status, 'completed')
   assert.equal(harness.orchestratorCalls.length, 1)
 })
@@ -463,7 +477,7 @@ test('lock is released after orchestrator failure and the error is propagated', 
   const service = createExecutiveMemoryCaptureTriggerService(harness.dependencies)
 
   await assert.rejects(
-    service.run({ captureCycleId: 'capture-cycle-1' }),
+    service.run({ tenantId: 7, captureCycleId: 'capture-cycle-1' }),
     /orchestrator failed/,
   )
 
@@ -471,7 +485,7 @@ test('lock is released after orchestrator failure and the error is propagated', 
   assert.deepEqual(harness.metricsCalls.timings, [{ durationMs: 45, status: 'error' }])
   assert.deepEqual(harness.metricsCalls.totals, [])
 
-  const result = await service.run({ captureCycleId: 'capture-cycle-2' })
+  const result = await service.run({ tenantId: 7, captureCycleId: 'capture-cycle-2' })
   assert.equal(result.status, 'completed')
   assert.equal(harness.orchestratorCalls.length, 2)
 })
@@ -489,7 +503,7 @@ test('lock is released after finishedAt clock failure and the error is propagate
   const service = createExecutiveMemoryCaptureTriggerService(harness.dependencies)
 
   await assert.rejects(
-    service.run({ captureCycleId: 'capture-cycle-1' }),
+    service.run({ tenantId: 7, captureCycleId: 'capture-cycle-1' }),
     /clock finish failed/,
   )
 
@@ -497,7 +511,7 @@ test('lock is released after finishedAt clock failure and the error is propagate
   assert.deepEqual(harness.metricsCalls.timings, [{ durationMs: 45, status: 'error' }])
   assert.deepEqual(harness.metricsCalls.totals, [])
 
-  const result = await service.run({ captureCycleId: 'capture-cycle-2' })
+  const result = await service.run({ tenantId: 7, captureCycleId: 'capture-cycle-2' })
   assert.equal(result.status, 'completed')
   assert.equal(harness.orchestratorCalls.length, 2)
 })
@@ -510,7 +524,7 @@ test('metrics are optional and do not change trigger behavior when omitted', asy
     timer: harness.dependencies.timer,
   })
 
-  const result = await service.run({ captureCycleId: 'capture-cycle-1' })
+  const result = await service.run({ tenantId: 7, captureCycleId: 'capture-cycle-1' })
 
   assert.equal(result.status, 'completed')
 })

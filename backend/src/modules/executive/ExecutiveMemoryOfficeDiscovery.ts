@@ -7,6 +7,7 @@ export interface ExecutiveMemoryOfficeDiscoveryItem {
 }
 
 export interface ExecutiveMemoryOfficeDiscoveryInput {
+  tenantId: number
   cursor?: string
   limit?: number
 }
@@ -54,6 +55,12 @@ function normalizeCursor(cursor?: string) {
   return trimmed.length > 0 ? trimmed : undefined
 }
 
+function requirePositiveInteger(value: number, label: string) {
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`Executive memory office discovery requires ${label}.`)
+  }
+}
+
 function readEntityProfile(value: string): EntityProfile | null {
   try {
     const parsed = JSON.parse(value) as unknown
@@ -96,8 +103,9 @@ export class ExecutiveMemoryOfficeDiscoveryService {
   constructor(private readonly db: BackendDatabase) {}
 
   async listEligibleOffices(
-    input: ExecutiveMemoryOfficeDiscoveryInput = {},
+    input: ExecutiveMemoryOfficeDiscoveryInput,
   ): Promise<ExecutiveMemoryOfficeDiscoveryPage> {
+    requirePositiveInteger(input.tenantId, 'tenantId')
     const limit = normalizeLimit(input.limit)
     const scanBatchSize = buildScanBatchSize(limit)
     const items: ExecutiveMemoryOfficeDiscoveryItem[] = []
@@ -123,10 +131,12 @@ export class ExecutiveMemoryOfficeDiscoveryService {
            AND memberships.is_active = 1
           WHERE entities.owner_user_id IS NOT NULL
             AND entities.owner_tenant_id IS NOT NULL
+            AND entities.owner_tenant_id = ?
             AND (? IS NULL OR entities.id > ?)
           ORDER BY entities.id ASC
           LIMIT ?
         `,
+        input.tenantId,
         cursor ?? null,
         cursor ?? null,
         scanBatchSize,

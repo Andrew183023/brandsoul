@@ -143,7 +143,7 @@ test('returns only legal offices with active canonical ownership', async () => {
       entityProfile: createLegalEntityProfile(),
     })
 
-    const page = await harness.discovery.listEligibleOffices()
+    const page = await harness.discovery.listEligibleOffices({ tenantId: owned.tenant.id })
 
     assert.deepEqual(page, {
       items: [
@@ -173,7 +173,11 @@ test('excludes deleted and invalid lifecycle states', async () => {
       lifecycleStatus: 'invalid',
     })
 
-    const page = await harness.discovery.listEligibleOffices()
+    const tenant = await createOwnedOffice({
+      harness,
+      officeId: 'office-active-1',
+    })
+    const page = await harness.discovery.listEligibleOffices({ tenantId: tenant.tenant.id })
     assert.deepEqual(page.items, [])
   } finally {
     await harness.cleanup()
@@ -190,7 +194,7 @@ test('returns only tenantId and officeId without PII', async () => {
       officeName: 'Nome Sensivel',
     })
 
-    const page = await harness.discovery.listEligibleOffices()
+    const page = await harness.discovery.listEligibleOffices({ tenantId: owned.tenant.id })
 
     assert.deepEqual(page.items[0], {
       tenantId: owned.tenant.id,
@@ -225,8 +229,8 @@ test('orders results deterministically by officeId ascending', async () => {
       tenantNameSuffix: 'c',
     })
 
-    const first = await harness.discovery.listEligibleOffices()
-    const second = await harness.discovery.listEligibleOffices()
+    const first = await harness.discovery.listEligibleOffices({ tenantId: officeA.tenant.id })
+    const second = await harness.discovery.listEligibleOffices({ tenantId: officeA.tenant.id })
 
     assert.deepEqual(first, second)
     assert.deepEqual(first.items, [
@@ -247,12 +251,14 @@ test('supports cursor pagination across eligible offices', async () => {
     const officeB = await createOwnedOffice({ harness, officeId: 'office-b' })
     const officeC = await createOwnedOffice({ harness, officeId: 'office-c' })
 
-    const first = await harness.discovery.listEligibleOffices({ limit: 2 })
+    const first = await harness.discovery.listEligibleOffices({ tenantId: officeA.tenant.id, limit: 2 })
     const second = await harness.discovery.listEligibleOffices({
+      tenantId: officeA.tenant.id,
       limit: 2,
       cursor: first.nextCursor,
     })
     const final = await harness.discovery.listEligibleOffices({
+      tenantId: officeA.tenant.id,
       limit: 2,
       cursor: second.nextCursor,
     })
@@ -289,7 +295,7 @@ test('cursor pagination skips ineligible offices and still returns the requested
     })
     const officeC = await createOwnedOffice({ harness, officeId: 'office-c' })
 
-    const page = await harness.discovery.listEligibleOffices({ limit: 2 })
+    const page = await harness.discovery.listEligibleOffices({ tenantId: officeA.tenant.id, limit: 2 })
 
     assert.deepEqual(page, {
       items: [
@@ -307,7 +313,7 @@ test('returns an empty page for an empty database', async () => {
   const harness = await createHarness('executive-memory-office-discovery-empty-')
 
   try {
-    const page = await harness.discovery.listEligibleOffices()
+    const page = await harness.discovery.listEligibleOffices({ tenantId: 1 })
     assert.deepEqual(page, { items: [] })
   } finally {
     await harness.cleanup()
@@ -326,16 +332,16 @@ test('normalizes limit with default minimum maximum and invalid fallbacks', asyn
       })
     }
 
-    const defaultPage = await harness.discovery.listEligibleOffices()
-    const minimumPage = await harness.discovery.listEligibleOffices({ limit: 1 })
-    const maximumPage = await harness.discovery.listEligibleOffices({ limit: 100 })
+    const defaultPage = await harness.discovery.listEligibleOffices({ tenantId: 1 })
+    const minimumPage = await harness.discovery.listEligibleOffices({ tenantId: 1, limit: 1 })
+    const maximumPage = await harness.discovery.listEligibleOffices({ tenantId: 1, limit: 100 })
     const invalidPages = await Promise.all([
-      harness.discovery.listEligibleOffices({ limit: 0 }),
-      harness.discovery.listEligibleOffices({ limit: -1 }),
-      harness.discovery.listEligibleOffices({ limit: 1.5 }),
-      harness.discovery.listEligibleOffices({ limit: Number.NaN }),
-      harness.discovery.listEligibleOffices({ limit: Number.POSITIVE_INFINITY }),
-      harness.discovery.listEligibleOffices({ limit: 101 }),
+      harness.discovery.listEligibleOffices({ tenantId: 1, limit: 0 }),
+      harness.discovery.listEligibleOffices({ tenantId: 1, limit: -1 }),
+      harness.discovery.listEligibleOffices({ tenantId: 1, limit: 1.5 }),
+      harness.discovery.listEligibleOffices({ tenantId: 1, limit: Number.NaN }),
+      harness.discovery.listEligibleOffices({ tenantId: 1, limit: Number.POSITIVE_INFINITY }),
+      harness.discovery.listEligibleOffices({ tenantId: 1, limit: 101 }),
     ])
 
     assert.equal(defaultPage.items.length, 20)
@@ -354,7 +360,7 @@ test('treats blank cursor as an initial page request', async () => {
 
   try {
     const office = await createOwnedOffice({ harness, officeId: 'office-a' })
-    const page = await harness.discovery.listEligibleOffices({ cursor: '   ' })
+    const page = await harness.discovery.listEligibleOffices({ tenantId: office.tenant.id, cursor: '   ' })
 
     assert.deepEqual(page, {
       items: [
@@ -377,4 +383,33 @@ test('module remains structurally isolated from forbidden dependencies', async (
     false,
   )
   assert.equal(/\bany\b/.test(source), false)
+})
+
+test('tenant scope filters discovery in the database and cursor does not cross tenants', async () => {
+  const harness = await createHarness('executive-memory-office-discovery-tenant-scope-')
+
+  try {
+    const tenantAOfficeA = await createOwnedOffice({ harness, officeId: 'office-a1', tenantNameSuffix: 'tenant-a' })
+    await createOwnedOffice({ harness, officeId: 'office-a2', tenantNameSuffix: 'tenant-a-2' })
+    const tenantBOffice = await createOwnedOffice({ harness, officeId: 'office-b1', tenantNameSuffix: 'tenant-b' })
+
+    const tenantAPage = await harness.discovery.listEligibleOffices({
+      tenantId: tenantAOfficeA.tenant.id,
+      limit: 10,
+    })
+    const tenantBCursorPage = await harness.discovery.listEligibleOffices({
+      tenantId: tenantBOffice.tenant.id,
+      cursor: tenantAPage.nextCursor ?? 'office-a2',
+      limit: 10,
+    })
+
+    assert.deepEqual(
+      tenantAPage.items.map((item) => item.tenantId),
+      [tenantAOfficeA.tenant.id, tenantAOfficeA.tenant.id],
+    )
+    assert.equal(tenantAPage.items.some((item) => item.tenantId === tenantBOffice.tenant.id), false)
+    assert.deepEqual(tenantBCursorPage.items, [])
+  } finally {
+    await harness.cleanup()
+  }
 })
